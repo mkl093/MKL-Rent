@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 m-0">Поиск по штрих-коду</h1>
+  <a href="/inventory" class="btn btn-outline-secondary">К складу</a>
+</div>
+
+<form method="get" action="/inventory/scan" class="card card-body mb-3">
+  <div class="row g-2">
+    <div class="col">
+      <input class="form-control form-control-lg" name="barcode" value="{{ barcode or '' }}"
+             placeholder="Введите или отсканируйте штрих-код" autofocus inputmode="text">
+    </div>
+    <div class="col-auto"><button class="btn btn-primary btn-lg">Найти</button></div>
+  </div>
+</form>
+
+{% if not_found %}
+  <div class="alert alert-warning">Экземпляр со штрих-кодом <code>{{ barcode }}</code> не найден.</div>
+{% endif %}
+<p class="text-secondary small">Сканирование камерой и пакетная комплектация — на Этапе 6.</p>
+{% endblock %}

@@ -11,6 +11,7 @@ from sqlalchemy import engine_from_config, pool
 from app.auth import models as _auth_models  # noqa: F401
 from app.config import get_settings
 from app.database import Base
+from app.inventory import models as _inventory_models  # noqa: F401
 from app.settings import models as _settings_models  # noqa: F401
 
 config = context.config

@@ -15,6 +15,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "itsdangerous>=2.2",
     "pwdlib[argon2]>=0.2",
+    "pillow>=10.3",
 ]
 
 [project.optional-dependencies]

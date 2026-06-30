@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 m-0"><code>{{ item.barcode }}</code></h1>
+  <div class="d-flex gap-2">
+    <a href="/inventory/models/{{ item.model_id }}" class="btn btn-outline-secondary">К модели</a>
+    <form method="post" action="/inventory/items/{{ item.id }}/delete" class="m-0"
+          onsubmit="return confirm('Удалить экземпляр?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-outline-danger">Удалить</button>
+    </form>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-md-6">
+    <div class="card card-body">
+      <div class="mb-2"><span class="text-secondary">Модель:</span> <a href="/inventory/models/{{ item.model_id }}">{{ item.model.name }}</a></div>
+      <div class="mb-3"><span class="text-secondary">Статус:</span> <strong>{{ item.status.label }}</strong></div>
+      <form method="post" action="/inventory/items/{{ item.id }}" class="row g-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="col-12"><label class="form-label small">Штрих-код *</label>
+          <input class="form-control" name="barcode" value="{{ item.barcode }}" required></div>
+        <div class="col-6"><label class="form-label small">Серийный №</label>
+          <input class="form-control" name="serial_number" value="{{ item.serial_number or '' }}"></div>
+        <div class="col-6"><label class="form-label small">Инвентарный №</label>
+          <input class="form-control" name="inventory_number" value="{{ item.inventory_number or '' }}"></div>
+        <div class="col-12"><label class="form-label small">Комментарий</label>
+          <textarea class="form-control" name="comment" rows="2">{{ item.comment or '' }}</textarea></div>
+        <div class="col-12 text-end"><button class="btn btn-primary">Сохранить</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-12 col-md-6">
+    <div class="card card-body">
+      <h2 class="h6">Сменить статус</h2>
+      <form method="post" action="/inventory/items/{{ item.id }}/status" class="row g-2 mb-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="col-6">
+          <select class="form-select" name="new_status">
+            {% for st in ItemStatus %}
+              <option value="{{ st.value }}" {% if st == item.status %}selected{% endif %}>{{ st.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6"><input class="form-control" name="comment" placeholder="Комментарий"></div>
+        <div class="col-12 text-end"><button class="btn btn-outline-primary">Применить</button></div>
+      </form>
+
+      <h2 class="h6">История статусов</h2>
+      <ul class="list-group list-group-flush">
+        {% for h in item.status_history %}
+        <li class="list-group-item px-0">
+          <div class="small text-secondary">{{ format_datetime(h.changed_at) }}</div>
+          {{ (h.old_status.label ~ " → ") if h.old_status else "" }}<strong>{{ h.new_status.label }}</strong>
+          {% if h.comment %}<div class="small">{{ h.comment }}</div>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

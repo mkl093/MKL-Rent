@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h1 class="h3 m-0">{{ model.name }}{% if model.is_archived %} <span class="badge text-bg-secondary align-middle">архив</span>{% endif %}</h1>
+    <div class="text-secondary">{{ model.category.name }}{% if model.subcategory %} / {{ model.subcategory.name }}{% endif %}</div>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a href="/inventory" class="btn btn-outline-secondary">К складу</a>
+    <a href="/inventory/models/{{ model.id }}/edit" class="btn btn-outline-primary">Редактировать</a>
+    <form method="post" action="/inventory/models/{{ model.id }}/archive" class="m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="archived" value="{{ 0 if model.is_archived else 1 }}">
+      <button class="btn btn-outline-warning">{{ "Из архива" if model.is_archived else "В архив" }}</button>
+    </form>
+    <form method="post" action="/inventory/models/{{ model.id }}/delete" class="m-0"
+          onsubmit="return confirm('Удалить модель безвозвратно?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-outline-danger">Удалить</button>
+    </form>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-md-4">
+    <div class="card">
+      {% if model.photo_path %}
+        <img src="/media/{{ model.photo_path }}" class="card-img-top object-fit-cover" style="max-height:240px" alt="">
+        <div class="card-body py-2">
+          <form method="post" action="/inventory/models/{{ model.id }}/photo/delete" class="m-0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn btn-sm btn-link text-danger p-0">Удалить фото</button>
+          </form>
+        </div>
+      {% else %}
+        <div class="card-body text-secondary">Фото нет</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-12 col-md-8">
+    <div class="card card-body">
+      <dl class="row mb-0">
+        <dt class="col-5 col-sm-3">Тип учёта</dt><dd class="col-7 col-sm-9">{{ model.accounting_type.label }}</dd>
+        <dt class="col-5 col-sm-3">Остаток</dt><dd class="col-7 col-sm-9">{{ stock }}</dd>
+        <dt class="col-5 col-sm-3">Производитель</dt><dd class="col-7 col-sm-9">{{ model.manufacturer or "—" }}</dd>
+        <dt class="col-5 col-sm-3">Артикул</dt><dd class="col-7 col-sm-9">{{ model.internal_sku or "—" }}</dd>
+        <dt class="col-5 col-sm-3">Цена аренды</dt><dd class="col-7 col-sm-9">{{ "%.2f"|format(model.base_price_eur) }} €</dd>
+        <dt class="col-5 col-sm-3">Вес единицы</dt><dd class="col-7 col-sm-9">{{ model.weight_kg }} кг</dd>
+        <dt class="col-5 col-sm-3">Габариты</dt><dd class="col-7 col-sm-9">{{ model.length_mm }}×{{ model.width_mm }}×{{ model.height_mm }} мм</dd>
+        {% if model.has_packing %}
+        <dt class="col-5 col-sm-3">Упаковка</dt>
+        <dd class="col-7 col-sm-9">{{ model.packing.name_for(model.name) }} · вместимость {{ model.packing.capacity }} · пустая {{ model.packing.empty_weight_kg }} кг</dd>
+        {% endif %}
+        {% if model.description %}<dt class="col-5 col-sm-3">Описание</dt><dd class="col-7 col-sm-9">{{ model.description }}</dd>{% endif %}
+        {% if model.note %}<dt class="col-5 col-sm-3">Примечание</dt><dd class="col-7 col-sm-9">{{ model.note }}</dd>{% endif %}
+      </dl>
+    </div>
+  </div>
+</div>
+
+{% if model.is_serial %}
+<div class="card mt-4">
+  <div class="card-header d-flex flex-wrap gap-3 align-items-center">
+    <strong>Экземпляры ({{ items|length }})</strong>
+    <span class="text-secondary small">
+      {% for st, cnt in status_counts.items() %}{{ st.label }}: {{ cnt }}{% if not loop.last %} · {% endif %}{% endfor %}
+    </span>
+  </div>
+  <div class="card-body">
+    <form method="post" action="/inventory/models/{{ model.id }}/items" class="row g-2 mb-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="col-12 col-md-3"><input class="form-control" name="barcode" placeholder="Штрих-код *" required></div>
+      <div class="col-6 col-md-3"><input class="form-control" name="serial_number" placeholder="Серийный №"></div>
+      <div class="col-6 col-md-3"><input class="form-control" name="inventory_number" placeholder="Инв. №"></div>
+      <div class="col-12 col-md-3"><button class="btn btn-primary w-100">Добавить экземпляр</button></div>
+    </form>
+    {% if items %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle">
+        <thead><tr><th>Штрих-код</th><th>Серийный №</th><th>Инв. №</th><th>Статус</th><th></th></tr></thead>
+        <tbody>
+          {% for it in items %}
+          <tr>
+            <td><code>{{ it.barcode }}</code></td>
+            <td>{{ it.serial_number or "—" }}</td>
+            <td>{{ it.inventory_number or "—" }}</td>
+            <td>{{ it.status.label }}</td>
+            <td class="text-end"><a href="/inventory/items/{{ it.id }}" class="btn btn-sm btn-outline-secondary">Открыть</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-secondary m-0">Экземпляров пока нет.</p>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="card mt-4">
+  <div class="card-header"><strong>Остаток и история (ТЗ §10)</strong></div>
+  <div class="card-body">
+    <form method="post" action="/inventory/models/{{ model.id }}/quantity" class="row g-2 mb-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="col-6 col-md-2">
+        <label class="form-label small">Новое количество</label>
+        <input class="form-control" name="new_quantity" inputmode="numeric" value="{{ stock }}">
+      </div>
+      <div class="col-12 col-md-7">
+        <label class="form-label small">Комментарий</label>
+        <input class="form-control" name="comment" placeholder="необязательно">
+      </div>
+      <div class="col-12 col-md-3 d-flex align-items-end">
+        <button class="btn btn-primary w-100">Изменить остаток</button>
+      </div>
+    </form>
+    {% if quantity_history %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead><tr><th>Дата</th><th>Было</th><th>Стало</th><th>Δ</th><th>Комментарий</th></tr></thead>
+        <tbody>
+          {% for a in quantity_history %}
+          <tr>
+            <td>{{ format_datetime(a.changed_at) }}</td>
+            <td>{{ a.old_quantity }}</td><td>{{ a.new_quantity }}</td>
+            <td>{{ "%+d"|format(a.delta) }}</td>
+            <td>{{ a.comment or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-secondary m-0">Изменений ещё не было.</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

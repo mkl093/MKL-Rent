@@ -13,6 +13,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.auth import models as _auth_models  # noqa: F401
 from app.config import get_settings
 from app.dependencies import LoginRequired
+from app.inventory import models as _inventory_models  # noqa: F401
 from app.settings import models as _settings_models  # noqa: F401
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -32,6 +33,11 @@ def create_app() -> FastAPI:
     )
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+    # Отдача пользовательских файлов (фото моделей и т. п.) из STORAGE_PATH.
+    media_dir = Path(settings.storage_path)
+    media_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/media", StaticFiles(directory=str(media_dir)), name="media")
 
     # Перехват «требуется вход» → редирект на /login.
     @app.exception_handler(LoginRequired)

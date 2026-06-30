@@ -19,6 +19,7 @@ from sqlalchemy.pool import StaticPool
 # Регистрируем модели в Base.metadata.
 from app.auth import models as _auth_models  # noqa: F401
 from app.database import Base, get_db
+from app.inventory import models as _inventory_models  # noqa: F401
 from app.settings import models as _settings_models  # noqa: F401
 
 

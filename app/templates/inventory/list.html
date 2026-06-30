@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 m-0">Склад</h1>
+  <div class="d-flex flex-wrap gap-2">
+    <a href="/inventory/scan" class="btn btn-outline-secondary">Поиск по штрих-коду</a>
+    <a href="/inventory/categories" class="btn btn-outline-secondary">Категории</a>
+    <a href="/inventory/models/new" class="btn btn-primary">Добавить модель</a>
+  </div>
+</div>
+
+<form method="get" class="card card-body mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-4">
+      <label class="form-label" for="q">Поиск (название, производитель)</label>
+      <input class="form-control" id="q" name="q" value="{{ q }}">
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label" for="category_id">Категория</label>
+      <select class="form-select" id="category_id" name="category_id">
+        <option value="">Все</option>
+        {% for c in categories %}
+          <option value="{{ c.id }}" {% if filters.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label" for="accounting_type">Тип учёта</label>
+      <select class="form-select" id="accounting_type" name="accounting_type">
+        <option value="">Любой</option>
+        {% for t in AccountingType %}
+          <option value="{{ t.value }}" {% if filters.accounting_type == t %}selected{% endif %}>{{ t.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label" for="sort">Сортировка</label>
+      <select class="form-select" id="sort" name="sort" onchange="this.form.submit()">
+        <option value="category" {% if filters.sort == 'category' %}selected{% endif %}>Категория</option>
+        <option value="name" {% if filters.sort == 'name' %}selected{% endif %}>Название</option>
+        <option value="manufacturer" {% if filters.sort == 'manufacturer' %}selected{% endif %}>Производитель</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-1">
+      <button class="btn btn-primary w-100" type="submit">Фильтр</button>
+    </div>
+  </div>
+  <div class="d-flex flex-wrap gap-3 mt-2">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="has_packing" name="has_packing" value="1"
+             {% if filters.has_packing %}checked{% endif %} onchange="this.form.submit()">
+      <label class="form-check-label" for="has_packing">С кейсом/рэком</label>
+    </div>
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="archived" name="archived" value="1"
+             {% if filters.archived %}checked{% endif %} onchange="this.form.submit()">
+      <label class="form-check-label" for="archived">Архив</label>
+    </div>
+  </div>
+</form>
+
+{% if models %}
+<div class="table-responsive d-none d-md-block">
+  <table class="table table-hover align-middle">
+    <thead>
+      <tr>
+        <th></th><th>Модель</th><th>Категория</th><th>Производитель</th>
+        <th>Тип учёта</th><th class="text-end">Остаток</th><th>Упаковка</th><th class="text-end">Цена, €</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in models %}
+      <tr role="button" onclick="location.href='/inventory/models/{{ m.id }}'">
+        <td style="width:48px">
+          {% if m.photo_path %}<img src="/media/{{ m.photo_path }}" alt="" width="40" height="40" class="rounded object-fit-cover">{% endif %}
+        </td>
+        <td>{{ m.name }}{% if m.is_archived %} <span class="badge text-bg-secondary">архив</span>{% endif %}</td>
+        <td>{{ m.category.name }}{% if m.subcategory %} / {{ m.subcategory.name }}{% endif %}</td>
+        <td>{{ m.manufacturer or "—" }}</td>
+        <td>{{ m.accounting_type.label }}</td>
+        <td class="text-end">{{ stock[m.id] }}</td>
+        <td>{{ m.packing.packing_type.label if m.has_packing else "—" }}</td>
+        <td class="text-end">{{ "%.2f"|format(m.base_price_eur) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="d-md-none">
+  {% for m in models %}
+  <a href="/inventory/models/{{ m.id }}" class="card mb-2 text-decoration-none text-body">
+    <div class="card-body d-flex gap-3">
+      {% if m.photo_path %}<img src="/media/{{ m.photo_path }}" alt="" width="56" height="56" class="rounded object-fit-cover">{% endif %}
+      <div class="flex-grow-1">
+        <div class="fw-semibold">{{ m.name }}{% if m.is_archived %} <span class="badge text-bg-secondary">архив</span>{% endif %}</div>
+        <div class="small text-secondary">{{ m.category.name }}{% if m.subcategory %} / {{ m.subcategory.name }}{% endif %}</div>
+        <div class="small">{{ m.accounting_type.label }} · остаток {{ stock[m.id] }} · {{ "%.2f"|format(m.base_price_eur) }} €</div>
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="text-secondary">Моделей не найдено. <a href="/inventory/models/new">Добавьте первую</a>.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 m-0">Категории</h1>
+  <a href="/inventory" class="btn btn-outline-secondary">К складу</a>
+</div>
+
+<form method="post" action="/inventory/categories" class="card card-body mb-4">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="row g-2">
+    <div class="col"><input class="form-control" name="name" placeholder="Новая категория" required></div>
+    <div class="col-auto"><button class="btn btn-primary">Добавить категорию</button></div>
+  </div>
+</form>
+
+{% for c in categories %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>{{ c.name }}</strong>
+    <form method="post" action="/inventory/categories/{{ c.id }}/delete" class="m-0"
+          onsubmit="return confirm('Удалить категорию «{{ c.name }}»?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-sm btn-outline-danger">Удалить</button>
+    </form>
+  </div>
+  <ul class="list-group list-group-flush">
+    {% for s in c.subcategories %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      {{ s.name }}
+      <form method="post" action="/inventory/subcategories/{{ s.id }}/delete" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn btn-sm btn-link text-danger p-0">удалить</button>
+      </form>
+    </li>
+    {% else %}
+    <li class="list-group-item text-secondary small">Подкатегорий нет</li>
+    {% endfor %}
+    <li class="list-group-item">
+      <form method="post" action="/inventory/categories/{{ c.id }}/subcategories" class="row g-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="col"><input class="form-control form-control-sm" name="name" placeholder="Новая подкатегория" required></div>
+        <div class="col-auto"><button class="btn btn-sm btn-outline-primary">Добавить</button></div>
+      </form>
+    </li>
+  </ul>
+</div>
+{% else %}
+<p class="text-secondary">Категорий пока нет.</p>
+{% endfor %}
+{% endblock %}
