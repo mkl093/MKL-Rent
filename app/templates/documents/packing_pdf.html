@@ -3,34 +3,37 @@
 <head>
 <meta charset="utf-8">
 <style>
-  @font-face { font-family: "DejaVu"; src: url("{{ font_regular }}"); font-weight: normal; }
-  @font-face { font-family: "DejaVu"; src: url("{{ font_bold }}"); font-weight: bold; }
-  @page { size: A4 landscape; margin: 1cm;
-    @bottom-center { content: "{{ company.pdf_footer or '' }}"; font-size: 8pt; color: #666; } }
-  body { font-family: "DejaVu", sans-serif; font-size: 8.5pt; color: #111; }
-  .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #333; padding-bottom: 6px; }
+  {% if fontface %}
+  @font-face { font-family: "dejavu"; src: url("{{ font_regular }}"); font-weight: normal; }
+  @font-face { font-family: "dejavu"; src: url("{{ font_bold }}"); font-weight: bold; }
+  {% endif %}
+  @page { size: a4 landscape; margin: 1cm; }
+  body { font-family: "dejavu", sans-serif; font-size: 8.5pt; color: #111; }
+  .head { width: 100%; border-bottom: 2px solid #333; padding-bottom: 6px; }
+  .head td { vertical-align: top; }
   .company .name { font-size: 12pt; font-weight: bold; }
   .logo { max-height: 50px; }
   h1 { font-size: 14pt; margin: 10px 0 2px; }
   .meta { font-size: 8.5pt; color: #444; margin-bottom: 8px; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { padding: 3px 4px; border-bottom: 1px solid #ddd; text-align: left; vertical-align: top; }
-  th { background: #f2f2f2; font-size: 8pt; }
-  td.num, th.num { text-align: right; }
-  .cat { background: #e9ecef; font-weight: bold; }
+  table.items { width: 100%; border-collapse: collapse; font-size: 7pt; }
+  table.items th, table.items td { padding: 2px 3px; border: 1px solid #ddd; text-align: left; vertical-align: top; }
+  table.items th { background: #f2f2f2; }
+  .num { text-align: right; }
+  .cat td { background: #e9ecef; font-weight: bold; }
   .totals { margin-top: 8px; font-size: 10pt; font-weight: bold; text-align: right; }
   .shortage { margin-top: 8px; color: #b00; font-size: 9pt; }
   .bc { font-family: monospace; font-size: 8pt; }
+  .footer { margin-top: 18px; padding-top: 6px; border-top: 1px solid #ccc; font-size: 8pt; color: #666; text-align: center; }
 </style>
 </head>
 <body>
-  <div class="head">
-    <div class="company">
+  <table class="head"><tr>
+    <td class="company">
       <div class="name">{{ company.company_name or "—" }}</div>
       {% if company.address %}<div style="font-size:8pt">{{ company.address }}</div>{% endif %}
-    </div>
-    {% if logo_uri %}<img class="logo" src="{{ logo_uri }}" alt="">{% endif %}
-  </div>
+    </td>
+    <td class="num" style="width:25%">{% if logo_uri %}<img class="logo" src="{{ logo_uri }}" alt="">{% endif %}</td>
+  </tr></table>
 
   <h1>{{ L.packing }} {{ packing.number }}</h1>
   <div class="meta">
@@ -39,23 +42,23 @@
     {{ L.rental_dates }}: {{ fmt_date(project.start_date) }} – {{ fmt_date(project.end_date) }}
   </div>
 
-  <table>
+  <table class="items">
     <thead><tr>
-      <th>{{ L.name }}</th>
-      <th class="num">{{ L.plan }}/{{ L.fact }}</th>
-      <th>{{ L.serial }} / {{ L.barcode }}</th>
-      <th class="num">{{ L.packed }}</th><th class="num">{{ L.unpacked }}</th>
-      <th class="num">{{ L.packages }}</th>
-      <th class="num">{{ L.eq_weight }}</th><th class="num">{{ L.pack_weight }}</th><th class="num">{{ L.weight }}</th>
-      <th class="num">{{ L.volume }}</th>
-      <th>{{ L.comment }}</th>
+      <th width="11%">{{ L.name }}</th>
+      <th class="num" width="6%">{{ L.plan }}/{{ L.fact }}</th>
+      <th width="14%">{{ L.serial }} / {{ L.barcode }}</th>
+      <th class="num" width="5%">{{ L.packed }}</th><th class="num" width="5%">{{ L.unpacked }}</th>
+      <th width="6%">{{ L.packages }}</th>
+      <th class="num" width="8%">{{ L.eq_weight }}</th><th class="num" width="8%">{{ L.pack_weight }}</th><th class="num" width="7%">{{ L.weight }}</th>
+      <th class="num" width="8%">{{ L.vol_loose }}</th><th class="num" width="8%">{{ L.vol_pack }}</th><th class="num" width="7%">{{ L.volume }}</th>
+      <th width="7%">{{ L.comment }}</th>
     </tr></thead>
     <tbody>
       {% set ns = namespace(group=None) %}
       {% for line, c in rows %}
         {% set gname = (L.packing if line.is_custom else (line.category_name or "—") ~ (" / " ~ line.subcategory_name if line.subcategory_name else "")) %}
         {% if gname != ns.group %}{% set ns.group = gname %}
-        <tr class="cat"><td colspan="11">{{ gname }}</td></tr>{% endif %}
+        <tr class="cat"><td colspan="13">{{ gname }}</td></tr>{% endif %}
         <tr>
           <td>{{ line.name }}</td>
           <td class="num">{{ c.planned }} / {{ c.fact }}{% if c.missing %} <span style="color:#b00">−{{ c.missing }}</span>{% endif %}{% if c.over %} <span style="color:#a60">+{{ c.over }}</span>{% endif %}</td>
@@ -64,10 +67,12 @@
           </td>
           <td class="num">{{ c.packed }}</td>
           <td class="num">{{ c.unpacked }}</td>
-          <td class="num">{{ c.packages or "" }}</td>
+          <td style="padding-left:6px">{{ c.packages or "" }}</td>
           <td class="num">{{ fmt_weight(c.equipment_weight) }}</td>
           <td class="num">{{ fmt_weight(c.packaging_weight) }}</td>
           <td class="num">{{ fmt_weight(c.total_weight) }}</td>
+          <td class="num">{{ fmt_volume(c.equipment_volume) }}</td>
+          <td class="num">{{ fmt_volume(c.package_volume) }}</td>
           <td class="num">{{ fmt_volume(c.total_volume) }}</td>
           <td>{{ line.comment or "" }}</td>
         </tr>
@@ -83,5 +88,6 @@
     {{ L.total_weight }}: {{ fmt_weight(totals.total_weight) }} ·
     {{ L.total_volume }}: {{ fmt_volume(totals.total_volume) }}
   </div>
+  {% if company.pdf_footer %}<div class="footer">{{ company.pdf_footer }}</div>{% endif %}
 </body>
 </html>

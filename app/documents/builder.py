@@ -71,7 +71,9 @@ LABELS = {
         "eq_weight": "Вес обор.",
         "pack_weight": "Вес упак.",
         "weight": "Вес",
-        "volume": "Объём",
+        "vol_loose": "Об. б/у",
+        "vol_pack": "Об. упак.",
+        "volume": "Об. всего",
         "comment": "Комментарий",
         "shortage": "Причина недокомплекта",
         "total_weight": "Общий вес",
@@ -104,7 +106,9 @@ LABELS = {
         "eq_weight": "Eq. weight",
         "pack_weight": "Pack. weight",
         "weight": "Weight",
-        "volume": "Volume",
+        "vol_loose": "Vol. loose",
+        "vol_pack": "Vol. pack",
+        "volume": "Vol. total",
         "comment": "Comment",
         "shortage": "Shortage reason",
         "total_weight": "Total weight",
@@ -141,7 +145,9 @@ def _l10n_helpers(lang: str) -> dict:
 # --- Контекст и отпечаток данных (для устаревания, ТЗ §26.6) -------------
 
 
-def _estimate_render(db: Session, project: Project, lang: str) -> tuple[str, str]:
+def _estimate_render(
+    db: Session, project: Project, lang: str, fontface: bool = True
+) -> tuple[str, str]:
     company = get_company_settings(db)
     estimate = get_or_create_estimate(db, project)
     groups = grouped_lines(estimate)
@@ -183,12 +189,15 @@ def _estimate_render(db: Session, project: Project, lang: str) -> tuple[str, str
         totals=totals,
         generated_at=utcnow(),
         logo_uri=_logo_uri(company),
+        fontface=fontface,
         **_l10n_helpers(lang),
     )
     return html, _hash(fingerprint)
 
 
-def _packing_render(db: Session, project: Project, lang: str) -> tuple[str, str]:
+def _packing_render(
+    db: Session, project: Project, lang: str, fontface: bool = True
+) -> tuple[str, str]:
     company = get_company_settings(db)
     packing = get_packing(db, project)
     if packing is None:
@@ -243,6 +252,7 @@ def _packing_render(db: Session, project: Project, lang: str) -> tuple[str, str]
         totals=totals,
         generated_at=utcnow(),
         logo_uri=_logo_uri(company),
+        fontface=fontface,
         **_l10n_helpers(lang),
     )
     return html, _hash(fingerprint)
@@ -253,22 +263,78 @@ def _hash(text: str) -> str:
 
 
 def render_html(
-    db: Session, project: Project, doc_type: DocumentType, lang: str
+    db: Session, project: Project, doc_type: DocumentType, lang: str, *, fontface: bool = True
 ) -> tuple[str, str]:
     if doc_type == DocumentType.ESTIMATE:
-        return _estimate_render(db, project, lang)
-    return _packing_render(db, project, lang)
+        return _estimate_render(db, project, lang, fontface)
+    return _packing_render(db, project, lang, fontface)
+
+
+def _weasyprint_available() -> bool:
+    try:
+        import weasyprint  # noqa: F401
+
+        return True
+    except Exception:  # noqa: BLE001 — нет системных библиотек GTK/Pango
+        return False
+
+
+def resolve_engine() -> str:
+    """Выбрать движок PDF: weasyprint (Docker) или xhtml2pdf (локально на Windows)."""
+    pref = get_settings().pdf_engine.lower()
+    if pref in ("weasyprint", "xhtml2pdf"):
+        return pref
+    return "weasyprint" if _weasyprint_available() else "xhtml2pdf"
+
+
+_fonts_registered = False
+
+
+def _register_xhtml2pdf_fonts() -> None:
+    """Зарегистрировать кириллический DejaVu Sans для xhtml2pdf (один раз)."""
+    global _fonts_registered
+    if _fonts_registered:
+        return
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from xhtml2pdf import default as x2p_default
+
+    pdfmetrics.registerFont(TTFont("DejaVu", str(_FONTS_DIR / "DejaVuSans.ttf")))
+    pdfmetrics.registerFont(TTFont("DejaVu-Bold", str(_FONTS_DIR / "DejaVuSans-Bold.ttf")))
+    pdfmetrics.registerFontFamily(
+        "DejaVu", normal="DejaVu", bold="DejaVu-Bold", italic="DejaVu", boldItalic="DejaVu-Bold"
+    )
+    x2p_default.DEFAULT_FONT["dejavu"] = "DejaVu"
+    _fonts_registered = True
+
+
+def _render_weasyprint(html: str) -> bytes:
+    try:
+        from weasyprint import HTML
+    except Exception as exc:  # noqa: BLE001
+        raise PdfUnavailable(
+            "WeasyPrint недоступен (нужны системные библиотеки GTK/Pango)."
+        ) from exc
+    return HTML(string=html).write_pdf()
+
+
+def _render_xhtml2pdf(html: str) -> bytes:
+    import io
+
+    from xhtml2pdf import pisa
+
+    _register_xhtml2pdf_fonts()
+    buffer = io.BytesIO()
+    result = pisa.CreatePDF(html, dest=buffer, encoding="utf-8")
+    if result.err:
+        raise PdfUnavailable("Не удалось собрать PDF через xhtml2pdf")
+    return buffer.getvalue()
 
 
 def _html_to_pdf(html: str) -> bytes:
-    try:
-        from weasyprint import HTML
-    except Exception as exc:  # noqa: BLE001 — отсутствуют системные библиотеки
-        raise PdfUnavailable(
-            "WeasyPrint недоступен (нужны системные библиотеки GTK/Pango). "
-            "В production PDF собирается в Docker."
-        ) from exc
-    return HTML(string=html).write_pdf()
+    if resolve_engine() == "weasyprint":
+        return _render_weasyprint(html)
+    return _render_xhtml2pdf(html)
 
 
 # --- Генерация и статус (ТЗ §26.6) --------------------------------------
@@ -294,7 +360,10 @@ def get_document(
 
 def generate(db: Session, project: Project, doc_type: DocumentType, lang: str) -> GeneratedDocument:
     """Сгенерировать PDF и заменить предыдущую версию того же типа+языка (ТЗ §26.6)."""
-    html, fingerprint = render_html(db, project, doc_type, lang)
+    # @font-face нужен WeasyPrint; xhtml2pdf использует шрифт из своего реестра.
+    html, fingerprint = render_html(
+        db, project, doc_type, lang, fontface=resolve_engine() == "weasyprint"
+    )
     pdf = _html_to_pdf(html)
 
     filename = f"{doc_type.value}_{lang}.pdf"

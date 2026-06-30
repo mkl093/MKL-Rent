@@ -25,6 +25,16 @@
     <div class="card-header fw-semibold">{{ g.category_name }}</div>
     <div class="card-body py-2">
       {% if editable %}
+        <div class="row g-2 d-none d-md-flex small text-secondary fw-semibold pb-1 mb-1 border-bottom">
+          <div class="col-md-3">Позиция</div>
+          <div class="col-md-7 row g-1 m-0">
+            <div class="col-3 text-end">Кол-во</div>
+            <div class="col-3 text-end">Цена, €</div>
+            <div class="col-3 text-end">Коэф.</div>
+            <div class="col-3 text-end">Итог, €</div>
+          </div>
+          <div class="col-md-2"></div>
+        </div>
         {% for line in g.lines %}
         <div class="row g-2 align-items-center py-2 {% if not loop.last %}border-bottom{% endif %}">
           <div class="col-12 col-md-3">
@@ -35,9 +45,9 @@
           <form method="post" action="/projects/{{ project.id }}/estimate/lines/{{ line.id }}"
                 class="col-12 col-md-7 row g-1 align-items-center m-0">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <div class="col-3"><input class="form-control form-control-sm text-end" name="quantity" inputmode="numeric" value="{{ line.quantity }}" aria-label="Количество"></div>
-            <div class="col-3"><input class="form-control form-control-sm text-end" name="unit_price" inputmode="decimal" value="{{ '%.2f'|format(line.unit_price) }}" aria-label="Цена"></div>
-            <div class="col-3"><input class="form-control form-control-sm text-end" name="coefficient" inputmode="decimal" value="{{ line.coefficient }}" aria-label="Коэффициент"></div>
+            <div class="col-3"><label class="d-md-none form-label small mb-0">Кол-во</label><input class="form-control form-control-sm text-end" name="quantity" inputmode="numeric" value="{{ line.quantity }}" aria-label="Количество"></div>
+            <div class="col-3"><label class="d-md-none form-label small mb-0">Цена, €</label><input class="form-control form-control-sm text-end" name="unit_price" inputmode="decimal" value="{{ '%.2f'|format(line.unit_price) }}" aria-label="Цена"></div>
+            <div class="col-3"><label class="d-md-none form-label small mb-0">Коэф.</label><input class="form-control form-control-sm text-end" name="coefficient" inputmode="decimal" value="{{ line.coefficient }}" aria-label="Коэффициент"></div>
             <div class="col-3 text-end fw-semibold">{{ '%.2f'|format(line.line_total) }} €</div>
             <div class="col-9"><input class="form-control form-control-sm" name="comment" value="{{ line.comment or '' }}" placeholder="Комментарий"></div>
             <div class="col-3 d-grid"><button class="btn btn-sm btn-outline-primary" type="submit">Сохранить</button></div>
@@ -88,11 +98,16 @@
       <div class="card-body">
         <form method="post" action="/projects/{{ project.id }}/estimate/custom" class="row g-2">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <div class="col-12"><input class="form-control" name="name" placeholder="Наименование" required></div>
-          <div class="col-4"><input class="form-control" name="quantity" inputmode="numeric" value="1" placeholder="Кол-во"></div>
-          <div class="col-4"><input class="form-control" name="unit_price" inputmode="decimal" value="0" placeholder="Цена"></div>
-          <div class="col-4"><input class="form-control" name="coefficient" inputmode="decimal" value="1" placeholder="Коэф."></div>
-          <div class="col-12"><input class="form-control" name="comment" placeholder="Комментарий"></div>
+          <div class="col-12"><label class="form-label small mb-0">Наименование</label>
+            <input class="form-control" name="name" placeholder="например, Доставка" required></div>
+          <div class="col-4"><label class="form-label small mb-0">Кол-во</label>
+            <input class="form-control" name="quantity" inputmode="numeric" value="1"></div>
+          <div class="col-4"><label class="form-label small mb-0">Цена, €</label>
+            <input class="form-control" name="unit_price" inputmode="decimal" value="0"></div>
+          <div class="col-4"><label class="form-label small mb-0">Коэф.</label>
+            <input class="form-control" name="coefficient" inputmode="decimal" value="1"></div>
+          <div class="col-12"><label class="form-label small mb-0">Комментарий</label>
+            <input class="form-control" name="comment" placeholder="необязательно"></div>
           <div class="col-12 text-end"><button class="btn btn-outline-primary">Добавить строку</button></div>
         </form>
       </div>

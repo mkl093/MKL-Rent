@@ -131,12 +131,18 @@
     <div class="card mb-3"><div class="card-header">Дополнительная позиция (ТЗ §17.9)</div><div class="card-body">
       <form method="post" action="{{ base }}/custom" class="row g-2">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <div class="col-12"><input class="form-control" name="name" placeholder="Наименование" required></div>
-        <div class="col-4"><input class="form-control" name="quantity" inputmode="numeric" value="1" placeholder="Кол-во"></div>
-        <div class="col-4"><input class="form-control" name="unit_weight_kg" inputmode="decimal" value="0" placeholder="Вес ед., кг"></div>
-        <div class="col-4"><input class="form-control" name="length_mm" inputmode="numeric" value="0" placeholder="Д, мм"></div>
-        <div class="col-6"><input class="form-control" name="width_mm" inputmode="numeric" value="0" placeholder="Ш, мм"></div>
-        <div class="col-6"><input class="form-control" name="height_mm" inputmode="numeric" value="0" placeholder="В, мм"></div>
+        <div class="col-12"><label class="form-label small mb-0">Наименование</label>
+          <input class="form-control" name="name" placeholder="например, Стойка" required></div>
+        <div class="col-4"><label class="form-label small mb-0">Кол-во</label>
+          <input class="form-control" name="quantity" inputmode="numeric" value="1"></div>
+        <div class="col-4"><label class="form-label small mb-0">Вес ед., кг</label>
+          <input class="form-control" name="unit_weight_kg" inputmode="decimal" value="0"></div>
+        <div class="col-4"><label class="form-label small mb-0">Длина, мм</label>
+          <input class="form-control" name="length_mm" inputmode="numeric" value="0"></div>
+        <div class="col-6"><label class="form-label small mb-0">Ширина, мм</label>
+          <input class="form-control" name="width_mm" inputmode="numeric" value="0"></div>
+        <div class="col-6"><label class="form-label small mb-0">Высота, мм</label>
+          <input class="form-control" name="height_mm" inputmode="numeric" value="0"></div>
         <div class="col-12 text-end"><button class="btn btn-outline-primary">Добавить позицию</button></div>
       </form>
     </div></div>

@@ -17,6 +17,7 @@ dependencies = [
     "pwdlib[argon2]>=0.2",
     "pillow>=10.3",
     "weasyprint>=62",
+    "xhtml2pdf>=0.2.16",
 ]
 
 [project.optional-dependencies]

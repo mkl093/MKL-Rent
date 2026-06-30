@@ -122,3 +122,28 @@ def test_generate_and_staleness(db_session, project, tmp_path, monkeypatch):
         .count()
     )
     assert count == 1
+
+
+def test_generate_real_pdf_xhtml2pdf(db_session, project, tmp_path, monkeypatch):
+    """Сквозная генерация PDF локально через xhtml2pdf (без WeasyPrint/Docker)."""
+    monkeypatch.setattr(builder, "resolve_engine", lambda: "xhtml2pdf")
+    monkeypatch.setattr(builder, "_storage_dir", lambda pid: tmp_path)
+
+    builder.generate(db_session, project, DocumentType.ESTIMATE, "ru")
+    data = (tmp_path / "estimate_ru.pdf").read_bytes()
+    assert data[:5] == b"%PDF-"
+    assert len(data) > 5000  # кириллический шрифт встроен в документ
+
+
+def test_resolve_engine_override(monkeypatch):
+    from app.documents.builder import resolve_engine
+
+    monkeypatch.setattr("app.documents.builder.get_settings", lambda: _FakeSettings("xhtml2pdf"))
+    assert resolve_engine() == "xhtml2pdf"
+    monkeypatch.setattr("app.documents.builder.get_settings", lambda: _FakeSettings("weasyprint"))
+    assert resolve_engine() == "weasyprint"
+
+
+class _FakeSettings:
+    def __init__(self, engine):
+        self.pdf_engine = engine

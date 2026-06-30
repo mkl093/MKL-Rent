@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     app_secret_key: str = "change-me-in-production"
     app_base_url: str = "http://localhost:8000"
     app_timezone: str = "Europe/Berlin"
+    # Движок генерации PDF: auto | weasyprint | xhtml2pdf.
+    # auto — WeasyPrint при наличии (Docker), иначе xhtml2pdf (локально на Windows).
+    pdf_engine: str = "auto"
 
     # --- База данных (части собираются в database_url) ---
     database_name: str = "rental"
