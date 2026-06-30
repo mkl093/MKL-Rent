@@ -14,6 +14,8 @@ from app.auth import models as _auth_models  # noqa: F401
 from app.config import get_settings
 from app.dependencies import LoginRequired
 from app.inventory import models as _inventory_models  # noqa: F401
+from app.numbering import models as _numbering_models  # noqa: F401
+from app.projects import models as _projects_models  # noqa: F401
 from app.settings import models as _settings_models  # noqa: F401
 
 STATIC_DIR = Path(__file__).parent / "static"

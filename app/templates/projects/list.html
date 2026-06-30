@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 m-0">Проекты</h1>
+  <div class="d-flex gap-2">
+    <a href="/projects?archived={{ 0 if archived else 1 }}" class="btn btn-outline-secondary">
+      {{ "Активные" if archived else "Архив" }}
+    </a>
+    <a href="/projects/new" class="btn btn-primary">Создать проект</a>
+  </div>
+</div>
+
+{% if projects %}
+<div class="table-responsive d-none d-md-block">
+  <table class="table table-hover align-middle">
+    <thead><tr><th>Номер</th><th>Название</th><th>Заказчик</th><th>Даты</th><th>Статус</th></tr></thead>
+    <tbody>
+      {% for p in projects %}
+      <tr role="button" onclick="location.href='/projects/{{ p.id }}'">
+        <td><code>{{ p.number }}</code></td>
+        <td>{{ p.name }}</td>
+        <td>{{ p.customer or "—" }}</td>
+        <td>{{ p.start_date.strftime('%d.%m.%Y') if p.start_date else "—" }} – {{ p.end_date.strftime('%d.%m.%Y') if p.end_date else "—" }}</td>
+        <td><span class="badge text-bg-{{ p.status.badge }}">{{ p.status.label }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="d-md-none">
+  {% for p in projects %}
+  <a href="/projects/{{ p.id }}" class="card mb-2 text-decoration-none text-body"><div class="card-body">
+    <div class="d-flex justify-content-between"><code>{{ p.number }}</code>
+      <span class="badge text-bg-{{ p.status.badge }}">{{ p.status.label }}</span></div>
+    <div class="fw-semibold">{{ p.name }}</div>
+    <div class="small text-secondary">{{ p.start_date.strftime('%d.%m.%Y') if p.start_date else "—" }} – {{ p.end_date.strftime('%d.%m.%Y') if p.end_date else "—" }}</div>
+  </div></a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="text-secondary">{{ "Архив пуст." if archived else "Проектов пока нет." }}
+  {% if not archived %}<a href="/projects/new">Создайте первый</a>.{% endif %}</p>
+{% endif %}
+{% endblock %}

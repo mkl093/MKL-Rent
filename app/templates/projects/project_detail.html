@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block content %}
+{% set ns = namespace(has_deficit=false) %}
+{% for r in rows %}{% if r.availability.deficit > 0 %}{% set ns.has_deficit = true %}{% endif %}{% endfor %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h1 class="h3 m-0">{{ project.number }} <span class="badge text-bg-{{ project.status.badge }} align-middle">{{ project.status.label }}</span></h1>
+    <div class="text-secondary">{{ project.name }}</div>
+  </div>
+  <a href="/projects" class="btn btn-outline-secondary">К проектам</a>
+</div>
+
+<div class="card card-body mb-3">
+  <dl class="row mb-0">
+    <dt class="col-5 col-sm-3">Даты аренды</dt>
+    <dd class="col-7 col-sm-9">{{ project.start_date.strftime('%d.%m.%Y') if project.start_date else "—" }} – {{ project.end_date.strftime('%d.%m.%Y') if project.end_date else "—" }}</dd>
+    <dt class="col-5 col-sm-3">Коэффициент</dt><dd class="col-7 col-sm-9">{{ project.rental_coefficient }}</dd>
+    <dt class="col-5 col-sm-3">VAT</dt><dd class="col-7 col-sm-9">{{ project.vat }} %</dd>
+    {% if project.customer %}<dt class="col-5 col-sm-3">Заказчик</dt><dd class="col-7 col-sm-9">{{ project.customer }}</dd>{% endif %}
+    {% if project.address %}<dt class="col-5 col-sm-3">Адрес</dt><dd class="col-7 col-sm-9">{{ project.address }}</dd>{% endif %}
+    {% if project.comment %}<dt class="col-5 col-sm-3">Комментарий</dt><dd class="col-7 col-sm-9">{{ project.comment }}</dd>{% endif %}
+  </dl>
+</div>
+
+{# --- Управление статусом (ТЗ §13.4) --- #}
+<div class="card card-body mb-3">
+  <div class="d-flex flex-wrap gap-2">
+    {% if not project.is_archived %}
+      <a href="/projects/{{ project.id }}/edit" class="btn btn-outline-primary">Редактировать</a>
+    {% endif %}
+
+    {% if project.status == ProjectStatus.DRAFT %}
+      <form method="post" action="/projects/{{ project.id }}/book" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn btn-success">Забронировать</button>
+      </form>
+      {% if ns.has_deficit %}
+      <form method="post" action="/projects/{{ project.id }}/book" class="m-0"
+            onsubmit="return confirm('Забронировать при дефиците оборудования?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="allow_deficit" value="1">
+        <button class="btn btn-warning">Забронировать с дефицитом</button>
+      </form>
+      {% endif %}
+    {% elif project.status == ProjectStatus.BOOKED %}
+      <form method="post" action="/projects/{{ project.id }}/status" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="status" value="completed">
+        <button class="btn btn-primary">Завершить</button>
+      </form>
+      <form method="post" action="/projects/{{ project.id }}/status" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="status" value="draft">
+        <button class="btn btn-outline-secondary">Снять бронь</button>
+      </form>
+    {% endif %}
+
+    {% if project.status in (ProjectStatus.DRAFT, ProjectStatus.BOOKED) %}
+      <form method="post" action="/projects/{{ project.id }}/status" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="status" value="cancelled">
+        <button class="btn btn-outline-dark">Отменить</button>
+      </form>
+    {% endif %}
+
+    {% if project.is_archived %}
+      <form method="post" action="/projects/{{ project.id }}/status" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="status" value="draft">
+        <button class="btn btn-outline-primary">Вернуть в черновик</button>
+      </form>
+    {% endif %}
+
+    <form method="post" action="/projects/{{ project.id }}/copy" class="m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-outline-secondary">Копировать</button>
+    </form>
+
+    {% if project.status == ProjectStatus.DRAFT %}
+      <form method="post" action="/projects/{{ project.id }}/delete" class="m-0"
+            onsubmit="return confirm('Удалить проект?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn btn-outline-danger">Удалить</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+{# --- Оборудование и доступность (ТЗ §15) --- #}
+<div class="card">
+  <div class="card-header">Оборудование и доступность</div>
+  <div class="card-body">
+    {% if rows %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead><tr><th>Модель</th><th class="text-end">Всего</th><th class="text-end">Недоступно</th>
+          <th class="text-end">В других</th><th class="text-end">Доступно</th>
+          <th class="text-end">Требуется</th><th class="text-end">Дефицит</th></tr></thead>
+        <tbody>
+          {% for r in rows %}
+          <tr class="{{ 'table-danger' if r.availability.deficit > 0 }}">
+            <td><a href="/inventory/models/{{ r.model.id }}">{{ r.model.name }}</a></td>
+            <td class="text-end">{{ r.availability.total }}</td>
+            <td class="text-end">{{ r.availability.unavailable_by_status }}</td>
+            <td class="text-end">{{ r.availability.reserved_other }}</td>
+            <td class="text-end">{{ r.availability.available }}</td>
+            <td class="text-end">{{ r.quantity }}</td>
+            <td class="text-end">{{ r.availability.deficit or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-secondary m-0">Оборудование добавляется в смете проекта (Этап 4). Бронь формируется из сметы.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

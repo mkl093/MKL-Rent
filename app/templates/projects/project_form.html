@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+{% set editing = project is not none %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 m-0">{{ "Редактирование проекта" if editing else "Новый проект" }}</h1>
+  <a href="{{ '/projects/%s'|format(project.id) if editing else '/projects' }}" class="btn btn-outline-secondary">Отмена</a>
+</div>
+
+<form method="post" action="{{ '/projects/%s'|format(project.id) if editing else '/projects' }}" class="card card-body">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="row g-3">
+    <div class="col-12 col-md-6">
+      <label class="form-label" for="name">Название *</label>
+      <input class="form-control" id="name" name="name" required value="{{ project.name if editing else '' }}">
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label" for="start_date">Дата начала</label>
+      <input class="form-control" id="start_date" name="start_date" type="date"
+             value="{{ project.start_date.isoformat() if editing and project.start_date else '' }}">
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label" for="end_date">Дата окончания</label>
+      <input class="form-control" id="end_date" name="end_date" type="date"
+             value="{{ project.end_date.isoformat() if editing and project.end_date else '' }}">
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label" for="rental_coefficient">Коэффициент аренды</label>
+      <input class="form-control" id="rental_coefficient" name="rental_coefficient" inputmode="decimal"
+             value="{{ project.rental_coefficient if editing else '1' }}">
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label" for="vat">VAT, %</label>
+      <input class="form-control" id="vat" name="vat" inputmode="decimal"
+             value="{{ project.vat if editing else default_vat }}">
+    </div>
+    <div class="col-12 col-md-6">
+      <label class="form-label" for="customer">Заказчик</label>
+      <input class="form-control" id="customer" name="customer" value="{{ project.customer or '' if editing else '' }}">
+    </div>
+    <div class="col-12">
+      <label class="form-label" for="address">Адрес</label>
+      <textarea class="form-control" id="address" name="address" rows="2">{{ project.address or '' if editing else '' }}</textarea>
+    </div>
+    <div class="col-12">
+      <label class="form-label" for="comment">Комментарий</label>
+      <textarea class="form-control" id="comment" name="comment" rows="2">{{ project.comment or '' if editing else '' }}</textarea>
+    </div>
+  </div>
+  <div class="mt-3 text-end">
+    <button class="btn btn-primary" type="submit">{{ "Сохранить" if editing else "Создать" }}</button>
+  </div>
+  <div class="form-text mt-2">Даты можно заполнить позже, но они обязательны для бронирования.</div>
+</form>
+{% endblock %}
