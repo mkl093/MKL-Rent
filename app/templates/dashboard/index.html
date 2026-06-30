@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+  <h1 class="h3 m-0">Главная</h1>
+  <div class="d-flex gap-2">
+    <a href="/projects" class="btn btn-primary">Создать проект</a>
+    <a href="/inventory" class="btn btn-outline-secondary">Добавить модель оборудования</a>
+  </div>
+</div>
+
+<div class="row g-3">
+  {% set cards = [
+    ("Активные брони", "Забронированные проекты в работе"),
+    ("Просроченные брони", "Прошла дата окончания, но статус «Забронирован»"),
+    ("Дефицит", "Проекты с нехваткой оборудования"),
+    ("В ремонте", "Оборудование в ремонте"),
+  ] %}
+  {% for title, hint in cards %}
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body">
+        <h2 class="h6 text-secondary">{{ title }}</h2>
+        <p class="display-6 m-0">—</p>
+        <small class="text-secondary">{{ hint }}</small>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<p class="text-secondary mt-4 mb-0"><small>Виджеты наполняются на следующих этапах (ТЗ §5).</small></p>
+{% endblock %}

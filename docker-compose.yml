@@ -1,0 +1,70 @@
+# Docker Compose для MVP (ТЗ §35). Локально на Этапе 1 не проверяется.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rental}
+      POSTGRES_USER: ${POSTGRES_USER:-rental}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rental}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rental}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?set APP_SECRET_KEY}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Berlin}
+      DATABASE_NAME: ${POSTGRES_DB:-rental}
+      DATABASE_USER: ${POSTGRES_USER:-rental}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-rental}
+      DATABASE_HOST: db
+      DATABASE_PORT: 5432
+      STORAGE_PATH: /data/storage
+    volumes:
+      - storage:/data/storage
+    expose:
+      - "8000"
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/app.conf:/etc/nginx/conf.d/default.conf:ro
+
+  # Заготовка автоматического backup (полноценно — на Этапе 8, ТЗ §36).
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-rental}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-rental}
+      PGDATABASE: ${POSTGRES_DB:-rental}
+      BACKUP_TIME: ${BACKUP_TIME:-03:00}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ${BACKUP_PATH:-./backups}:/backups
+    entrypoint: ["sh", "-c", "echo 'backup service placeholder — реализация на Этапе 8'; sleep infinity"]
+
+volumes:
+  pgdata:
+  storage:

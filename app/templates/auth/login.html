@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-sm-10 col-md-6 col-lg-4">
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <h1 class="h4 mb-4 text-center">{{ company.company_name if company and company.company_name else "rental-inventory" }}</h1>
+        <form method="post" action="/login" novalidate>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="mb-3">
+            <label for="username" class="form-label">Логин</label>
+            <input type="text" class="form-control form-control-lg" id="username" name="username"
+                   value="{{ username or '' }}" autocomplete="username" autofocus required>
+          </div>
+          <div class="mb-4">
+            <label for="password" class="form-label">Пароль</label>
+            <input type="password" class="form-control form-control-lg" id="password" name="password"
+                   autocomplete="current-password" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-lg w-100">Войти</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,58 @@
+"""Конфигурация приложения из переменных окружения (ТЗ §37)."""
+
+from __future__ import annotations
+
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Настройки приложения. Значения читаются из окружения и файла .env."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # --- Приложение ---
+    app_env: str = "development"
+    app_secret_key: str = "change-me-in-production"
+    app_base_url: str = "http://localhost:8000"
+    app_timezone: str = "Europe/Berlin"
+
+    # --- База данных (части собираются в database_url) ---
+    database_name: str = "rental"
+    database_user: str = "rental"
+    database_password: str = "rental"
+    database_host: str = "localhost"
+    database_port: int = 5432
+    # Необязательный полный override (sqlite/postgres). Если задан — используется как есть.
+    database_url: str | None = None
+
+    # --- Хранение файлов и backup ---
+    storage_path: str = "./storage"
+    backup_path: str = "./backups"
+    backup_time: str = "03:00"
+    backup_retention_days: int = 14
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.lower() in {"production", "prod"}
+
+    @property
+    def sqlalchemy_url(self) -> str:
+        """Итоговый URL подключения к БД для SQLAlchemy."""
+        if self.database_url:
+            return self.database_url
+        return (
+            f"postgresql+psycopg://{self.database_user}:{self.database_password}"
+            f"@{self.database_host}:{self.database_port}/{self.database_name}"
+        )
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Кешированный синглтон настроек."""
+    return Settings()

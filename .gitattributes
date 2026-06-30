@@ -1,0 +1,9 @@
+# Нормализуем переводы строк к LF в репозитории.
+* text=auto eol=lf
+
+# Бинарные/минифицированные вендор-ассеты не трогаем.
+*.min.css binary
+*.min.js binary
+*.png binary
+*.jpg binary
+*.webp binary

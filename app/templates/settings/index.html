@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-4">Настройки компании</h1>
+
+<form method="post" action="/settings" class="card shadow-sm">
+  <div class="card-body">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="row g-3">
+      <div class="col-12 col-md-6">
+        <label class="form-label" for="company_name">Название компании</label>
+        <input class="form-control" id="company_name" name="company_name" value="{{ company.company_name or '' }}">
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label" for="website">Сайт</label>
+        <input class="form-control" id="website" name="website" value="{{ company.website or '' }}">
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label" for="phone">Телефон</label>
+        <input class="form-control" id="phone" name="phone" value="{{ company.phone or '' }}">
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label" for="email">Email</label>
+        <input class="form-control" id="email" name="email" type="email" value="{{ company.email or '' }}">
+      </div>
+      <div class="col-12">
+        <label class="form-label" for="address">Адрес</label>
+        <textarea class="form-control" id="address" name="address" rows="2">{{ company.address or '' }}</textarea>
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label" for="vat_id">VAT ID / налоговый номер</label>
+        <input class="form-control" id="vat_id" name="vat_id" value="{{ company.vat_id or '' }}">
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label" for="default_vat">VAT по умолчанию, %</label>
+        <input class="form-control" id="default_vat" name="default_vat" inputmode="decimal"
+               value="{{ company.default_vat }}">
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label" for="timezone">Часовой пояс</label>
+        <input class="form-control" id="timezone" name="timezone" value="{{ company.timezone }}">
+      </div>
+      <div class="col-12">
+        <label class="form-label" for="bank_details">Банковские реквизиты</label>
+        <textarea class="form-control" id="bank_details" name="bank_details" rows="3">{{ company.bank_details or '' }}</textarea>
+      </div>
+      <div class="col-12">
+        <label class="form-label" for="pdf_footer">Текст внизу PDF</label>
+        <textarea class="form-control" id="pdf_footer" name="pdf_footer" rows="2">{{ company.pdf_footer or '' }}</textarea>
+      </div>
+    </div>
+  </div>
+  <div class="card-footer text-end">
+    <button type="submit" class="btn btn-primary">Сохранить</button>
+  </div>
+</form>
+{% endblock %}

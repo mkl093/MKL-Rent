@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ page_title or "rental-inventory" }}{% endblock %}{% if company and company.company_name %} · {{ company.company_name }}{% endif %}</title>
+  <link rel="stylesheet" href="/static/vendor/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="bg-body-tertiary">
+{% if current_user %}
+  <nav class="navbar navbar-expand-md bg-dark border-bottom" data-bs-theme="dark">
+    <div class="container-fluid">
+      <a class="navbar-brand fw-semibold" href="/">{{ company.company_name if company and company.company_name else "rental-inventory" }}</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainnav"
+              aria-controls="mainnav" aria-expanded="false" aria-label="Меню">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="mainnav">
+        <ul class="navbar-nav me-auto mb-2 mb-md-0">
+          {% set path = request.url.path %}
+          <li class="nav-item"><a class="nav-link {% if path == '/' %}active{% endif %}" href="/">Главная</a></li>
+          <li class="nav-item"><a class="nav-link {% if path.startswith('/projects') %}active{% endif %}" href="/projects">Проекты</a></li>
+          <li class="nav-item"><a class="nav-link {% if path.startswith('/inventory') %}active{% endif %}" href="/inventory">Склад</a></li>
+          <li class="nav-item"><a class="nav-link {% if path.startswith('/settings') %}active{% endif %}" href="/settings">Настройки</a></li>
+        </ul>
+        <div class="d-flex align-items-center gap-2">
+          <span class="navbar-text">{{ current_user.username }}</span>
+          <form method="post" action="/logout" class="m-0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn btn-outline-light btn-sm" type="submit">Выход</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </nav>
+{% endif %}
+
+<main class="container py-4">
+  {% if flashes %}
+    {% for f in flashes %}
+      <div class="alert alert-{{ f.category }} alert-dismissible fade show" role="alert">
+        {{ f.message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрыть"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+  {% block content %}{% endblock %}
+</main>
+
+<script src="/static/vendor/bootstrap.bundle.min.js"></script>
+<script src="/static/vendor/htmx.min.js"></script>
+</body>
+</html>

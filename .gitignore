@@ -1,5 +1,22 @@
+# Окружение
 .venv/
 .idea/
+.claude/
+
+# Python
 __pycache__/
 *.pyc
-.claude/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Секреты и данные (ТЗ §37, §41.2)
+.env
+/storage/
+/backups/
+*.db

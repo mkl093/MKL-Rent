@@ -1,0 +1,5 @@
+Миграции Alembic. URL подключения и метаданные берутся из приложения (migrations/env.py).
+
+Создать ревизию:  alembic revision --autogenerate -m "описание"
+Применить:        alembic upgrade head
+Откатить на шаг:  alembic downgrade -1

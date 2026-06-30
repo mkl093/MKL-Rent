@@ -1,0 +1,13 @@
+/* Минимальные кастомные стили поверх Bootstrap 5. */
+
+body {
+  min-height: 100vh;
+}
+
+/* Mobile-first: крупные тач-цели (ТЗ §24). */
+@media (max-width: 575.98px) {
+  .btn {
+    padding-top: 0.6rem;
+    padding-bottom: 0.6rem;
+  }
+}
