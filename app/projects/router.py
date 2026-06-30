@@ -295,6 +295,10 @@ def project_copy(
     if project is None:
         return redirect("/projects")
     copy = service.copy_project(db, project)
+    # Копируется и смета (ТЗ §13.8).
+    from app.estimates.service import copy_estimate
+
+    copy_estimate(db, project, copy)
     flash(request, f"Создана копия {copy.number} (черновик, без дат).", "success")
     return redirect(f"/projects/{copy.id}")
 

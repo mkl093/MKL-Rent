@@ -13,6 +13,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.auth import models as _auth_models  # noqa: F401
 from app.config import get_settings
 from app.dependencies import LoginRequired
+from app.estimates import models as _estimates_models  # noqa: F401
 from app.inventory import models as _inventory_models  # noqa: F401
 from app.numbering import models as _numbering_models  # noqa: F401
 from app.projects import models as _projects_models  # noqa: F401
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
     # Маршруты модулей.
     from app.auth.router import router as auth_router
     from app.dashboard.router import router as dashboard_router
+    from app.estimates.router import router as estimates_router
     from app.inventory.router import router as inventory_router
     from app.projects.router import router as projects_router
     from app.settings.router import router as settings_router
@@ -60,6 +62,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(dashboard_router)
     app.include_router(projects_router)
+    app.include_router(estimates_router)
     app.include_router(inventory_router)
     app.include_router(settings_router)
 

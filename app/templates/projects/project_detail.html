@@ -26,6 +26,7 @@
 {# --- Управление статусом (ТЗ §13.4) --- #}
 <div class="card card-body mb-3">
   <div class="d-flex flex-wrap gap-2">
+    <a href="/projects/{{ project.id }}/estimate" class="btn btn-primary">Смета</a>
     {% if not project.is_archived %}
       <a href="/projects/{{ project.id }}/edit" class="btn btn-outline-primary">Редактировать</a>
     {% endif %}

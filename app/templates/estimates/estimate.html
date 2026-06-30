@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block content %}
+{% set editable = not project.is_archived %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h1 class="h3 m-0">Смета {{ estimate.number }}</h1>
+    <div class="text-secondary">
+      <a href="/projects/{{ project.id }}">{{ project.number }} · {{ project.name }}</a>
+      <span class="badge text-bg-{{ project.status.badge }}">{{ project.status.label }}</span>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/projects/{{ project.id }}" class="btn btn-outline-secondary">К проекту</a>
+    {% if editable %}<a href="/projects/{{ project.id }}/estimate/add" class="btn btn-primary">Добавить оборудование</a>{% endif %}
+  </div>
+</div>
+
+{% if not editable %}
+<div class="alert alert-info">Проект в архиве — смета доступна только для просмотра.</div>
+{% endif %}
+
+{% if groups %}
+  {% for g in groups %}
+  <div class="card mb-3">
+    <div class="card-header fw-semibold">{{ g.category_name }}</div>
+    <div class="card-body py-2">
+      {% if editable %}
+        {% for line in g.lines %}
+        <div class="row g-2 align-items-center py-2 {% if not loop.last %}border-bottom{% endif %}">
+          <div class="col-12 col-md-3">
+            {% if line.is_custom %}{{ line.name }} <span class="badge text-bg-light">произвольная</span>
+            {% else %}<a href="/inventory/models/{{ line.model_id }}">{{ line.name }}</a>{% endif %}
+            {% if line.manufacturer %}<div class="small text-secondary">{{ line.manufacturer }}</div>{% endif %}
+          </div>
+          <form method="post" action="/projects/{{ project.id }}/estimate/lines/{{ line.id }}"
+                class="col-12 col-md-7 row g-1 align-items-center m-0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="col-3"><input class="form-control form-control-sm text-end" name="quantity" inputmode="numeric" value="{{ line.quantity }}" aria-label="Количество"></div>
+            <div class="col-3"><input class="form-control form-control-sm text-end" name="unit_price" inputmode="decimal" value="{{ '%.2f'|format(line.unit_price) }}" aria-label="Цена"></div>
+            <div class="col-3"><input class="form-control form-control-sm text-end" name="coefficient" inputmode="decimal" value="{{ line.coefficient }}" aria-label="Коэффициент"></div>
+            <div class="col-3 text-end fw-semibold">{{ '%.2f'|format(line.line_total) }} €</div>
+            <div class="col-9"><input class="form-control form-control-sm" name="comment" value="{{ line.comment or '' }}" placeholder="Комментарий"></div>
+            <div class="col-3 d-grid"><button class="btn btn-sm btn-outline-primary" type="submit">Сохранить</button></div>
+          </form>
+          <div class="col-12 col-md-2 d-flex gap-1 justify-content-md-end">
+            <form method="post" action="/projects/{{ project.id }}/estimate/lines/{{ line.id }}/move" class="m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="direction" value="-1">
+              <button class="btn btn-sm btn-outline-secondary" title="Выше">↑</button></form>
+            <form method="post" action="/projects/{{ project.id }}/estimate/lines/{{ line.id }}/move" class="m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="direction" value="1">
+              <button class="btn btn-sm btn-outline-secondary" title="Ниже">↓</button></form>
+            <form method="post" action="/projects/{{ project.id }}/estimate/lines/{{ line.id }}/delete" class="m-0"
+                  onsubmit="return confirm('Удалить строку?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-sm btn-outline-danger" title="Удалить">✕</button></form>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="table-responsive"><table class="table table-sm align-middle m-0">
+          <thead><tr><th>Позиция</th><th class="text-end">Кол-во</th><th class="text-end">Цена, €</th>
+            <th class="text-end">Коэф.</th><th class="text-end">Итог, €</th><th>Комментарий</th></tr></thead>
+          <tbody>
+            {% for line in g.lines %}
+            <tr>
+              <td>{{ line.name }}</td>
+              <td class="text-end">{{ line.quantity }}</td>
+              <td class="text-end">{{ '%.2f'|format(line.unit_price) }}</td>
+              <td class="text-end">{{ line.coefficient }}</td>
+              <td class="text-end fw-semibold">{{ '%.2f'|format(line.line_total) }}</td>
+              <td>{{ line.comment or '' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table></div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  <p class="text-secondary">Смета пуста. {% if editable %}<a href="/projects/{{ project.id }}/estimate/add">Добавьте оборудование</a>.{% endif %}</p>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-12 col-lg-6">
+    {% if editable %}
+    <div class="card mb-3"><div class="card-header">Произвольная строка (ТЗ §16.5)</div>
+      <div class="card-body">
+        <form method="post" action="/projects/{{ project.id }}/estimate/custom" class="row g-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="col-12"><input class="form-control" name="name" placeholder="Наименование" required></div>
+          <div class="col-4"><input class="form-control" name="quantity" inputmode="numeric" value="1" placeholder="Кол-во"></div>
+          <div class="col-4"><input class="form-control" name="unit_price" inputmode="decimal" value="0" placeholder="Цена"></div>
+          <div class="col-4"><input class="form-control" name="coefficient" inputmode="decimal" value="1" placeholder="Коэф."></div>
+          <div class="col-12"><input class="form-control" name="comment" placeholder="Комментарий"></div>
+          <div class="col-12 text-end"><button class="btn btn-outline-primary">Добавить строку</button></div>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="col-12 col-lg-6">
+    <div class="card">
+      <div class="card-header">Итоги</div>
+      <div class="card-body">
+        {% if editable %}
+        <form method="post" action="/projects/{{ project.id }}/estimate/discount" class="row g-2 mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="col-auto"><label class="col-form-label">Скидка, %</label></div>
+          <div class="col-auto"><input class="form-control" name="discount_percent" inputmode="decimal"
+                 value="{{ estimate.discount_percent }}" style="width:7rem"></div>
+          <div class="col-auto"><button class="btn btn-outline-secondary">Применить</button></div>
+        </form>
+        {% endif %}
+        <table class="table table-sm m-0">
+          <tr><td>Подытог</td><td class="text-end">{{ '%.2f'|format(totals.subtotal) }} €</td></tr>
+          {% if totals.has_discount %}
+          <tr><td>Скидка ({{ totals.discount_percent }}%)</td><td class="text-end">−{{ '%.2f'|format(totals.discount_amount) }} €</td></tr>
+          <tr><td>После скидки</td><td class="text-end">{{ '%.2f'|format(totals.after_discount) }} €</td></tr>
+          {% endif %}
+          <tr><td>VAT ({{ totals.vat_percent }}%)</td><td class="text-end">{{ '%.2f'|format(totals.vat_amount) }} €</td></tr>
+          <tr class="fw-bold border-top"><td>Итого</td><td class="text-end">{{ '%.2f'|format(totals.total) }} €</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
