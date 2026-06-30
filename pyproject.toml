@@ -16,6 +16,7 @@ dependencies = [
     "itsdangerous>=2.2",
     "pwdlib[argon2]>=0.2",
     "pillow>=10.3",
+    "weasyprint>=62",
 ]
 
 [project.optional-dependencies]

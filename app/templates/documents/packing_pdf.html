@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "DejaVu"; src: url("{{ font_regular }}"); font-weight: normal; }
+  @font-face { font-family: "DejaVu"; src: url("{{ font_bold }}"); font-weight: bold; }
+  @page { size: A4 landscape; margin: 1cm;
+    @bottom-center { content: "{{ company.pdf_footer or '' }}"; font-size: 8pt; color: #666; } }
+  body { font-family: "DejaVu", sans-serif; font-size: 8.5pt; color: #111; }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #333; padding-bottom: 6px; }
+  .company .name { font-size: 12pt; font-weight: bold; }
+  .logo { max-height: 50px; }
+  h1 { font-size: 14pt; margin: 10px 0 2px; }
+  .meta { font-size: 8.5pt; color: #444; margin-bottom: 8px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 3px 4px; border-bottom: 1px solid #ddd; text-align: left; vertical-align: top; }
+  th { background: #f2f2f2; font-size: 8pt; }
+  td.num, th.num { text-align: right; }
+  .cat { background: #e9ecef; font-weight: bold; }
+  .totals { margin-top: 8px; font-size: 10pt; font-weight: bold; text-align: right; }
+  .shortage { margin-top: 8px; color: #b00; font-size: 9pt; }
+  .bc { font-family: monospace; font-size: 8pt; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <div class="company">
+      <div class="name">{{ company.company_name or "—" }}</div>
+      {% if company.address %}<div style="font-size:8pt">{{ company.address }}</div>{% endif %}
+    </div>
+    {% if logo_uri %}<img class="logo" src="{{ logo_uri }}" alt="">{% endif %}
+  </div>
+
+  <h1>{{ L.packing }} {{ packing.number }}</h1>
+  <div class="meta">
+    {{ L.date }}: {{ fmt_date(generated_at.date()) }} ·
+    {{ L.project }}: {{ project.name }} ({{ project.number }}) ·
+    {{ L.rental_dates }}: {{ fmt_date(project.start_date) }} – {{ fmt_date(project.end_date) }}
+  </div>
+
+  <table>
+    <thead><tr>
+      <th>{{ L.name }}</th>
+      <th class="num">{{ L.plan }}/{{ L.fact }}</th>
+      <th>{{ L.serial }} / {{ L.barcode }}</th>
+      <th class="num">{{ L.packed }}</th><th class="num">{{ L.unpacked }}</th>
+      <th class="num">{{ L.packages }}</th>
+      <th class="num">{{ L.eq_weight }}</th><th class="num">{{ L.pack_weight }}</th><th class="num">{{ L.weight }}</th>
+      <th class="num">{{ L.volume }}</th>
+      <th>{{ L.comment }}</th>
+    </tr></thead>
+    <tbody>
+      {% set ns = namespace(group=None) %}
+      {% for line, c in rows %}
+        {% set gname = (L.packing if line.is_custom else (line.category_name or "—") ~ (" / " ~ line.subcategory_name if line.subcategory_name else "")) %}
+        {% if gname != ns.group %}{% set ns.group = gname %}
+        <tr class="cat"><td colspan="11">{{ gname }}</td></tr>{% endif %}
+        <tr>
+          <td>{{ line.name }}</td>
+          <td class="num">{{ c.planned }} / {{ c.fact }}{% if c.missing %} <span style="color:#b00">−{{ c.missing }}</span>{% endif %}{% if c.over %} <span style="color:#a60">+{{ c.over }}</span>{% endif %}</td>
+          <td>
+            {% for si in line.serial_items %}<span class="bc">{{ si.barcode }}{% if si.serial_number %} ({{ si.serial_number }}){% endif %}</span>{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}
+          </td>
+          <td class="num">{{ c.packed }}</td>
+          <td class="num">{{ c.unpacked }}</td>
+          <td class="num">{{ c.packages or "" }}</td>
+          <td class="num">{{ fmt_weight(c.equipment_weight) }}</td>
+          <td class="num">{{ fmt_weight(c.packaging_weight) }}</td>
+          <td class="num">{{ fmt_weight(c.total_weight) }}</td>
+          <td class="num">{{ fmt_volume(c.total_volume) }}</td>
+          <td>{{ line.comment or "" }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if packing.shortage_comment %}
+  <div class="shortage">{{ L.shortage }}: {{ packing.shortage_comment }}</div>
+  {% endif %}
+
+  <div class="totals">
+    {{ L.total_weight }}: {{ fmt_weight(totals.total_weight) }} ·
+    {{ L.total_volume }}: {{ fmt_volume(totals.total_volume) }}
+  </div>
+</body>
+</html>

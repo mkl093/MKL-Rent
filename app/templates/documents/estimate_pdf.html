@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "DejaVu"; src: url("{{ font_regular }}"); font-weight: normal; }
+  @font-face { font-family: "DejaVu"; src: url("{{ font_bold }}"); font-weight: bold; }
+  @page { size: A4 portrait; margin: 1.5cm;
+    @bottom-center { content: "{{ company.pdf_footer or '' }}"; font-size: 8pt; color: #666; } }
+  body { font-family: "DejaVu", sans-serif; font-size: 10pt; color: #111; }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #333; padding-bottom: 8px; }
+  .company { font-size: 9pt; line-height: 1.4; }
+  .company .name { font-size: 13pt; font-weight: bold; }
+  .logo { max-height: 60px; }
+  h1 { font-size: 16pt; margin: 14px 0 2px; }
+  .meta { font-size: 9pt; color: #444; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  th, td { padding: 4px 6px; border-bottom: 1px solid #ddd; text-align: left; }
+  th { background: #f2f2f2; font-size: 9pt; }
+  td.num, th.num { text-align: right; }
+  .cat { background: #e9ecef; font-weight: bold; }
+  .totals { width: 45%; margin-left: auto; margin-top: 10px; }
+  .totals td { border: none; padding: 2px 6px; }
+  .grand { font-weight: bold; font-size: 12pt; border-top: 2px solid #333; }
+  .comment { margin-top: 14px; font-size: 9pt; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <div class="company">
+      <div class="name">{{ company.company_name or "—" }}</div>
+      {% if company.address %}<div>{{ company.address }}</div>{% endif %}
+      {% if company.phone %}<div>{{ company.phone }}</div>{% endif %}
+      {% if company.email %}<div>{{ company.email }}</div>{% endif %}
+      {% if company.website %}<div>{{ company.website }}</div>{% endif %}
+      {% if company.vat_id %}<div>VAT ID: {{ company.vat_id }}</div>{% endif %}
+    </div>
+    {% if logo_uri %}<img class="logo" src="{{ logo_uri }}" alt="">{% endif %}
+  </div>
+
+  <h1>{{ L.estimate }} {{ estimate.number }}</h1>
+  <div class="meta">
+    {{ L.date }}: {{ fmt_date(generated_at.date()) }} ·
+    {{ L.project }}: {{ project.name }} ({{ project.number }}) ·
+    {{ L.rental_dates }}: {{ fmt_date(project.start_date) }} – {{ fmt_date(project.end_date) }}
+    {% if project.customer %}<br>{{ L.customer }}: {{ project.customer }}{% endif %}
+  </div>
+
+  <table>
+    <thead><tr>
+      <th>{{ L.name }}</th><th class="num">{{ L.qty }}</th><th class="num">{{ L.price }}</th>
+      <th class="num">{{ L.coef }}</th><th class="num">{{ L.total }}</th>
+    </tr></thead>
+    <tbody>
+      {% for g in groups %}
+      <tr class="cat"><td colspan="5">{{ g.category_name }}</td></tr>
+      {% for line in g.lines %}
+      <tr>
+        <td>{{ line.name }}{% if line.comment %}<br><span style="color:#666;font-size:8pt">{{ line.comment }}</span>{% endif %}</td>
+        <td class="num">{{ line.quantity }}</td>
+        <td class="num">{{ fmt_money(line.unit_price) }}</td>
+        <td class="num">{{ line.coefficient }}</td>
+        <td class="num">{{ fmt_money(line.line_total) }}</td>
+      </tr>
+      {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="totals">
+    <tr><td>{{ L.total }}</td><td class="num">{{ fmt_money(totals.subtotal) }}</td></tr>
+    {% if totals.has_discount %}
+    <tr><td>{{ L.discount }} ({{ fmt_percent(totals.discount_percent) }})</td>
+        <td class="num">−{{ fmt_money(totals.discount_amount) }}</td></tr>
+    {% endif %}
+    <tr><td>{{ L.vat }} ({{ fmt_percent(totals.vat_percent) }})</td>
+        <td class="num">{{ fmt_money(totals.vat_amount) }}</td></tr>
+    <tr class="grand"><td>{{ L.grand_total }}</td><td class="num">{{ fmt_money(totals.total) }}</td></tr>
+  </table>
+
+  {% if project.comment %}<div class="comment"><b>{{ L.comment }}:</b> {{ project.comment }}</div>{% endif %}
+</body>
+</html>

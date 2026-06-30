@@ -11,6 +11,7 @@ from sqlalchemy import engine_from_config, pool
 from app.auth import models as _auth_models  # noqa: F401
 from app.config import get_settings
 from app.database import Base
+from app.documents import models as _documents_models  # noqa: F401
 from app.estimates import models as _estimates_models  # noqa: F401
 from app.inventory import models as _inventory_models  # noqa: F401
 from app.numbering import models as _numbering_models  # noqa: F401

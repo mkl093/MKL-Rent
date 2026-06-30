@@ -28,6 +28,7 @@
   <div class="d-flex flex-wrap gap-2">
     <a href="/projects/{{ project.id }}/estimate" class="btn btn-primary">Смета</a>
     <a href="/projects/{{ project.id }}/packing" class="btn btn-outline-primary">Packing-лист</a>
+    <a href="/projects/{{ project.id }}/documents" class="btn btn-outline-primary">Документы</a>
     {% if not project.is_archived %}
       <a href="/projects/{{ project.id }}/edit" class="btn btn-outline-primary">Редактировать</a>
     {% endif %}

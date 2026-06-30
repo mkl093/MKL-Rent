@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 m-0">Документы · {{ project.number }}</h1>
+  <a href="/projects/{{ project.id }}" class="btn btn-outline-secondary">К проекту</a>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table align-middle m-0">
+      <thead><tr><th>Тип</th><th>Язык</th><th>Состояние</th><th class="text-end">Действия</th></tr></thead>
+      <tbody>
+        {% for s in statuses %}
+        <tr>
+          <td>{{ s.doc_type.label }}</td>
+          <td>{{ s.language.label }}</td>
+          <td>
+            {% if not s.available %}<span class="text-secondary">недоступно (нет packing-листа)</span>
+            {% elif not s.generated %}<span class="badge text-bg-secondary">не сформирован</span>
+            {% elif s.stale %}<span class="badge text-bg-warning">устарел</span>
+              <span class="small text-secondary">{{ format_datetime(s.document.generated_at) }}</span>
+            {% else %}<span class="badge text-bg-success">актуален</span>
+              <span class="small text-secondary">{{ format_datetime(s.document.generated_at) }}</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <div class="d-inline-flex gap-1">
+              {% if s.generated %}
+              <a class="btn btn-sm btn-outline-secondary" target="_blank"
+                 href="/projects/{{ project.id }}/documents/{{ s.doc_type.value }}/{{ s.language.value }}/view">Открыть</a>
+              <a class="btn btn-sm btn-outline-secondary"
+                 href="/projects/{{ project.id }}/documents/{{ s.doc_type.value }}/{{ s.language.value }}/download">Скачать</a>
+              {% endif %}
+              {% if s.available %}
+              <form method="post" action="/projects/{{ project.id }}/documents/generate" class="m-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="doc_type" value="{{ s.doc_type.value }}">
+                <input type="hidden" name="language" value="{{ s.language.value }}">
+                <button class="btn btn-sm btn-primary">{{ "Перегенерировать" if s.generated else "Сформировать" }}</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="text-secondary small mt-2">PDF хранит только последнюю версию каждого типа и языка. После изменения данных он помечается «устарел» — сформируйте заново (ТЗ §26.6).</p>
+{% endblock %}

@@ -6,9 +6,15 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Системные зависимости (на будущее — WeasyPrint и т. п. подключим на Этапе 7).
+# Системные зависимости: curl (healthcheck) + библиотеки WeasyPrint (ТЗ §26).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
+        libpango-1.0-0 \
+        libpangocairo-1.0-0 \
+        libgdk-pixbuf-2.0-0 \
+        libffi-dev \
+        shared-mime-info \
+        fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml ./
