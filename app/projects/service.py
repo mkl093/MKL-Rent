@@ -133,8 +133,10 @@ def copy_project(db: Session, project: Project) -> Project:
 
 
 def has_packing_list(db: Session, project: Project) -> bool:
-    """Создан ли packing-лист (появится на Этапе 5, ТЗ §13.7)."""
-    return False
+    """Создан ли packing-лист (ТЗ §13.7)."""
+    from app.packing.service import project_has_packing
+
+    return project_has_packing(db, project.id)
 
 
 def delete_project(db: Session, project: Project) -> None:

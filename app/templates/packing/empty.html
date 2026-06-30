@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 m-0">Packing-лист</h1>
+  <a href="/projects/{{ project.id }}" class="btn btn-outline-secondary">К проекту</a>
+</div>
+<div class="card card-body">
+  <p class="text-secondary">Packing-лист ещё не создан. Он формируется из текущей сметы:
+    складские позиции копируются, одинаковые модели объединяются (ТЗ §17.1).</p>
+  {% if editable %}
+  <form method="post" action="/projects/{{ project.id }}/packing/create" class="m-0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn btn-primary">Создать packing-лист</button>
+  </form>
+  {% else %}
+  <p class="text-secondary m-0">Проект в архиве — создание недоступно.</p>
+  {% endif %}
+</div>
+{% endblock %}

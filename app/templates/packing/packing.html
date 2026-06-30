@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block content %}
+{% set base = "/projects/%s/packing"|format(project.id) %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h1 class="h3 m-0">Packing {{ packing.number }}
+      <span class="badge text-bg-{{ packing.status.badge }} align-middle">{{ packing.status.label }}</span></h1>
+    <div class="text-secondary"><a href="/projects/{{ project.id }}">{{ project.number }} · {{ project.name }}</a></div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/projects/{{ project.id }}/estimate" class="btn btn-outline-secondary">Смета</a>
+    <a href="/projects/{{ project.id }}" class="btn btn-outline-secondary">К проекту</a>
+  </div>
+</div>
+
+{% if discrepancies %}
+<div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-2">
+  <div>Смета изменилась — план расходится ({{ discrepancies|length }} поз.).
+    {% for d in discrepancies %}<div class="small">{{ d.name }}: смета {{ d.estimate_quantity }} / план {{ d.planned_quantity }}</div>{% endfor %}
+  </div>
+  {% if editable %}
+  <form method="post" action="{{ base }}/sync" class="m-0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn btn-warning">Синхронизировать план</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if not editable %}<div class="alert alert-info">Проект в архиве — packing-лист только для просмотра.</div>{% endif %}
+
+{# --- Строки по группам (ТЗ §17.3) --- #}
+{% set ns = namespace(group=None) %}
+{% for line in ordered %}
+  {% set c = calcs[line.id] %}
+  {% set gname = "Дополнительно" if line.is_custom else (line.category_name or "Без категории") ~ (" / " ~ line.subcategory_name if line.subcategory_name else "") %}
+  {% if gname != ns.group %}
+    {% if not loop.first %}</div></div>{% endif %}
+    {% set ns.group = gname %}
+    <div class="card mb-3"><div class="card-header fw-semibold">{{ gname }}</div>
+    <div class="card-body py-2">
+  {% endif %}
+
+  <div class="border-bottom py-2">
+    <div class="d-flex flex-wrap justify-content-between gap-2">
+      <div class="fw-semibold">
+        {% if line.model_id %}<a href="/inventory/models/{{ line.model_id }}">{{ line.name }}</a>{% else %}{{ line.name }}{% endif %}
+        {% if line.is_custom %}<span class="badge text-bg-light">доп.</span>{% endif %}
+        {% if c.over > 0 %}<span class="badge text-bg-warning">сверх плана +{{ c.over }}</span>{% endif %}
+        {% if c.missing > 0 %}<span class="badge text-bg-danger">недокомплект −{{ c.missing }}</span>{% endif %}
+      </div>
+      <div class="text-secondary small">
+        план {{ c.planned }} · факт {{ c.fact }} · упак. {{ c.packed }} / без {{ c.unpacked }}
+        {% if c.packages %}· {{ c.packages }} упак.{% endif %}
+      </div>
+    </div>
+    <div class="small text-secondary">
+      вес: оборуд. {{ "%.1f"|format(c.equipment_weight) }} + упак. {{ "%.1f"|format(c.packaging_weight) }} = <b>{{ "%.1f"|format(c.total_weight) }} кг</b>
+      · объём: {{ "%.3f"|format(c.equipment_volume) }} + {{ "%.3f"|format(c.package_volume) }} = <b>{{ "%.3f"|format(c.total_volume) }} м³</b>
+    </div>
+
+    {% if editable %}
+      {% if line.is_serial %}
+        {# Серийная строка: экземпляры (ТЗ §17.7) #}
+        {% if line.serial_items %}
+        <div class="d-flex flex-wrap gap-1 my-1">
+          {% for si in line.serial_items %}
+          <span class="badge text-bg-light border d-inline-flex align-items-center gap-1">
+            <code>{{ si.barcode }}</code>
+            <form method="post" action="{{ base }}/lines/{{ line.id }}/serial/{{ si.id }}/delete" class="m-0 d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn-close btn-close-sm" style="font-size:.6rem" title="Убрать"></button>
+            </form>
+          </span>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <form method="post" action="{{ base }}/lines/{{ line.id }}/serial" class="row g-1 mt-1">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="col-7 col-md-4">
+            <input class="form-control form-control-sm" name="barcode" list="dl-{{ line.id }}" placeholder="Штрих-код / выбрать" required>
+            <datalist id="dl-{{ line.id }}">
+              {% for it in available.get(line.id, []) %}<option value="{{ it.barcode }}">{{ it.serial_number or '' }}</option>{% endfor %}
+            </datalist>
+          </div>
+          <div class="col-auto form-check ms-2 mt-1">
+            <input class="form-check-input" type="checkbox" name="allow_over" value="1" id="ov-{{ line.id }}">
+            <label class="form-check-label small" for="ov-{{ line.id }}">сверх плана</label>
+          </div>
+          <div class="col-auto"><button class="btn btn-sm btn-outline-primary">Добавить</button></div>
+        </form>
+      {% else %}
+        {# Количественная/доп. строка: факт + распределение (ТЗ §17.6, §18) #}
+        <form method="post" action="{{ base }}/lines/{{ line.id }}/quantity" class="row g-1 mt-1 align-items-center">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="col-auto"><label class="small">Факт</label>
+            <input class="form-control form-control-sm" name="fact_quantity" inputmode="numeric" value="{{ line.quantity }}" style="width:5rem"></div>
+          {% if line.has_packing %}
+          <div class="col-auto"><label class="small">В упаковке</label>
+            <input class="form-control form-control-sm" name="packed_quantity" inputmode="numeric" value="{{ line.packed_quantity }}" style="width:6rem"></div>
+          {% else %}<input type="hidden" name="packed_quantity" value="0">{% endif %}
+          <div class="col"><label class="small">Комментарий</label>
+            <input class="form-control form-control-sm" name="comment" value="{{ line.comment or '' }}"></div>
+          <div class="col-auto align-self-end"><button class="btn btn-sm btn-outline-primary">Сохранить</button></div>
+        </form>
+        {% if line.has_packing %}
+        <form method="post" action="{{ base }}/lines/{{ line.id }}/distribution" class="row g-1 mt-1">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="col-auto small text-secondary align-self-center">Перенос в «без упаковки»: укажите в упаковке</div>
+          <div class="col-auto"><input class="form-control form-control-sm" name="packed_quantity" inputmode="numeric" value="{{ line.packed_quantity }}" style="width:6rem"></div>
+          <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">Применить</button></div>
+        </form>
+        {% endif %}
+      {% endif %}
+      <div class="mt-1 d-flex gap-1">
+        <form method="post" action="{{ base }}/lines/{{ line.id }}/move" class="m-0"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="direction" value="-1"><button class="btn btn-sm btn-outline-secondary" title="Выше">↑</button></form>
+        <form method="post" action="{{ base }}/lines/{{ line.id }}/move" class="m-0"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="direction" value="1"><button class="btn btn-sm btn-outline-secondary" title="Ниже">↓</button></form>
+        <form method="post" action="{{ base }}/lines/{{ line.id }}/delete" class="m-0" onsubmit="return confirm('Удалить строку?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-sm btn-outline-danger" title="Удалить">✕</button></form>
+      </div>
+    {% endif %}
+  </div>
+{% else %}
+  <p class="text-secondary">Строк нет.</p>
+{% endfor %}
+{% if ordered %}</div></div>{% endif %}
+
+<div class="row g-3">
+  <div class="col-12 col-lg-6">
+    {% if editable %}
+    <div class="card mb-3"><div class="card-header">Дополнительная позиция (ТЗ §17.9)</div><div class="card-body">
+      <form method="post" action="{{ base }}/custom" class="row g-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="col-12"><input class="form-control" name="name" placeholder="Наименование" required></div>
+        <div class="col-4"><input class="form-control" name="quantity" inputmode="numeric" value="1" placeholder="Кол-во"></div>
+        <div class="col-4"><input class="form-control" name="unit_weight_kg" inputmode="decimal" value="0" placeholder="Вес ед., кг"></div>
+        <div class="col-4"><input class="form-control" name="length_mm" inputmode="numeric" value="0" placeholder="Д, мм"></div>
+        <div class="col-6"><input class="form-control" name="width_mm" inputmode="numeric" value="0" placeholder="Ш, мм"></div>
+        <div class="col-6"><input class="form-control" name="height_mm" inputmode="numeric" value="0" placeholder="В, мм"></div>
+        <div class="col-12 text-end"><button class="btn btn-outline-primary">Добавить позицию</button></div>
+      </form>
+    </div></div>
+    {% endif %}
+  </div>
+
+  <div class="col-12 col-lg-6">
+    <div class="card mb-3"><div class="card-header">Итоги</div><div class="card-body">
+      <div class="d-flex justify-content-between"><span>Общий вес</span><b>{{ "%.1f"|format(totals.total_weight) }} кг</b></div>
+      <div class="d-flex justify-content-between"><span>Общий объём</span><b>{{ "%.3f"|format(totals.total_volume) }} м³</b></div>
+    </div></div>
+
+    {% if editable %}
+    <div class="card"><div class="card-header">Статус комплектации (ТЗ §17.4)</div><div class="card-body">
+      <form method="post" action="{{ base }}/status">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="d-flex gap-2 mb-2">
+          {% for st in PackingStatus %}
+          <button class="btn btn-sm {{ 'btn-success' if st == PackingStatus.PICKED else 'btn-outline-secondary' }}"
+                  name="status" value="{{ st.value }}">{{ st.label }}</button>
+          {% endfor %}
+        </div>
+        {% if undercomplete %}
+        <div class="alert alert-warning small mb-2">Недокомплект. Для «Скомплектован» отметьте подтверждение и укажите причину.</div>
+        <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="confirm_undercomplete" value="1" id="cu">
+          <label class="form-check-label" for="cu">Подтверждаю недокомплект</label></div>
+        <input class="form-control form-control-sm" name="shortage_comment" placeholder="Причина недокомплекта"
+               value="{{ packing.shortage_comment or '' }}">
+        {% endif %}
+      </form>
+    </div></div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

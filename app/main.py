@@ -16,6 +16,7 @@ from app.dependencies import LoginRequired
 from app.estimates import models as _estimates_models  # noqa: F401
 from app.inventory import models as _inventory_models  # noqa: F401
 from app.numbering import models as _numbering_models  # noqa: F401
+from app.packing import models as _packing_models  # noqa: F401
 from app.projects import models as _projects_models  # noqa: F401
 from app.settings import models as _settings_models  # noqa: F401
 
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     from app.dashboard.router import router as dashboard_router
     from app.estimates.router import router as estimates_router
     from app.inventory.router import router as inventory_router
+    from app.packing.router import router as packing_router
     from app.projects.router import router as projects_router
     from app.settings.router import router as settings_router
 
@@ -63,6 +65,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_router)
     app.include_router(projects_router)
     app.include_router(estimates_router)
+    app.include_router(packing_router)
     app.include_router(inventory_router)
     app.include_router(settings_router)
 

@@ -14,6 +14,7 @@ from app.database import Base
 from app.estimates import models as _estimates_models  # noqa: F401
 from app.inventory import models as _inventory_models  # noqa: F401
 from app.numbering import models as _numbering_models  # noqa: F401
+from app.packing import models as _packing_models  # noqa: F401
 from app.projects import models as _projects_models  # noqa: F401
 from app.settings import models as _settings_models  # noqa: F401
 
