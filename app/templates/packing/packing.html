@@ -8,6 +8,7 @@
     <div class="text-secondary"><a href="/projects/{{ project.id }}">{{ project.number }} · {{ project.name }}</a></div>
   </div>
   <div class="d-flex gap-2">
+    {% if editable %}<a href="{{ base }}/scan" class="btn btn-primary">Сканировать</a>{% endif %}
     <a href="/projects/{{ project.id }}/estimate" class="btn btn-outline-secondary">Смета</a>
     <a href="/projects/{{ project.id }}" class="btn btn-outline-secondary">К проекту</a>
   </div>

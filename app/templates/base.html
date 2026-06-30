@@ -25,6 +25,10 @@
           <li class="nav-item"><a class="nav-link {% if path.startswith('/settings') %}active{% endif %}" href="/settings">Настройки</a></li>
         </ul>
         <div class="d-flex align-items-center gap-2">
+          {% if current_project %}
+          <a class="btn btn-sm btn-outline-light" href="/projects/{{ current_project.id }}"
+             title="Текущий проект">⮌ {{ current_project.number }}</a>
+          {% endif %}
           <span class="navbar-text">{{ current_user.username }}</span>
           <form method="post" action="/logout" class="m-0">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

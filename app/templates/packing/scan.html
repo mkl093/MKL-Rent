@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block content %}
+{% set base = "/projects/%s/packing"|format(project.id) %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+  <h1 class="h4 m-0">Сканирование · {{ packing.number }}</h1>
+  <a href="{{ base }}" class="btn btn-outline-secondary btn-sm">К packing-листу</a>
+</div>
+
+<div class="card mb-2"><div class="card-body py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
+  <div>Прогресс: <span class="fs-5 fw-bold" id="progress">{{ total_fact }}</span> / {{ total_planned }}</div>
+  <div class="d-flex gap-3 align-items-center">
+    <div class="form-check m-0">
+      <input class="form-check-input" type="checkbox" id="allowOver">
+      <label class="form-check-label small" for="allowOver">Сверх плана</label>
+    </div>
+    <div class="form-check form-switch m-0">
+      <input class="form-check-input" type="checkbox" id="soundOn" checked>
+      <label class="form-check-label small" for="soundOn">Звук</label>
+    </div>
+  </div>
+</div></div>
+
+{# Крупное визуальное подтверждение (ТЗ §22) #}
+<div id="banner" class="alert alert-secondary text-center py-4 mb-2" role="status" aria-live="assertive">
+  <div class="fs-4 fw-bold" id="bannerTitle">Готов к сканированию</div>
+  <div id="bannerSub" class="small text-secondary">Наведите камеру или введите штрих-код сканером</div>
+</div>
+
+{% if editable %}
+<form id="scanForm" class="card card-body mb-2" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="row g-2">
+    <div class="col"><input class="form-control form-control-lg" id="barcode" name="barcode"
+           inputmode="text" placeholder="Штрих-код (сканер/ввод)" autofocus></div>
+    <div class="col-auto"><button class="btn btn-primary btn-lg" type="submit">OK</button></div>
+  </div>
+</form>
+
+<div class="d-flex gap-2 mb-2">
+  <button class="btn btn-outline-secondary" id="camToggle" type="button">Включить камеру</button>
+  <button class="btn btn-outline-danger" id="undoBtn" type="button">Отменить последнее</button>
+</div>
+<div id="reader" class="mb-3" style="max-width:480px"></div>
+{% else %}
+<div class="alert alert-info">Проект в архиве — сканирование недоступно.</div>
+{% endif %}
+
+<script src="/static/vendor/html5-qrcode.min.js"></script>
+<script>
+(function () {
+  const base = "{{ base }}";
+  const csrf = "{{ csrf_token }}";
+  const banner = document.getElementById("banner");
+  const bTitle = document.getElementById("bannerTitle");
+  const bSub = document.getElementById("bannerSub");
+  const progress = document.getElementById("progress");
+  const input = document.getElementById("barcode");
+  const allowOver = document.getElementById("allowOver");
+  const soundOn = document.getElementById("soundOn");
+
+  // Звук через WebAudio — без файлов (ТЗ §22, можно отключить).
+  let actx = null;
+  function beep(freq, dur, type) {
+    if (!soundOn.checked) return;
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = type || "sine"; o.frequency.value = freq;
+      o.connect(g); g.connect(actx.destination);
+      g.gain.setValueAtTime(0.15, actx.currentTime);
+      o.start();
+      g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + dur);
+      o.stop(actx.currentTime + dur);
+    } catch (e) {}
+  }
+  const okSound = () => { beep(880, 0.12); setTimeout(() => beep(1320, 0.12), 90); };
+  const warnSound = () => beep(520, 0.25, "square");
+  const errSound = () => beep(200, 0.35, "sawtooth");
+
+  // localStorage: запоминаем настройку звука
+  soundOn.checked = localStorage.getItem("scanSound") !== "0";
+  soundOn.addEventListener("change", () => localStorage.setItem("scanSound", soundOn.checked ? "1" : "0"));
+
+  function show(kind, title, sub) {
+    const map = { ok: "alert-success", over: "alert-warning", err: "alert-danger", info: "alert-secondary" };
+    banner.className = "alert text-center py-4 mb-2 " + map[kind];
+    bTitle.textContent = title;
+    bSub.textContent = sub || "";
+  }
+
+  let lastCode = "", lastTime = 0;
+  async function submitScan(code) {
+    code = (code || "").trim();
+    if (!code) return;
+    const now = Date.now();
+    if (code === lastCode && now - lastTime < 1500) return; // антидребезг камеры
+    lastCode = code; lastTime = now;
+
+    const body = new URLSearchParams();
+    body.set("barcode", code);
+    body.set("allow_over", allowOver.checked ? "1" : "0");
+    body.set("csrf_token", csrf);
+    let r;
+    try {
+      r = await fetch(base + "/scan", { method: "POST", body });
+    } catch (e) {
+      // Потеря связи (ТЗ §22): не засчитываем, предлагаем повтор
+      show("err", "Нет связи", "Повторите сканирование");
+      errSound();
+      return;
+    }
+    const d = await r.json();
+    if (d.ok) {
+      progress.textContent = d.total_fact;
+      if (d.over) { show("over", "Сверх плана: " + d.model, d.barcode); warnSound(); }
+      else { show("ok", d.model, d.barcode + " · " + d.fact + "/" + d.planned); okSound(); }
+    } else {
+      if (d.result === "over_plan") {
+        show("over", "Сверх плана — включите «Сверх плана»", d.barcode); warnSound();
+      } else {
+        show("err", d.message, d.barcode || ""); errSound();
+      }
+    }
+    input.value = ""; input.focus();
+  }
+
+  document.getElementById("scanForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    submitScan(input.value);
+  });
+
+  document.getElementById("undoBtn").addEventListener("click", async () => {
+    const body = new URLSearchParams(); body.set("csrf_token", csrf);
+    const r = await fetch(base + "/scan/undo", { method: "POST", body });
+    const d = await r.json();
+    if (d.ok) { progress.textContent = d.total_fact; show("info", "Отменено", d.message); }
+    else { show("err", d.message); }
+    input.focus();
+  });
+
+  // Камера (html5-qrcode) — поддержка iOS Safari / Android Chrome (ТЗ §21.3, §24)
+  let scanner = null, camOn = false;
+  const camBtn = document.getElementById("camToggle");
+  camBtn.addEventListener("click", async () => {
+    if (!camOn) {
+      scanner = new Html5Qrcode("reader");
+      try {
+        await scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 },
+          (text) => submitScan(text), () => {});
+        camOn = true; camBtn.textContent = "Выключить камеру";
+      } catch (e) {
+        show("err", "Камера недоступна", "Проверьте доступ (нужен HTTPS)");
+      }
+    } else {
+      try { await scanner.stop(); } catch (e) {}
+      camOn = false; camBtn.textContent = "Включить камеру";
+    }
+  });
+
+  input.focus();
+})();
+</script>
+{% endblock %}

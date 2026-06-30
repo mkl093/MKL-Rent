@@ -67,6 +67,7 @@ def render(
         "csrf_token": get_csrf_token(request),
         "flashes": pop_flashes(request),
         "company": get_company_settings(db) if db is not None else None,
+        "current_project": request.session.get("current_project"),
     }
     if context:
         ctx.update(context)

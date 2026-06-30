@@ -136,6 +136,13 @@ def project_detail(
         flash(request, "Проект не найден.", "danger")
         return redirect("/projects")
 
+    # Запоминаем текущий проект для быстрого возврата (ТЗ §24).
+    request.session["current_project"] = {
+        "id": project.id,
+        "number": project.number,
+        "name": project.name,
+    }
+
     rows = []
     if project.start_date and project.end_date:
         for res in project.reservations:

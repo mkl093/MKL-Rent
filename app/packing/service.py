@@ -6,6 +6,7 @@ import enum
 from dataclasses import dataclass
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.estimates.service import get_estimate
@@ -238,6 +239,106 @@ def remove_serial_item(db: Session, line: PackingLine, serial_item_id: int) -> N
         line.serial_items.remove(si)
         line.packed_quantity = min(line.packed_quantity, line.fact_quantity)
         db.commit()
+
+
+# --- Сканирование (ТЗ §22) ----------------------------------------------
+
+
+@dataclass
+class ScanOutcome:
+    result: SerialResult
+    barcode: str
+    line_id: int | None = None
+    serial_item_id: int | None = None
+    model_name: str | None = None
+    planned: int = 0
+    fact: int = 0
+
+    @property
+    def ok(self) -> bool:
+        """Экземпляр фактически добавлен (OK или подтверждённый сверх плана)."""
+        return self.result == SerialResult.OK or self.serial_item_id is not None
+
+
+def scan(
+    db: Session, packing: PackingList, barcode: str, *, allow_over: bool = False
+) -> ScanOutcome:
+    """Отсканировать штрих-код и сразу назначить экземпляр в нужную строку (ТЗ §22).
+
+    Строка определяется по модели экземпляра. Проверки и вставка — в транзакции;
+    уникальный индекс (строка, экземпляр) защищает от конкурентного добавления.
+    """
+    barcode = barcode.strip()
+    item = db.execute(
+        select(EquipmentItem).where(EquipmentItem.barcode == barcode)
+    ).scalar_one_or_none()
+    if item is None:
+        return ScanOutcome(SerialResult.NOT_FOUND, barcode)
+
+    line = next((ln for ln in packing.lines if ln.is_serial and ln.model_id == item.model_id), None)
+    if line is None:
+        return ScanOutcome(SerialResult.WRONG_MODEL, barcode, model_name=item.model.name)
+
+    if item.status != ItemStatus.ACTIVE:
+        return ScanOutcome(
+            SerialResult.BLOCKED,
+            barcode,
+            line_id=line.id,
+            model_name=line.name,
+            planned=line.planned_quantity,
+            fact=line.fact_quantity,
+        )
+
+    # Уже в этом packing-листе (в любой строке) — повторное добавление (ТЗ §22).
+    already = any(si.item_id == item.id for L in packing.lines for si in L.serial_items)
+    if already:
+        return ScanOutcome(
+            SerialResult.DUPLICATE,
+            barcode,
+            line_id=line.id,
+            model_name=line.name,
+            planned=line.planned_quantity,
+            fact=line.fact_quantity,
+        )
+
+    over = (line.fact_quantity + 1) > line.planned_quantity
+    if over and not allow_over:
+        return ScanOutcome(
+            SerialResult.OVER_PLAN,
+            barcode,
+            line_id=line.id,
+            model_name=line.name,
+            planned=line.planned_quantity,
+            fact=line.fact_quantity,
+        )
+
+    si = PackingSerialItem(item_id=item.id, barcode=item.barcode, serial_number=item.serial_number)
+    line.serial_items.append(si)
+    if line.has_packing:
+        line.packed_quantity += 1
+    try:
+        db.commit()
+    except IntegrityError:  # конкурентное добавление того же экземпляра (ТЗ §22)
+        db.rollback()
+        db.refresh(line)
+        return ScanOutcome(
+            SerialResult.DUPLICATE,
+            barcode,
+            line_id=line.id,
+            model_name=line.name,
+            planned=line.planned_quantity,
+            fact=line.fact_quantity,
+        )
+    db.refresh(line)
+    return ScanOutcome(
+        SerialResult.OVER_PLAN if over else SerialResult.OK,
+        barcode,
+        line_id=line.id,
+        serial_item_id=si.id,
+        model_name=line.name,
+        planned=line.planned_quantity,
+        fact=line.fact_quantity,
+    )
 
 
 def add_custom_line(db: Session, packing: PackingList, data: CustomPackingLine) -> PackingLine:
