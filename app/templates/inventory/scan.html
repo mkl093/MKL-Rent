@@ -5,18 +5,53 @@
   <a href="/inventory" class="btn btn-outline-secondary">К складу</a>
 </div>
 
-<form method="get" action="/inventory/scan" class="card card-body mb-3">
+<form method="get" action="/inventory/scan" id="searchForm" class="card card-body mb-3">
   <div class="row g-2">
     <div class="col">
-      <input class="form-control form-control-lg" name="barcode" value="{{ barcode or '' }}"
+      <input class="form-control form-control-lg" id="barcode" name="barcode" value="{{ barcode or '' }}"
              placeholder="Введите или отсканируйте штрих-код" autofocus inputmode="text">
     </div>
-    <div class="col-auto"><button class="btn btn-primary btn-lg">Найти</button></div>
+    <div class="col-auto"><button class="btn btn-primary btn-lg" type="submit">Найти</button></div>
+    <div class="col-auto"><button class="btn btn-outline-secondary btn-lg" type="button" id="camToggle">Камера</button></div>
   </div>
+  <div id="reader" class="mt-2" style="max-width:480px"></div>
+  <div id="camHint" class="form-text d-none">Наведите камеру на штрих-код. Камера доступна только по HTTPS или на localhost.</div>
 </form>
 
 {% if not_found %}
   <div class="alert alert-warning">Экземпляр со штрих-кодом <code>{{ barcode }}</code> не найден.</div>
 {% endif %}
-<p class="text-secondary small">Сканирование камерой и пакетная комплектация — на Этапе 6.</p>
+
+<script src="/static/vendor/html5-qrcode.min.js"></script>
+<script>
+(function () {
+  const form = document.getElementById("searchForm");
+  const input = document.getElementById("barcode");
+  const camBtn = document.getElementById("camToggle");
+  const hint = document.getElementById("camHint");
+  let scanner = null, camOn = false, submitted = false;
+
+  camBtn.addEventListener("click", async () => {
+    if (!camOn) {
+      hint.classList.remove("d-none");
+      scanner = new Html5Qrcode("reader");
+      try {
+        await scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (text) => {
+          if (submitted) return;
+          submitted = true;
+          input.value = (text || "").trim();
+          scanner.stop().catch(() => {}).finally(() => form.submit());
+        }, () => {});
+        camOn = true; camBtn.textContent = "Выключить камеру";
+      } catch (e) {
+        hint.textContent = "Камера недоступна. Нужен HTTPS (см. python -m scripts.make_cert) или ввод вручную.";
+      }
+    } else {
+      try { await scanner.stop(); } catch (e) {}
+      camOn = false; camBtn.textContent = "Камера";
+      hint.classList.add("d-none");
+    }
+  });
+})();
+</script>
 {% endblock %}

@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # auto — WeasyPrint при наличии (Docker), иначе xhtml2pdf (локально на Windows).
     pdf_engine: str = "auto"
 
+    # Локальный HTTPS для камеры со смартфона (ТЗ §24, §41.2).
+    # Если не заданы — берутся certs/cert.pem и certs/key.pem при их наличии.
+    ssl_certfile: str | None = None
+    ssl_keyfile: str | None = None
+
     # --- База данных (части собираются в database_url) ---
     database_name: str = "rental"
     database_user: str = "rental"

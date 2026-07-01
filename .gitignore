@@ -20,3 +20,6 @@ htmlcov/
 /storage/
 /backups/
 *.db
+
+# Локальные TLS-сертификаты (самоподписанные, для камеры по HTTPS)
+/certs/
