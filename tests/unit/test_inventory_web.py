@@ -120,3 +120,54 @@ def test_create_quantity_model_and_adjust(auth_client):
     detail = auth_client.get(model_url).text
     assert "25" in detail
     assert "приход" in detail
+
+
+def test_warehouse_availability_by_dates(auth_client, db_session):
+    """Фильтр по датам показывает доступность с учётом брони (ТЗ §15)."""
+    from datetime import date
+    from decimal import Decimal
+
+    from app.inventory.enums import AccountingType
+    from app.inventory.schemas import EquipmentModelCreate
+    from app.inventory.services import categories as cat_service
+    from app.inventory.services import equipment as eq_service
+    from app.projects import service as proj_service
+    from app.projects.enums import ProjectStatus
+    from app.projects.models import ProjectReservation
+    from app.projects.schemas import ProjectInput
+
+    cat = cat_service.create_category(db_session, "Звук")
+    model = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id,
+            name="Колонка",
+            accounting_type=AccountingType.QUANTITY,
+            total_quantity=20,
+            base_price_eur=Decimal("0"),
+        ),
+    )
+    # Забронированный проект держит 5 шт на пересекающийся период.
+    neighbor = proj_service.create_project(
+        db_session,
+        ProjectInput(name="Сосед", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5)),
+    )
+    neighbor.status = ProjectStatus.BOOKED
+    db_session.add(ProjectReservation(project_id=neighbor.id, model_id=model.id, quantity=5))
+    db_session.commit()
+
+    # Без дат — колонки доступности нет.
+    assert "Доступно</th>" not in auth_client.get("/inventory").text
+
+    # На пересекающийся период доступно 20 − 5 = 15.
+    page = auth_client.get(
+        "/inventory", params={"avail_start": "2026-07-03", "avail_end": "2026-07-04"}
+    ).text
+    assert "Доступно</th>" in page
+    assert "15" in page
+
+    # На непересекающийся период — все 20 доступны.
+    page2 = auth_client.get(
+        "/inventory", params={"avail_start": "2026-08-01", "avail_end": "2026-08-05"}
+    ).text
+    assert ">20<" in page2

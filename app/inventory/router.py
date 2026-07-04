@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
@@ -20,6 +21,7 @@ from app.inventory.schemas import (
 from app.inventory.services import categories as cat_service
 from app.inventory.services import equipment as eq_service
 from app.inventory.services import items as item_service
+from app.projects.availability import compute_availability
 from app.templating import flash
 from app.utils.images import ImageError, delete_photo, save_model_photo
 
@@ -52,6 +54,15 @@ def _str(value: str | None) -> str | None:
 
 def _opt_id(value: str | None) -> int | None:
     return int(value) if value and value.strip() else None
+
+
+def _date(value: str | None) -> date | None:
+    if not value or not value.strip():
+        return None
+    try:
+        return datetime.strptime(value.strip(), "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 def _packing_from_form(
@@ -88,6 +99,8 @@ def index(
     has_packing: str | None = None,
     archived: int = 0,
     sort: str | None = None,
+    avail_start: str | None = None,
+    avail_end: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
@@ -95,6 +108,15 @@ def index(
     if sort:
         request.session["inventory_sort"] = sort
     sort = request.session.get("inventory_sort", "category")
+
+    # Период проверки доступности запоминается в сессии (ТЗ §15).
+    if avail_start is not None or avail_end is not None:
+        request.session["inventory_avail"] = {"start": avail_start or "", "end": avail_end or ""}
+    saved = request.session.get("inventory_avail", {})
+    start = _date(saved.get("start"))
+    end = _date(saved.get("end"))
+    if start and end and start > end:
+        start, end = end, start
 
     filters = eq_service.ModelFilters(
         query=q,
@@ -107,6 +129,12 @@ def index(
     )
     models = eq_service.list_models(db, filters)
     stock = {m.id: eq_service.stock_quantity(db, m) for m in models}
+
+    # Доступность на выбранный период (для «гипотетического» проекта — ТЗ §15).
+    availability = {}
+    if start and end:
+        availability = {m.id: compute_availability(db, m, start, end) for m in models}
+
     return render(
         request,
         "inventory/list.html",
@@ -114,6 +142,9 @@ def index(
             "page_title": "Склад",
             "models": models,
             "stock": stock,
+            "availability": availability,
+            "avail_start": saved.get("start", ""),
+            "avail_end": saved.get("end", ""),
             "categories": cat_service.list_categories(db),
             "filters": filters,
             "AccountingType": AccountingType,

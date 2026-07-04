@@ -57,6 +57,21 @@
       <label class="form-check-label" for="archived">Архив</label>
     </div>
   </div>
+
+  {# Доступность на предполагаемый период (ТЗ §15) #}
+  <div class="row g-2 align-items-end mt-1 border-top pt-2">
+    <div class="col-12"><label class="form-label small text-secondary mb-0">Доступность на предполагаемый период проекта</label></div>
+    <div class="col-6 col-md-3">
+      <input class="form-control" type="date" name="avail_start" value="{{ avail_start }}" aria-label="Дата начала">
+    </div>
+    <div class="col-6 col-md-3">
+      <input class="form-control" type="date" name="avail_end" value="{{ avail_end }}" aria-label="Дата окончания">
+    </div>
+    <div class="col-auto"><button class="btn btn-outline-primary" type="submit">Показать доступность</button></div>
+    {% if availability %}
+    <div class="col-auto"><a class="btn btn-outline-secondary" href="/inventory?avail_start=&avail_end=">Сбросить период</a></div>
+    {% endif %}
+  </div>
 </form>
 
 {% if models %}
@@ -65,7 +80,9 @@
     <thead>
       <tr>
         <th></th><th>Модель</th><th>Категория</th><th>Производитель</th>
-        <th>Тип учёта</th><th class="text-end">Остаток</th><th>Упаковка</th><th class="text-end">Цена, €</th>
+        <th>Тип учёта</th><th class="text-end">Остаток</th>
+        {% if availability %}<th class="text-end">Доступно</th>{% endif %}
+        <th>Упаковка</th><th class="text-end">Цена, €</th>
       </tr>
     </thead>
     <tbody>
@@ -79,6 +96,10 @@
         <td>{{ m.manufacturer or "—" }}</td>
         <td>{{ m.accounting_type.label }}</td>
         <td class="text-end">{{ stock[m.id] }}</td>
+        {% if availability %}
+        {% set av = availability[m.id] %}
+        <td class="text-end fw-semibold {% if av.available <= 0 %}text-danger{% elif av.available < av.total %}text-warning-emphasis{% endif %}">{{ av.available }}</td>
+        {% endif %}
         <td>{{ m.packing.packing_type.label if m.has_packing else "—" }}</td>
         <td class="text-end">{{ "%.2f"|format(m.base_price_eur) }}</td>
       </tr>
@@ -96,6 +117,9 @@
         <div class="fw-semibold">{{ m.name }}{% if m.is_archived %} <span class="badge text-bg-secondary">архив</span>{% endif %}</div>
         <div class="small text-secondary">{{ m.category.name }}{% if m.subcategory %} / {{ m.subcategory.name }}{% endif %}</div>
         <div class="small">{{ m.accounting_type.label }} · остаток {{ stock[m.id] }} · {{ "%.2f"|format(m.base_price_eur) }} €</div>
+        {% if availability %}{% set av = availability[m.id] %}
+        <div class="small fw-semibold {% if av.available <= 0 %}text-danger{% endif %}">Доступно на период: {{ av.available }}{% if av.deficit > 0 %} · дефицит {{ av.deficit }}{% endif %}</div>
+        {% endif %}
       </div>
     </div>
   </a>
