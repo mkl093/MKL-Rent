@@ -64,6 +64,7 @@ def create_app() -> FastAPI:
     from app.packing.router import router as packing_router
     from app.projects.router import router as projects_router
     from app.settings.router import router as settings_router
+    from app.users.router import router as users_router
 
     app.include_router(auth_router)
     app.include_router(dashboard_router)
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     app.include_router(documents_router)
     app.include_router(inventory_router)
     app.include_router(settings_router)
+    app.include_router(users_router)
     app.include_router(audit_router)
 
     return app

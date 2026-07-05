@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth.models import User
@@ -43,6 +43,14 @@ def get_user_by_id(db: Session, user_id: int) -> User | None:
     return db.get(User, user_id)
 
 
+def list_users(db: Session) -> list[User]:
+    return list(db.execute(select(User).order_by(User.username)).scalars().all())
+
+
+def count_users(db: Session) -> int:
+    return db.scalar(select(func.count()).select_from(User)) or 0
+
+
 def create_user(db: Session, username: str, password: str) -> User:
     user = User(username=username, password_hash=hash_password(password))
     db.add(user)
@@ -60,6 +68,18 @@ def set_password(db: Session, user: User, new_password: str) -> None:
 
 def set_blocked(db: Session, user: User, blocked: bool) -> None:
     user.is_blocked = blocked
+    db.commit()
+
+
+def unlock_user(db: Session, user: User) -> None:
+    """Снять временную блокировку по попыткам входа (ТЗ §41.2)."""
+    user.failed_login_count = 0
+    user.locked_until = None
+    db.commit()
+
+
+def delete_user(db: Session, user: User) -> None:
+    db.delete(user)
     db.commit()
 
 
