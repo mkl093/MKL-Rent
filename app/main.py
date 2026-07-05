@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 # Импорт моделей регистрирует таблицы в Base.metadata.
+from app.audit import models as _audit_models  # noqa: F401
 from app.auth import models as _auth_models  # noqa: F401
 from app.config import get_settings
 from app.dependencies import LoginRequired
@@ -54,6 +55,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     # Маршруты модулей.
+    from app.audit.router import router as audit_router
     from app.auth.router import router as auth_router
     from app.dashboard.router import router as dashboard_router
     from app.documents.router import router as documents_router
@@ -71,6 +73,7 @@ def create_app() -> FastAPI:
     app.include_router(documents_router)
     app.include_router(inventory_router)
     app.include_router(settings_router)
+    app.include_router(audit_router)
 
     return app
 

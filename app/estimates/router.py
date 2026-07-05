@@ -7,6 +7,8 @@ from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, Depends, Form, Request
 from sqlalchemy.orm import Session
 
+from app.audit.events import EventType
+from app.audit.service import log as audit_log
 from app.auth.models import User
 from app.database import get_db
 from app.dependencies import redirect, render, require_login, verify_csrf
@@ -152,6 +154,15 @@ async def add_submit(
         qty = _int(form.get(f"qty_{model_id}"), 1)
         service.add_model(db, estimate, project, model, qty, merge=merge)
         added += 1
+    if added:
+        audit_log(
+            db,
+            user,
+            EventType.ESTIMATE_CHANGE,
+            f"Смета {estimate.number}: добавлено позиций — {added}",
+            object_type="estimate",
+            object_id=estimate.id,
+        )
     flash(request, f"Добавлено позиций: {added}.", "success" if added else "warning")
     return redirect(f"/projects/{project_id}/estimate")
 
@@ -182,6 +193,14 @@ def add_custom(
             coefficient=_dec(coefficient, "1"),
             comment=(comment.strip() if comment else None),
         ),
+    )
+    audit_log(
+        db,
+        user,
+        EventType.ESTIMATE_CHANGE,
+        f"Смета {estimate.number}: добавлена произвольная строка «{name.strip()}»",
+        object_type="estimate",
+        object_id=estimate.id,
     )
     flash(request, "Произвольная строка добавлена.", "success")
     return redirect(f"/projects/{project_id}/estimate")
@@ -216,6 +235,14 @@ def update_line(
         )
         if not line.is_custom:
             service.sync_reservations(db, project, estimate)
+        audit_log(
+            db,
+            user,
+            EventType.ESTIMATE_CHANGE,
+            f"Смета {estimate.number}: изменена строка «{line.name}»",
+            object_type="estimate",
+            object_id=estimate.id,
+        )
         flash(request, "Строка обновлена.", "success")
     return redirect(f"/projects/{project_id}/estimate")
 
@@ -234,10 +261,19 @@ def delete_line(
     line = next((ln for ln in estimate.lines if ln.id == line_id), None)
     if line is not None:
         was_warehouse = not line.is_custom
+        line_name = line.name
         service.delete_line(db, line)
         if was_warehouse:
             db.refresh(estimate)
             service.sync_reservations(db, project, estimate)
+        audit_log(
+            db,
+            user,
+            EventType.ESTIMATE_CHANGE,
+            f"Смета {estimate.number}: удалена строка «{line_name}»",
+            object_type="estimate",
+            object_id=estimate.id,
+        )
         flash(request, "Строка удалена.", "info")
     return redirect(f"/projects/{project_id}/estimate")
 
@@ -272,5 +308,13 @@ def set_discount(
     if project is None or estimate is None:
         return redirect(f"/projects/{project_id}/estimate")
     service.set_discount(db, estimate, _dec(discount_percent))
+    audit_log(
+        db,
+        user,
+        EventType.ESTIMATE_CHANGE,
+        f"Смета {estimate.number}: скидка {estimate.discount_percent}%",
+        object_type="estimate",
+        object_id=estimate.id,
+    )
     flash(request, "Скидка обновлена.", "success")
     return redirect(f"/projects/{project_id}/estimate")

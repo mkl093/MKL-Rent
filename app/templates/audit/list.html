@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 m-0">Журнал действий</h1>
+  <a href="/settings" class="btn btn-outline-secondary">Настройки</a>
+</div>
+
+<form method="get" action="/audit" class="card card-body mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-5">
+      <label class="form-label" for="event_type">Тип события</label>
+      <select class="form-select" id="event_type" name="event_type" onchange="this.form.submit()">
+        <option value="">Все</option>
+        {% for et in event_types %}
+          <option value="{{ et.value }}" {% if event_type == et.value %}selected{% endif %}>{{ et.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto"><button class="btn btn-primary" type="submit">Фильтр</button></div>
+  </div>
+</form>
+
+{% if entries %}
+<div class="table-responsive">
+  <table class="table table-sm align-middle">
+    <thead><tr>
+      <th>Дата и время</th><th>Пользователь</th><th>Событие</th><th>Объект</th>
+      <th>Описание</th><th>Было → Стало</th>
+    </tr></thead>
+    <tbody>
+      {% for e in entries %}
+      <tr>
+        <td class="text-nowrap">{{ format_datetime(e.created_at) }}</td>
+        <td>{{ e.user_name }}</td>
+        <td>{{ labels.get(e.event_type, e.event_type) }}</td>
+        <td class="text-secondary small">{{ e.object_type or "" }}{% if e.object_id %} #{{ e.object_id }}{% endif %}</td>
+        <td>{{ e.description }}</td>
+        <td class="small">
+          {% if e.old_value is not none or e.new_value is not none %}
+            <span class="text-secondary">{{ e.old_value if e.old_value is not none else "—" }}</span>
+            → <strong>{{ e.new_value if e.new_value is not none else "—" }}</strong>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="d-flex justify-content-between">
+  {% set qs = ("&event_type=" ~ event_type) if event_type else "" %}
+  {% if page > 1 %}<a class="btn btn-outline-secondary" href="/audit?page={{ page - 1 }}{{ qs }}">← Новее</a>{% else %}<span></span>{% endif %}
+  {% if has_next %}<a class="btn btn-outline-secondary" href="/audit?page={{ page + 1 }}{{ qs }}">Старее →</a>{% endif %}
+</div>
+{% else %}
+<p class="text-secondary">Записей нет.</p>
+{% endif %}
+{% endblock %}

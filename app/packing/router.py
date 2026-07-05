@@ -9,6 +9,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.audit.events import EventType
+from app.audit.service import log as audit_log
 from app.auth.models import User
 from app.database import get_db
 from app.dependencies import redirect, render, require_login, verify_csrf
@@ -132,6 +134,14 @@ def packing_create(
         return redirect(f"/projects/{project_id}/packing")
     try:
         packing = service.create_from_estimate(db, project)
+        audit_log(
+            db,
+            user,
+            EventType.PACKING_CREATE,
+            f"Создан packing-лист {packing.number} для {project.number}",
+            object_type="packing_list",
+            object_id=packing.id,
+        )
         flash(request, f"Packing-лист {packing.number} создан.", "success")
     except service.AlreadyExists as exc:
         flash(request, str(exc), "warning")
@@ -149,6 +159,14 @@ def packing_sync(
     if project is None or packing is None or not editable:
         return redirect(f"/projects/{project_id}/packing")
     service.apply_sync(db, project, packing)
+    audit_log(
+        db,
+        user,
+        EventType.PACKING_SYNC,
+        f"Packing-лист {packing.number}: план синхронизирован со сметой",
+        object_type="packing_list",
+        object_id=packing.id,
+    )
     flash(request, "План синхронизирован со сметой.", "success")
     return redirect(f"/projects/{project_id}/packing")
 
@@ -220,6 +238,17 @@ def line_serial_add(
         else:
             msg, cat = messages[result]
             flash(request, msg, cat)
+            if result in (service.SerialResult.OK, service.SerialResult.OVER_PLAN):
+                over = " (сверх плана)" if result == service.SerialResult.OVER_PLAN else ""
+                audit_log(
+                    db,
+                    user,
+                    EventType.PACKING_SCAN,
+                    f"Packing {packing.number}: добавлен экземпляр {barcode.strip()}{over}"
+                    f" — {line.name}",
+                    object_type="packing_list",
+                    object_id=packing.id,
+                )
     return redirect(f"/projects/{project_id}/packing")
 
 
@@ -365,6 +394,16 @@ def scan_submit(
             "line_id": outcome.line_id,
             "serial_item_id": outcome.serial_item_id,
         }
+        over = " (сверх плана)" if outcome.result == service.SerialResult.OVER_PLAN else ""
+        audit_log(
+            db,
+            user,
+            EventType.PACKING_SCAN,
+            f"Packing {packing.number}: сканирование {outcome.barcode}{over}"
+            f" — {outcome.model_name}",
+            object_type="packing_list",
+            object_id=packing.id,
+        )
     serial_lines = [ln for ln in packing.lines if ln.is_serial]
     return JSONResponse(
         {
@@ -396,6 +435,14 @@ def scan_undo(
     line = service.get_line(db, packing, last["line_id"])
     if line is not None:
         service.remove_serial_item(db, line, last["serial_item_id"])
+    audit_log(
+        db,
+        user,
+        EventType.PACKING_SCAN_UNDO,
+        f"Packing {packing.number}: отмена последнего сканирования",
+        object_type="packing_list",
+        object_id=packing.id,
+    )
     request.session.pop("last_scan", None)
     serial_lines = [ln for ln in packing.lines if ln.is_serial]
     return JSONResponse(
@@ -432,6 +479,17 @@ def packing_status(
             new_status,
             shortage_comment=shortage_comment,
             confirm_undercomplete=bool(confirm_undercomplete),
+        )
+        note = ""
+        if new_status == PackingStatus.PICKED and packing.shortage_comment:
+            note = f" (недокомплект: {packing.shortage_comment})"
+        audit_log(
+            db,
+            user,
+            EventType.PACKING_STATUS,
+            f"Packing {packing.number}: статус «{new_status.label}»{note}",
+            object_type="packing_list",
+            object_id=packing.id,
         )
         flash(request, f"Статус: {new_status.label}.", "info")
     except service.UndercompleteError:

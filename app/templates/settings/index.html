@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
-<h1 class="h3 mb-4">Настройки компании</h1>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+  <h1 class="h3 m-0">Настройки компании</h1>
+  <a href="/audit" class="btn btn-outline-secondary">Журнал действий</a>
+</div>
 
 <form method="post" action="/settings" class="card shadow-sm">
   <div class="card-body">

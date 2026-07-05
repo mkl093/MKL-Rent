@@ -8,6 +8,8 @@ from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, Depends, Form, Request
 from sqlalchemy.orm import Session
 
+from app.audit.events import EventType
+from app.audit.service import log as audit_log
 from app.auth.models import User
 from app.database import get_db
 from app.dependencies import redirect, render, require_login, verify_csrf
@@ -120,6 +122,14 @@ def project_create(
 ):
     data = _input(name, start_date, end_date, rental_coefficient, vat, customer, address, comment)
     project = service.create_project(db, data)
+    audit_log(
+        db,
+        user,
+        EventType.PROJECT_CREATE,
+        f"Создан проект {project.number} «{project.name}»",
+        object_type="project",
+        object_id=project.id,
+    )
     flash(request, f"Проект {project.number} создан.", "success")
     return redirect(f"/projects/{project.id}")
 
@@ -232,6 +242,14 @@ def project_update(
     was_booked = project.status == ProjectStatus.BOOKED
     data = _input(name, start_date, end_date, rental_coefficient, vat, customer, address, comment)
     service.update_project(db, project, data)
+    audit_log(
+        db,
+        user,
+        EventType.PROJECT_UPDATE,
+        f"Изменён проект {project.number}",
+        object_type="project",
+        object_id=project.id,
+    )
     # Изменение дат брони пересчитывает доступность (ТЗ §13.5).
     if was_booked:
         deficits = service.project_deficits(db, project)
@@ -261,6 +279,15 @@ def project_book(
         return redirect("/projects")
     try:
         service.book_project(db, project, allow_deficit=bool(allow_deficit))
+        audit_log(
+            db,
+            user,
+            EventType.PROJECT_BOOK,
+            f"Проект {project.number} забронирован"
+            + (" (с подтверждением дефицита)" if allow_deficit else ""),
+            object_type="project",
+            object_id=project.id,
+        )
         flash(request, "Проект забронирован.", "success")
     except service.DeficitError:
         flash(
@@ -286,7 +313,18 @@ def project_status(
         new_status = ProjectStatus(status)
     except ValueError:
         return redirect(f"/projects/{project.id}")
+    old_status = project.status
     service.set_status(db, project, new_status)
+    audit_log(
+        db,
+        user,
+        EventType.PROJECT_STATUS,
+        f"Статус проекта {project.number}",
+        object_type="project",
+        object_id=project.id,
+        old_value=old_status.label,
+        new_value=new_status.label,
+    )
     flash(request, f"Статус: {new_status.label}.", "info")
     return redirect(f"/projects/{project.id}")
 
@@ -306,6 +344,14 @@ def project_copy(
     from app.estimates.service import copy_estimate
 
     copy_estimate(db, project, copy)
+    audit_log(
+        db,
+        user,
+        EventType.PROJECT_COPY,
+        f"Проект {project.number} скопирован в {copy.number}",
+        object_type="project",
+        object_id=copy.id,
+    )
     flash(request, f"Создана копия {copy.number} (черновик, без дат).", "success")
     return redirect(f"/projects/{copy.id}")
 
@@ -322,7 +368,16 @@ def project_delete(
         return redirect("/projects")
     try:
         number = project.number
+        pid = project.id
         service.delete_project(db, project)
+        audit_log(
+            db,
+            user,
+            EventType.PROJECT_DELETE,
+            f"Удалён проект {number}",
+            object_type="project",
+            object_id=pid,
+        )
         flash(request, f"Проект {number} удалён.", "success")
         return redirect("/projects")
     except service.ValidationError as exc:

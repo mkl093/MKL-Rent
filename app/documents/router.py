@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app.audit.events import EventType
+from app.audit.service import log as audit_log
 from app.auth.models import User
 from app.config import get_settings
 from app.database import get_db
@@ -63,6 +65,14 @@ def documents_generate(
         return redirect(f"/projects/{project_id}/documents")
     try:
         builder.generate(db, project, dt, lang)
+        audit_log(
+            db,
+            user,
+            EventType.DOCUMENT_GENERATE,
+            f"Сформирован PDF: {dt.label} ({lang.upper()}) для {project.number}",
+            object_type="project",
+            object_id=project.id,
+        )
         flash(request, f"PDF сформирован: {dt.label} ({lang.upper()}).", "success")
     except builder.PdfUnavailable as exc:
         flash(request, f"PDF не сформирован: {exc}", "danger")

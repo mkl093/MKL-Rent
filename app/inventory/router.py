@@ -8,6 +8,8 @@ from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from sqlalchemy.orm import Session
 
+from app.audit.events import EventType
+from app.audit.service import log as audit_log
 from app.auth.models import User
 from app.database import get_db
 from app.dependencies import redirect, render, require_login, verify_csrf
@@ -330,6 +332,14 @@ async def model_create(
     )
     model = eq_service.create_model(db, data)
     await _maybe_save_photo(request, db, model, photo)
+    audit_log(
+        db,
+        user,
+        EventType.INVENTORY_MODEL,
+        f"Создана модель «{model.name}»",
+        object_type="equipment_model",
+        object_id=model.id,
+    )
     flash(request, "Модель создана.", "success")
     return redirect(f"/inventory/models/{model.id}")
 
@@ -450,6 +460,14 @@ def model_archive(
     model = eq_service.get_model(db, model_id)
     if model:
         eq_service.archive_model(db, model, bool(archived))
+        audit_log(
+            db,
+            user,
+            EventType.INVENTORY_MODEL,
+            ("Архивирована" if archived else "Возвращена из архива") + f" модель «{model.name}»",
+            object_type="equipment_model",
+            object_id=model.id,
+        )
         flash(
             request, "Модель архивирована." if archived else "Модель возвращена из архива.", "info"
         )
@@ -520,7 +538,18 @@ def quantity_adjust(
     model = eq_service.get_model(db, model_id)
     if model:
         try:
+            old_qty = model.total_quantity
             eq_service.adjust_quantity(db, model, _int(new_quantity), user.id, _str(comment))
+            audit_log(
+                db,
+                user,
+                EventType.INVENTORY_QTY,
+                f"Остаток «{model.name}»",
+                object_type="equipment_model",
+                object_id=model.id,
+                old_value=old_qty,
+                new_value=model.total_quantity,
+            )
             flash(request, "Остаток обновлён.", "success")
         except eq_service.InventoryError as exc:
             flash(request, str(exc), "danger")
@@ -622,7 +651,18 @@ def item_status(
 ):
     item = item_service.get_item(db, item_id)
     if item:
+        old_status = item.status
         item_service.change_status(db, item, ItemStatus(new_status), user.id, _str(comment))
+        audit_log(
+            db,
+            user,
+            EventType.INVENTORY_ITEM_STATUS,
+            f"Статус экземпляра {item.barcode}",
+            object_type="equipment_item",
+            object_id=item.id,
+            old_value=old_status.label,
+            new_value=item.status.label,
+        )
         flash(request, "Статус изменён.", "success")
     return redirect(f"/inventory/items/{item_id}")
 
