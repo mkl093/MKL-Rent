@@ -171,3 +171,12 @@ def test_warehouse_availability_by_dates(auth_client, db_session):
         "/inventory", params={"avail_start": "2026-08-01", "avail_end": "2026-08-05"}
     ).text
     assert ">20<" in page2
+
+
+def test_filter_empty_params_ok(auth_client):
+    """Пустые значения фильтра (выбор «Все») не вызывают 422 (regression)."""
+    resp = auth_client.get(
+        "/inventory",
+        params={"q": "", "category_id": "", "subcategory_id": "", "accounting_type": ""},
+    )
+    assert resp.status_code == 200

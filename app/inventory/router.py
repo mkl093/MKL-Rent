@@ -93,8 +93,8 @@ def _packing_from_form(
 def index(
     request: Request,
     q: str | None = None,
-    category_id: int | None = None,
-    subcategory_id: int | None = None,
+    category_id: str | None = None,
+    subcategory_id: str | None = None,
     accounting_type: str | None = None,
     has_packing: str | None = None,
     archived: int = 0,
@@ -120,8 +120,8 @@ def index(
 
     filters = eq_service.ModelFilters(
         query=q,
-        category_id=category_id,
-        subcategory_id=subcategory_id,
+        category_id=_opt_id(category_id),
+        subcategory_id=_opt_id(subcategory_id),
         accounting_type=AccountingType(accounting_type) if accounting_type else None,
         has_packing=(None if has_packing in (None, "") else has_packing == "1"),
         archived=bool(archived),

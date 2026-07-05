@@ -36,6 +36,10 @@ def _int(value: str | None, default: int = 1) -> int:
         return default
 
 
+def _opt_id(value: str | None) -> int | None:
+    return int(value) if value and value.strip() else None
+
+
 def _load(db: Session, project_id: int, *, require_editable: bool = False):
     project = get_project(db, project_id)
     if project is None:
@@ -77,8 +81,8 @@ def add_picker(
     request: Request,
     project_id: int,
     q: str | None = None,
-    category_id: int | None = None,
-    subcategory_id: int | None = None,
+    category_id: str | None = None,
+    subcategory_id: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
@@ -87,7 +91,10 @@ def add_picker(
         return redirect("/projects")
 
     filters = eq_service.ModelFilters(
-        query=q, category_id=category_id, subcategory_id=subcategory_id, archived=False
+        query=q,
+        category_id=_opt_id(category_id),
+        subcategory_id=_opt_id(subcategory_id),
+        archived=False,
     )
     models = eq_service.list_models(db, filters)
 
