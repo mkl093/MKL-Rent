@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     backup_path: str = "./backups"
     backup_time: str = "03:00"
     backup_retention_days: int = 14
+    # Автоматический ежедневный backup по расписанию (планировщик внутри приложения).
+    # В production (Docker) включается через BACKUP_AUTO=true.
+    backup_auto: bool = False
 
     @property
     def is_production(self) -> bool:

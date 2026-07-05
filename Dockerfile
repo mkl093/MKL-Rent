@@ -6,9 +6,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Системные зависимости: curl (healthcheck) + библиотеки WeasyPrint (ТЗ §26).
+# Системные зависимости: curl (healthcheck), библиотеки WeasyPrint (ТЗ §26),
+# postgresql-client для pg_dump/pg_restore в backup (ТЗ §36).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
+        postgresql-client \
         libpango-1.0-0 \
         libpangocairo-1.0-0 \
         libgdk-pixbuf-2.0-0 \

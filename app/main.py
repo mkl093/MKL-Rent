@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -25,9 +27,18 @@ from app.settings import models as _settings_models  # noqa: F401
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Запуск планировщика авто-backup (если BACKUP_AUTO=true) — ТЗ §36.
+    from app.backup.scheduler import start as start_backup_scheduler
+
+    start_backup_scheduler()
+    yield
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title="rental-inventory", docs_url=None, redoc_url=None)
+    app = FastAPI(title="rental-inventory", docs_url=None, redoc_url=None, lifespan=lifespan)
 
     # Сессия в подписанном cookie (ТЗ §41.2): httponly, secure в production.
     app.add_middleware(
@@ -57,6 +68,7 @@ def create_app() -> FastAPI:
     # Маршруты модулей.
     from app.audit.router import router as audit_router
     from app.auth.router import router as auth_router
+    from app.backup.router import router as backup_router
     from app.dashboard.router import router as dashboard_router
     from app.documents.router import router as documents_router
     from app.estimates.router import router as estimates_router
@@ -76,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(settings_router)
     app.include_router(users_router)
     app.include_router(audit_router)
+    app.include_router(backup_router)
 
     return app
 

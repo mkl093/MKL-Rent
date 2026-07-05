@@ -90,6 +90,28 @@ ruff check .
 ruff format .
 ```
 
+## Резервное копирование и восстановление (ТЗ §36)
+
+Резервная копия содержит дамп базы (PostgreSQL — `pg_dump`; SQLite — копия файла)
+и все файлы `STORAGE_PATH` (фото, логотип, PDF) в одном архиве `backup_*.tar.gz`
+в `BACKUP_PATH`.
+
+```bash
+# Ручной backup + очистка старых по retention
+python -m scripts.backup
+
+# Восстановление (перезаписывает БД и файлы; приложение должно быть остановлено)
+python -m scripts.restore backups/backup_YYYYMMDD_HHMMSS.tar.gz
+# затем при необходимости: alembic upgrade head
+```
+
+Через интерфейс: **Настройки → «Резервные копии»** — создать копию и скачать архив.
+
+**Автоматический ежедневный backup:** в Docker включён (`BACKUP_AUTO=true`,
+время `BACKUP_TIME`, хранение `BACKUP_RETENTION_DAYS` дней), архивы пишутся в
+примонтированную директорию хоста. Локально можно включить `BACKUP_AUTO=true`
+в `.env` или запланировать `python -m scripts.backup` через планировщик ОС.
+
 ## Docker (создано, локально не проверялось)
 
 ```bash
