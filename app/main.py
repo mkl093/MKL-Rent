@@ -2,20 +2,24 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 # Импорт моделей регистрирует таблицы в Base.metadata.
 from app.audit import models as _audit_models  # noqa: F401
 from app.auth import models as _auth_models  # noqa: F401
+from app.auth.models import User
 from app.config import get_settings
-from app.dependencies import LoginRequired
+from app.database import get_db
+from app.dependencies import LoginRequired, require_login
 from app.documents import models as _documents_models  # noqa: F401
 from app.estimates import models as _estimates_models  # noqa: F401
 from app.inventory import models as _inventory_models  # noqa: F401
@@ -27,8 +31,15 @@ from app.settings import models as _settings_models  # noqa: F401
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+logger = logging.getLogger("app")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    settings = get_settings()
+    # Предупреждение о секрете по умолчанию в production (ТЗ §41.2).
+    if settings.is_production and settings.app_secret_key == "change-me-in-production":
+        logger.warning("APP_SECRET_KEY не задан в production — задайте безопасный секрет!")
     # Запуск планировщика авто-backup (если BACKUP_AUTO=true) — ТЗ §36.
     from app.backup.scheduler import start as start_backup_scheduler
 
@@ -49,12 +60,33 @@ def create_app() -> FastAPI:
         https_only=settings.is_production,
     )
 
+    # Security-заголовки на все ответы (ТЗ §41.2).
+    @app.middleware("http")
+    async def _security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        return response
+
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-    # Отдача пользовательских файлов (фото моделей и т. п.) из STORAGE_PATH.
+    # Пользовательские файлы (фото, логотип) отдаются только авторизованным,
+    # с защитой от обхода пути (ТЗ §41.2). Публичного доступа нет.
     media_dir = Path(settings.storage_path)
     media_dir.mkdir(parents=True, exist_ok=True)
-    app.mount("/media", StaticFiles(directory=str(media_dir)), name="media")
+    media_root = media_dir.resolve()
+
+    @app.get("/media/{file_path:path}", include_in_schema=False)
+    def media(
+        file_path: str,
+        db: Session = Depends(get_db),
+        user: User = Depends(require_login),
+    ) -> FileResponse:
+        target = (media_root / file_path).resolve()
+        if not target.is_relative_to(media_root) or not target.is_file():
+            raise HTTPException(status_code=404)
+        return FileResponse(str(target))
 
     # Перехват «требуется вход» → редирект на /login.
     @app.exception_handler(LoginRequired)
