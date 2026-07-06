@@ -49,6 +49,11 @@
     {% elif project.status == ProjectStatus.BOOKED %}
       <form method="post" action="/projects/{{ project.id }}/status" class="m-0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="status" value="shipped">
+        <button class="btn btn-info">Отгрузить</button>
+      </form>
+      <form method="post" action="/projects/{{ project.id }}/status" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="status" value="completed">
         <button class="btn btn-primary">Завершить</button>
       </form>
@@ -57,9 +62,20 @@
         <input type="hidden" name="status" value="draft">
         <button class="btn btn-outline-secondary">Снять бронь</button>
       </form>
+    {% elif project.status == ProjectStatus.SHIPPED %}
+      <form method="post" action="/projects/{{ project.id }}/status" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="status" value="completed">
+        <button class="btn btn-primary">Завершить</button>
+      </form>
+      <form method="post" action="/projects/{{ project.id }}/status" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="status" value="booked">
+        <button class="btn btn-outline-secondary">Вернуть в бронь</button>
+      </form>
     {% endif %}
 
-    {% if project.status in (ProjectStatus.DRAFT, ProjectStatus.BOOKED) %}
+    {% if project.status in (ProjectStatus.DRAFT, ProjectStatus.BOOKED, ProjectStatus.SHIPPED) %}
       <form method="post" action="/projects/{{ project.id }}/status" class="m-0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="status" value="cancelled">

@@ -42,10 +42,31 @@ class ItemStatus(enum.StrEnum):
     «Забронировано» здесь не хранится — оно рассчитывается по проектам.
     """
 
-    ACTIVE = "active"  # активно
+    ACTIVE = "active"  # активно — доступно к аренде
     REPAIR = "repair"  # в ремонте
+    DEFECT = "defect"  # есть дефект (в комментарии — какой)
     RETIRED = "retired"  # списано
 
     @property
     def label(self) -> str:
-        return {"active": "Активно", "repair": "В ремонте", "retired": "Списано"}[self.value]
+        return {
+            "active": "Активно",
+            "repair": "В ремонте",
+            "defect": "Есть дефект",
+            "retired": "Списано",
+        }[self.value]
+
+    @property
+    def badge(self) -> str:
+        return {"active": "success", "repair": "warning", "defect": "danger", "retired": "dark"}[
+            self.value
+        ]
+
+    @property
+    def is_available(self) -> bool:
+        """Доступна ли единица к аренде (не в ремонте/с дефектом/списана)."""
+        return self == ItemStatus.ACTIVE
+
+
+# Статусы, делающие единицу недоступной по состоянию (ТЗ §9, §15).
+UNAVAILABLE_STATUSES = [ItemStatus.REPAIR, ItemStatus.DEFECT, ItemStatus.RETIRED]

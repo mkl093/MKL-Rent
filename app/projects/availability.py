@@ -12,9 +12,9 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.inventory.enums import AccountingType, ItemStatus
+from app.inventory.enums import UNAVAILABLE_STATUSES, AccountingType
 from app.inventory.models import EquipmentItem, EquipmentModel
-from app.projects.enums import ProjectStatus
+from app.projects.enums import RESERVING_STATUSES, ProjectStatus
 from app.projects.models import Project, ProjectReservation
 
 
@@ -77,7 +77,7 @@ def _unavailable_by_status(db: Session, model: EquipmentModel) -> int:
             .select_from(EquipmentItem)
             .where(
                 EquipmentItem.model_id == model.id,
-                EquipmentItem.status.in_([ItemStatus.REPAIR, ItemStatus.RETIRED]),
+                EquipmentItem.status.in_(UNAVAILABLE_STATUSES),
             )
         )
         or 0
@@ -97,7 +97,7 @@ def reserved_in_other_projects(
         .join(Project, Project.id == ProjectReservation.project_id)
         .where(
             ProjectReservation.model_id == model_id,
-            Project.status == ProjectStatus.BOOKED,
+            Project.status.in_(RESERVING_STATUSES),
             Project.start_date.is_not(None),
             Project.end_date.is_not(None),
             Project.start_date <= end,
@@ -140,7 +140,7 @@ def occupancy_detail(
         .join(ProjectReservation, Project.id == ProjectReservation.project_id)
         .where(
             ProjectReservation.model_id == model_id,
-            Project.status == ProjectStatus.BOOKED,
+            Project.status.in_(RESERVING_STATUSES),
             Project.start_date.is_not(None),
             Project.end_date.is_not(None),
             Project.start_date <= end,

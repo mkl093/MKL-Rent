@@ -111,3 +111,34 @@ def test_serial_unavailable_by_status(db_session):
     assert a.unavailable_by_status == 1
     assert a.available == 2
     assert a.deficit == 1
+
+
+def test_shipped_project_also_reserves(db_session, model):
+    """Отгруженный проект продолжает резервировать оборудование (пункт 4)."""
+    _booked(
+        db_session, model.id, 6, date(2026, 7, 1), date(2026, 7, 5), status=ProjectStatus.SHIPPED
+    )
+    a = compute_availability(db_session, model, date(2026, 7, 2), date(2026, 7, 4), required=5)
+    assert a.reserved_other == 6
+    assert a.available == 4
+
+
+def test_defect_item_is_unavailable(db_session):
+    """Единица со статусом «Есть дефект» недоступна по состоянию (пункт 2)."""
+    cat = cat_service.create_category(db_session, "Свет")
+    m = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id, name="Прожектор", accounting_type=AccountingType.SERIAL
+        ),
+    )
+    for bc in ("D1", "D2", "D3"):
+        item_service.create_item(db_session, m, EquipmentItemInput(barcode=bc), user_id=None)
+    items = item_service.list_items(db_session, m.id)
+    item_service.change_status(
+        db_session, items[0], ItemStatus.DEFECT, user_id=None, comment="скол корпуса"
+    )
+    a = compute_availability(db_session, m, date(2026, 7, 1), date(2026, 7, 5), required=3)
+    assert a.total == 3
+    assert a.unavailable_by_status == 1
+    assert a.available == 2

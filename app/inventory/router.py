@@ -101,6 +101,7 @@ def index(
     has_packing: str | None = None,
     archived: int = 0,
     sort: str | None = None,
+    view: str | None = None,
     avail_start: str | None = None,
     avail_end: str | None = None,
     db: Session = Depends(get_db),
@@ -110,6 +111,11 @@ def index(
     if sort:
         request.session["inventory_sort"] = sort
     sort = request.session.get("inventory_sort", "category")
+
+    # Режим отображения: список или дерево (запоминается).
+    if view in ("list", "tree"):
+        request.session["inventory_view"] = view
+    view = request.session.get("inventory_view", "list")
 
     # Период проверки доступности запоминается в сессии (ТЗ §15).
     if avail_start is not None or avail_end is not None:
@@ -137,6 +143,9 @@ def index(
     if start and end:
         availability = {m.id: compute_availability(db, m, start, end) for m in models}
 
+    categories = cat_service.list_categories(db)
+    tree = _build_tree(categories, models) if view == "tree" else None
+
     return render(
         request,
         "inventory/list.html",
@@ -147,14 +156,37 @@ def index(
             "availability": availability,
             "avail_start": saved.get("start", ""),
             "avail_end": saved.get("end", ""),
-            "categories": cat_service.list_categories(db),
+            "categories": categories,
             "filters": filters,
             "AccountingType": AccountingType,
             "q": q or "",
+            "view": view,
+            "tree": tree,
         },
         db=db,
         user=user,
     )
+
+
+def _build_tree(categories, models):
+    """Сгруппировать модели в дерево Категория → Подкатегория → Модели (ТЗ §6)."""
+    by_cat: dict[int, dict[int | None, list]] = {}
+    for m in models:
+        by_cat.setdefault(m.category_id, {}).setdefault(m.subcategory_id, []).append(m)
+
+    tree = []
+    for cat in categories:
+        groups = by_cat.get(cat.id)
+        if not groups:
+            continue
+        subgroups = [
+            {"name": sub.name, "models": groups[sub.id]}
+            for sub in cat.subcategories
+            if sub.id in groups
+        ]
+        node = {"name": cat.name, "subgroups": subgroups, "direct": groups.get(None, [])}
+        tree.append(node)
+    return tree
 
 
 # --- Глобальный поиск по штрих-коду (ТЗ §21.4) --------------------------

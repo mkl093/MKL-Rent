@@ -8,18 +8,18 @@ from sqlalchemy.orm import Session
 from app.database import utcnow
 from app.inventory.enums import ItemStatus
 from app.inventory.models import EquipmentItem
-from app.projects.enums import ProjectStatus
+from app.projects.enums import RESERVING_STATUSES
 from app.projects.models import Project
 from app.projects.service import project_deficits
 
 
 def active_booked(db: Session) -> list[Project]:
-    """Активные забронированные проекты (дата окончания не прошла)."""
+    """Активные проекты в работе (забронированы/отгружены, дата окончания не прошла)."""
     today = utcnow().date()
     stmt = (
         select(Project)
         .where(
-            Project.status == ProjectStatus.BOOKED,
+            Project.status.in_(RESERVING_STATUSES),
             (Project.end_date.is_(None)) | (Project.end_date >= today),
         )
         .order_by(Project.start_date)
@@ -28,12 +28,12 @@ def active_booked(db: Session) -> list[Project]:
 
 
 def overdue_booked(db: Session) -> list[Project]:
-    """Забронированные с прошедшей датой окончания (ТЗ §5)."""
+    """Забронированные/отгруженные с прошедшей датой окончания (ТЗ §5)."""
     today = utcnow().date()
     stmt = (
         select(Project)
         .where(
-            Project.status == ProjectStatus.BOOKED,
+            Project.status.in_(RESERVING_STATUSES),
             Project.end_date.is_not(None),
             Project.end_date < today,
         )
@@ -43,11 +43,11 @@ def overdue_booked(db: Session) -> list[Project]:
 
 
 def projects_with_deficit(db: Session) -> list[Project]:
-    """Забронированные проекты, у которых есть дефицит (ТЗ §5, §15)."""
+    """Резервирующие проекты, у которых есть дефицит (ТЗ §5, §15)."""
     booked = (
         db.execute(
             select(Project)
-            .where(Project.status == ProjectStatus.BOOKED)
+            .where(Project.status.in_(RESERVING_STATUSES))
             .order_by(Project.start_date)
         )
         .scalars()

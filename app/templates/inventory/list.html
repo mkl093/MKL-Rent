@@ -3,6 +3,10 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
   <h1 class="h3 m-0">Склад</h1>
   <div class="d-flex flex-wrap gap-2">
+    <div class="btn-group">
+      <a href="/inventory?view=list" class="btn btn-outline-secondary {% if view != 'tree' %}active{% endif %}">Список</a>
+      <a href="/inventory?view=tree" class="btn btn-outline-secondary {% if view == 'tree' %}active{% endif %}">Дерево</a>
+    </div>
     <a href="/inventory/scan" class="btn btn-outline-secondary">Поиск по штрих-коду</a>
     <a href="/inventory/categories" class="btn btn-outline-secondary">Категории</a>
     <a href="/inventory/models/new" class="btn btn-primary">Добавить модель</a>
@@ -74,7 +78,35 @@
   </div>
 </form>
 
-{% if models %}
+{% if view == 'tree' %}
+  {% if tree %}
+    {% for cat in tree %}
+    <div class="card mb-2">
+      <div class="card-header fw-semibold">{{ cat.name }}</div>
+      <ul class="list-group list-group-flush">
+        {% for m in cat.direct %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+          <a href="/inventory/models/{{ m.id }}" class="text-decoration-none">{{ m.name }}{% if m.is_archived %} <span class="badge text-bg-secondary">архив</span>{% endif %}</a>
+          <span class="text-secondary small">{{ m.accounting_type.label }} · остаток {{ stock[m.id] }}{% if availability %} · доступно {{ availability[m.id].available }}{% endif %}</span>
+        </li>
+        {% endfor %}
+        {% for sub in cat.subgroups %}
+        <li class="list-group-item bg-body-tertiary fw-semibold">— {{ sub.name }}</li>
+          {% for m in sub.models %}
+          <li class="list-group-item d-flex justify-content-between align-items-center ps-4">
+            <a href="/inventory/models/{{ m.id }}" class="text-decoration-none">{{ m.name }}{% if m.is_archived %} <span class="badge text-bg-secondary">архив</span>{% endif %}</a>
+            <span class="text-secondary small">{{ m.accounting_type.label }} · остаток {{ stock[m.id] }}{% if availability %} · доступно {{ availability[m.id].available }}{% endif %}</span>
+          </li>
+          {% endfor %}
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="text-secondary">Моделей не найдено.</p>
+  {% endif %}
+
+{% elif models %}
 <div class="table-responsive d-none d-md-block">
   <table class="table table-hover align-middle">
     <thead>

@@ -8,6 +8,7 @@ import enum
 class ProjectStatus(enum.StrEnum):
     DRAFT = "draft"  # черновик — не резервирует
     BOOKED = "booked"  # забронирован — резервирует оборудование
+    SHIPPED = "shipped"  # отгружено — оборудование выдано, продолжает резервировать
     COMPLETED = "completed"  # завершён — освобождает бронь, в архиве
     CANCELLED = "cancelled"  # отменён — не резервирует, в архиве
 
@@ -16,6 +17,7 @@ class ProjectStatus(enum.StrEnum):
         return {
             "draft": "Черновик",
             "booked": "Забронирован",
+            "shipped": "Отгружено",
             "completed": "Завершён",
             "cancelled": "Отменён",
         }[self.value]
@@ -26,6 +28,7 @@ class ProjectStatus(enum.StrEnum):
         return {
             "draft": "secondary",
             "booked": "success",
+            "shipped": "info",
             "completed": "primary",
             "cancelled": "dark",
         }[self.value]
@@ -37,5 +40,9 @@ class ProjectStatus(enum.StrEnum):
 
     @property
     def reserves(self) -> bool:
-        """Резервирует ли оборудование (ТЗ §13.4)."""
-        return self == ProjectStatus.BOOKED
+        """Резервирует ли оборудование: забронировано и отгружено (ТЗ §13.4)."""
+        return self in (ProjectStatus.BOOKED, ProjectStatus.SHIPPED)
+
+
+# Статусы, резервирующие оборудование (влияют на доступность).
+RESERVING_STATUSES = [ProjectStatus.BOOKED, ProjectStatus.SHIPPED]

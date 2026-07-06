@@ -16,7 +16,11 @@
   <div class="col-12 col-md-6">
     <div class="card card-body">
       <div class="mb-2"><span class="text-secondary">Модель:</span> <a href="/inventory/models/{{ item.model_id }}">{{ item.model.name }}</a></div>
-      <div class="mb-3"><span class="text-secondary">Статус:</span> <strong>{{ item.status.label }}</strong></div>
+      <div class="mb-3"><span class="text-secondary">Статус:</span>
+        <span class="badge text-bg-{{ item.status.badge }}">{{ item.status.label }}</span></div>
+      {% if item.status == ItemStatus.DEFECT and item.status_history and item.status_history[0].comment %}
+      <div class="alert alert-danger py-2"><strong>Дефект:</strong> {{ item.status_history[0].comment }}</div>
+      {% endif %}
       <form method="post" action="/inventory/items/{{ item.id }}" class="row g-2">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="col-12"><label class="form-label small">Штрих-код *</label>

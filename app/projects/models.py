@@ -56,13 +56,11 @@ class Project(Base, TimestampMixin):
 
     @property
     def is_overdue_booked(self) -> bool:
-        """Забронирован, но дата окончания уже прошла (ТЗ §5, §13.4)."""
+        """Резервирует, но дата окончания уже прошла (ТЗ §5, §13.4)."""
         from app.database import utcnow
 
         return (
-            self.status == ProjectStatus.BOOKED
-            and self.end_date is not None
-            and self.end_date < utcnow().date()
+            self.status.reserves and self.end_date is not None and self.end_date < utcnow().date()
         )
 
 
