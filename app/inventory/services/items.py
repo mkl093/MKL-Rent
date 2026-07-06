@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import utcnow
-from app.inventory.enums import AccountingType, ItemStatus
+from app.inventory.enums import ItemStatus
 from app.inventory.models import EquipmentItem, EquipmentModel, EquipmentStatusHistory
 from app.inventory.schemas import EquipmentItemInput
 from app.inventory.services.categories import InUse, InventoryError
@@ -54,12 +54,9 @@ def list_items(db: Session, model_id: int) -> list[EquipmentItem]:
 def create_item(
     db: Session, model: EquipmentModel, data: EquipmentItemInput, user_id: int | None
 ) -> EquipmentItem:
-    """Создать экземпляр посерийной модели с уникальным штрих-кодом (ТЗ §38)."""
-    if model.accounting_type != AccountingType.SERIAL:
-        raise InventoryError("Экземпляры есть только у посерийной модели")
-
-    barcode = data.barcode.strip()
-    if db.scalar(select(EquipmentItem.id).where(EquipmentItem.barcode == barcode)):
+    """Создать единицу оборудования (штрих-код опционален; уникален при наличии, ТЗ §38)."""
+    barcode = (data.barcode or "").strip() or None
+    if barcode and db.scalar(select(EquipmentItem.id).where(EquipmentItem.barcode == barcode)):
         raise DuplicateBarcode("Штрих-код уже используется")
 
     item = EquipmentItem(
@@ -76,7 +73,7 @@ def create_item(
             user_id=user_id,
             old_status=None,
             new_status=ItemStatus.ACTIVE,
-            comment="Создание экземпляра",
+            comment="Создание единицы",
         )
     )
     db.add(item)
@@ -89,10 +86,22 @@ def create_item(
     return item
 
 
+def create_units(db: Session, model: EquipmentModel, count: int) -> int:
+    """Массово создать N единиц без штрих-кода (для количественного оборудования)."""
+    count = max(0, count)
+    for _ in range(count):
+        db.add(EquipmentItem(model_id=model.id, barcode=None, status=ItemStatus.ACTIVE))
+    if count:
+        db.commit()
+    return count
+
+
 def update_item(db: Session, item: EquipmentItem, data: EquipmentItemInput) -> EquipmentItem:
-    barcode = data.barcode.strip()
-    if barcode != item.barcode and db.scalar(
-        select(EquipmentItem.id).where(EquipmentItem.barcode == barcode)
+    barcode = (data.barcode or "").strip() or None
+    if (
+        barcode
+        and barcode != item.barcode
+        and db.scalar(select(EquipmentItem.id).where(EquipmentItem.barcode == barcode))
     ):
         raise DuplicateBarcode("Штрих-код уже используется")
     item.barcode = barcode

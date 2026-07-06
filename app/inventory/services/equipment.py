@@ -74,6 +74,12 @@ def create_model(db: Session, data: EquipmentModelCreate) -> EquipmentModel:
     db.add(model)
     db.commit()
     db.refresh(model)
+    # Поединичный учёт: у количественной модели заводим единицы по количеству.
+    if model.accounting_type == AccountingType.QUANTITY and data.total_quantity > 0:
+        from app.inventory.services.items import create_units
+
+        create_units(db, model, data.total_quantity)
+        db.refresh(model)
     return model
 
 
@@ -91,10 +97,8 @@ def update_model(db: Session, model: EquipmentModel, data: EquipmentModelUpdate)
     model.internal_sku = data.internal_sku or None
     model.description = data.description or None
     model.note = data.note or None
-    # total_quantity редактируется отдельной операцией с историей (ТЗ §10),
-    # но при первичном редактировании количественной модели допускаем синхронизацию.
-    if model.accounting_type == AccountingType.QUANTITY:
-        model.total_quantity = data.total_quantity
+    # Остаток (число единиц) меняется отдельной операцией с историей (ТЗ §10),
+    # поэтому total_quantity при редактировании модели не трогаем.
     _apply_packing(model, data.packing)
     db.commit()
     db.refresh(model)
@@ -142,20 +146,43 @@ def adjust_quantity(
     user_id: int | None,
     comment: str | None = None,
 ) -> QuantityAdjustment:
-    """Изменить количественный остаток с записью истории в транзакции (ТЗ §10, §38)."""
+    """Быстро изменить остаток количественной модели: создать/удалить активные
+    единицы до целевого числа, с записью истории в транзакции (ТЗ §10, §38)."""
     if model.accounting_type != AccountingType.QUANTITY:
-        raise InventoryError("Остаток меняется только у количественной модели")
+        raise InventoryError("Быстрое изменение остатка — только у количественной модели")
     if new_quantity < 0:
         raise InventoryError("Количество не может быть отрицательным")
 
-    old = model.total_quantity
+    old = active_count(db, model.id)
+    diff = new_quantity - old
+    if diff > 0:
+        for _ in range(diff):
+            db.add(EquipmentItem(model_id=model.id, barcode=None, status=ItemStatus.ACTIVE))
+    elif diff < 0:
+        # Удаляем лишние активные единицы без штрих-кода (обезличенные).
+        extra = (
+            db.execute(
+                select(EquipmentItem)
+                .where(
+                    EquipmentItem.model_id == model.id,
+                    EquipmentItem.status == ItemStatus.ACTIVE,
+                )
+                .order_by(EquipmentItem.barcode.is_(None).desc(), EquipmentItem.id.desc())
+                .limit(-diff)
+            )
+            .scalars()
+            .all()
+        )
+        for item in extra:
+            db.delete(item)
+
     adjustment = QuantityAdjustment(
         model_id=model.id,
         changed_at=utcnow(),
         user_id=user_id,
         old_quantity=old,
         new_quantity=new_quantity,
-        delta=new_quantity - old,
+        delta=diff,
         comment=(comment or None),
     )
     model.total_quantity = new_quantity
@@ -188,14 +215,24 @@ def serial_status_counts(db: Session, model_id: int) -> dict[ItemStatus, int]:
 
 
 def stock_quantity(db: Session, model: EquipmentModel) -> int:
-    """Общий остаток: поле для количественной, число экземпляров — для посерийной."""
-    if model.accounting_type == AccountingType.QUANTITY:
-        return model.total_quantity
+    """Общий остаток = число единиц модели (поединичный учёт, пункт 3)."""
     return (
         db.scalar(
             select(func.count())
             .select_from(EquipmentItem)
             .where(EquipmentItem.model_id == model.id)
+        )
+        or 0
+    )
+
+
+def active_count(db: Session, model_id: int) -> int:
+    """Число активных единиц модели."""
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(EquipmentItem)
+            .where(EquipmentItem.model_id == model_id, EquipmentItem.status == ItemStatus.ACTIVE)
         )
         or 0
     )

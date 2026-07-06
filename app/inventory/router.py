@@ -387,16 +387,18 @@ def model_detail(
     if model is None:
         flash(request, "Модель не найдена.", "danger")
         return redirect("/inventory")
+    # Поединичный учёт для всех типов: показываем единицы и разбивку по статусам.
     context = {
         "page_title": model.name,
         "model": model,
         "stock": eq_service.stock_quantity(db, model),
+        "active": eq_service.active_count(db, model.id),
+        "items": item_service.list_items(db, model.id),
+        "status_counts": eq_service.serial_status_counts(db, model.id),
         "ItemStatus": ItemStatus,
     }
-    if model.is_serial:
-        context["items"] = item_service.list_items(db, model.id)
-        context["status_counts"] = eq_service.serial_status_counts(db, model.id)
-    else:
+    # У количественной модели дополнительно — быстрый остаток и его история (ТЗ §10).
+    if not model.is_serial:
         context["quantity_history"] = eq_service.quantity_history(db, model)
     return render(request, "inventory/model_detail.html", context, db=db, user=user)
 
@@ -595,7 +597,7 @@ def quantity_adjust(
 def item_create(
     request: Request,
     model_id: int,
-    barcode: str = Form(...),
+    barcode: str | None = Form(None),
     serial_number: str | None = Form(None),
     inventory_number: str | None = Form(None),
     comment: str | None = Form(None),
@@ -609,14 +611,14 @@ def item_create(
                 db,
                 model,
                 EquipmentItemInput(
-                    barcode=barcode,
+                    barcode=_str(barcode),
                     serial_number=_str(serial_number),
                     inventory_number=_str(inventory_number),
                     comment=_str(comment),
                 ),
                 user.id,
             )
-            flash(request, "Экземпляр добавлен.", "success")
+            flash(request, "Единица добавлена.", "success")
         except item_service.InventoryError as exc:
             flash(request, str(exc), "danger")
     return redirect(f"/inventory/models/{model_id}")

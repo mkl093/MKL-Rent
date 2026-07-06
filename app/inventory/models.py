@@ -164,8 +164,8 @@ class EquipmentItem(Base, TimestampMixin):
     model_id: Mapped[int] = mapped_column(
         ForeignKey("equipment_models.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    # Штрих-код уникален во всей системе (ТЗ §21.1, §40.2).
-    barcode: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
+    # Штрих-код опционален; при наличии — уникален во всей системе (ТЗ §21.1, §40.2).
+    barcode: Mapped[str | None] = mapped_column(String(128), unique=True, index=True, nullable=True)
     status: Mapped[ItemStatus] = mapped_column(
         _enum_column(ItemStatus, 10),
         default=ItemStatus.ACTIVE,

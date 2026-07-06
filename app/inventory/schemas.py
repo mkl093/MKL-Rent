@@ -60,7 +60,7 @@ class EquipmentModelUpdate(BaseModel):
 
 
 class EquipmentItemInput(BaseModel):
-    barcode: str = Field(min_length=1, max_length=128)
+    barcode: str | None = Field(default=None, max_length=128)
     serial_number: str | None = Field(default=None, max_length=255)
     inventory_number: str | None = Field(default=None, max_length=255)
     comment: str | None = None

@@ -180,3 +180,45 @@ def test_filter_empty_params_ok(auth_client):
         params={"q": "", "category_id": "", "subcategory_id": "", "accounting_type": ""},
     )
     assert resp.status_code == 200
+
+
+def test_unit_view_and_tree(auth_client, db_session):
+    """Карточка единиц для количественной модели и режим дерева (пункты 1, 3)."""
+    from decimal import Decimal
+
+    from app.inventory.enums import AccountingType
+    from app.inventory.schemas import EquipmentModelCreate
+    from app.inventory.services import categories as cat_service
+    from app.inventory.services import equipment as eq_service
+
+    cat = cat_service.create_category(db_session, "Кабели")
+    sub = cat_service.create_subcategory(db_session, cat, "XLR")
+    model = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id,
+            subcategory_id=sub.id,
+            name="XLR 5м",
+            accounting_type=AccountingType.QUANTITY,
+            total_quantity=4,
+            base_price_eur=Decimal("0"),
+        ),
+    )
+    # Карточка количественной модели показывает единицы
+    page = auth_client.get(f"/inventory/models/{model.id}").text
+    assert "Единицы (4)" in page
+    assert "Активных единиц" in page
+
+    # Добавляем единицу без штрих-кода
+    token = _csrf(auth_client, f"/inventory/models/{model.id}")
+    auth_client.post(
+        f"/inventory/models/{model.id}/items",
+        data={"barcode": "", "inventory_number": "INV-9", "csrf_token": token},
+        follow_redirects=False,
+    )
+    assert "Единицы (5)" in auth_client.get(f"/inventory/models/{model.id}").text
+
+    # Дерево склада
+    tree = auth_client.get("/inventory", params={"view": "tree"})
+    assert tree.status_code == 200
+    assert "XLR 5м" in tree.text

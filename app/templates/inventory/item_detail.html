@@ -23,8 +23,8 @@
       {% endif %}
       <form method="post" action="/inventory/items/{{ item.id }}" class="row g-2">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <div class="col-12"><label class="form-label small">Штрих-код *</label>
-          <input class="form-control" name="barcode" value="{{ item.barcode }}" required></div>
+        <div class="col-12"><label class="form-label small">Штрих-код</label>
+          <input class="form-control" name="barcode" value="{{ item.barcode or '' }}" placeholder="необязательно"></div>
         <div class="col-6"><label class="form-label small">Серийный №</label>
           <input class="form-control" name="serial_number" value="{{ item.serial_number or '' }}"></div>
         <div class="col-6"><label class="form-label small">Инвентарный №</label>

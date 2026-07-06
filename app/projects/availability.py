@@ -12,7 +12,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.inventory.enums import UNAVAILABLE_STATUSES, AccountingType
+from app.inventory.enums import UNAVAILABLE_STATUSES
 from app.inventory.models import EquipmentItem, EquipmentModel
 from app.projects.enums import RESERVING_STATUSES, ProjectStatus
 from app.projects.models import Project, ProjectReservation
@@ -55,8 +55,7 @@ class OccupancyEntry:
 
 
 def _total_stock(db: Session, model: EquipmentModel) -> int:
-    if model.accounting_type == AccountingType.QUANTITY:
-        return model.total_quantity
+    """Всего единиц модели (поединичный учёт для всех типов, пункт 3)."""
     return (
         db.scalar(
             select(func.count())
@@ -68,9 +67,7 @@ def _total_stock(db: Session, model: EquipmentModel) -> int:
 
 
 def _unavailable_by_status(db: Session, model: EquipmentModel) -> int:
-    """Экземпляры, недоступные по статусу (в ремонте/списаны). Для количественных — 0."""
-    if model.accounting_type == AccountingType.QUANTITY:
-        return 0
+    """Единицы, недоступные по статусу (в ремонте/с дефектом/списаны)."""
     return (
         db.scalar(
             select(func.count())

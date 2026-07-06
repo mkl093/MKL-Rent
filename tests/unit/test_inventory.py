@@ -145,10 +145,34 @@ def test_duplicate_barcode_rejected(db_session, category):
         item_service.create_item(db_session, model, EquipmentItemInput(barcode="DUP"), user_id=None)
 
 
-def test_item_only_for_serial(db_session, category):
-    model = _qty_model(db_session, category)
-    with pytest.raises(eq_service.InventoryError):
-        item_service.create_item(db_session, model, EquipmentItemInput(barcode="X"), user_id=None)
+def test_unit_allowed_for_any_model(db_session, category):
+    """Пункт 3: единицы можно заводить у любой модели, штрих-код опционален."""
+    model = _qty_model(db_session, category, qty=0)
+    # без штрих-кода
+    unit = item_service.create_item(db_session, model, EquipmentItemInput(), user_id=None)
+    assert unit.barcode is None
+    assert unit.status == ItemStatus.ACTIVE
+    # с инвентарным номером и штрих-кодом
+    item_service.create_item(
+        db_session, model, EquipmentItemInput(barcode="X", inventory_number="INV-1"), user_id=None
+    )
+    assert eq_service.stock_quantity(db_session, model) == 2
+
+
+def test_quantity_model_creates_units(db_session, category):
+    """Пункт 3: количественная модель заводит единицы по количеству; остаток = число единиц."""
+    model = _qty_model(db_session, category, qty=5)
+    assert eq_service.stock_quantity(db_session, model) == 5
+    assert eq_service.active_count(db_session, model.id) == 5
+
+
+def test_quantity_adjust_manages_units(db_session, category):
+    """Пункт 3: изменение остатка создаёт/удаляет активные единицы."""
+    model = _qty_model(db_session, category, qty=3)
+    eq_service.adjust_quantity(db_session, model, 5, user_id=None, comment="приход")
+    assert eq_service.stock_quantity(db_session, model) == 5
+    eq_service.adjust_quantity(db_session, model, 2, user_id=None)
+    assert eq_service.active_count(db_session, model.id) == 2
 
 
 def test_change_status_records_history(db_session, category):

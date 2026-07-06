@@ -58,21 +58,21 @@
   </div>
 </div>
 
-{% if model.is_serial %}
+{# Единицы оборудования — поединичный учёт для всех типов (пункт 3) #}
 <div class="card mt-4">
   <div class="card-header d-flex flex-wrap gap-3 align-items-center">
-    <strong>Экземпляры ({{ items|length }})</strong>
+    <strong>Единицы ({{ items|length }})</strong>
     <span class="text-secondary small">
-      {% for st, cnt in status_counts.items() %}{{ st.label }}: {{ cnt }}{% if not loop.last %} · {% endif %}{% endfor %}
+      {% for st, cnt in status_counts.items() %}{% if cnt %}{{ st.label }}: {{ cnt }} {% endif %}{% endfor %}
     </span>
   </div>
   <div class="card-body">
     <form method="post" action="/inventory/models/{{ model.id }}/items" class="row g-2 mb-3">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <div class="col-12 col-md-3"><input class="form-control" name="barcode" placeholder="Штрих-код *" required></div>
+      <div class="col-12 col-md-3"><input class="form-control" name="barcode" placeholder="Штрих-код (необязательно)"></div>
       <div class="col-6 col-md-3"><input class="form-control" name="serial_number" placeholder="Серийный №"></div>
       <div class="col-6 col-md-3"><input class="form-control" name="inventory_number" placeholder="Инв. №"></div>
-      <div class="col-12 col-md-3"><button class="btn btn-primary w-100">Добавить экземпляр</button></div>
+      <div class="col-12 col-md-3"><button class="btn btn-primary w-100">Добавить единицу</button></div>
     </form>
     {% if items %}
     <div class="table-responsive">
@@ -81,10 +81,10 @@
         <tbody>
           {% for it in items %}
           <tr>
-            <td><code>{{ it.barcode }}</code></td>
+            <td>{% if it.barcode %}<code>{{ it.barcode }}</code>{% else %}<span class="text-secondary">—</span>{% endif %}</td>
             <td>{{ it.serial_number or "—" }}</td>
             <td>{{ it.inventory_number or "—" }}</td>
-            <td>{{ it.status.label }}</td>
+            <td><span class="badge text-bg-{{ it.status.badge }}">{{ it.status.label }}</span></td>
             <td class="text-end"><a href="/inventory/items/{{ it.id }}" class="btn btn-sm btn-outline-secondary">Открыть</a></td>
           </tr>
           {% endfor %}
@@ -92,19 +92,21 @@
       </table>
     </div>
     {% else %}
-    <p class="text-secondary m-0">Экземпляров пока нет.</p>
+    <p class="text-secondary m-0">Единиц пока нет.</p>
     {% endif %}
   </div>
 </div>
-{% else %}
+
+{% if not model.is_serial %}
 <div class="card mt-4">
-  <div class="card-header"><strong>Остаток и история (ТЗ §10)</strong></div>
+  <div class="card-header"><strong>Быстрое изменение остатка и история (ТЗ §10)</strong></div>
   <div class="card-body">
+    <p class="small text-secondary">Укажите число активных единиц: недостающие создадутся, лишние (без штрих-кода) удалятся. Активно сейчас: {{ active }}.</p>
     <form method="post" action="/inventory/models/{{ model.id }}/quantity" class="row g-2 mb-3">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="col-6 col-md-2">
-        <label class="form-label small">Новое количество</label>
-        <input class="form-control" name="new_quantity" inputmode="numeric" value="{{ stock }}">
+        <label class="form-label small">Активных единиц</label>
+        <input class="form-control" name="new_quantity" inputmode="numeric" value="{{ active }}">
       </div>
       <div class="col-12 col-md-7">
         <label class="form-label small">Комментарий</label>
