@@ -136,6 +136,57 @@ def test_distribution_moves_to_unpacked(env):
     assert c.total_volume == Decimal("0.066")
 
 
+# --- Добавление оборудования со склада вручную --------------------------
+
+
+def test_add_model_new_line(env):
+    db, project, qty_model, serial_model = env
+    packing = service.create_from_estimate(db, project)
+    other = eq_service.create_model(
+        db,
+        EquipmentModelCreate(
+            category_id=qty_model.category_id,
+            name="Кабель",
+            accounting_type=AccountingType.QUANTITY,
+            total_quantity=5,
+            weight_kg=Decimal("0.5"),
+        ),
+    )
+    line = service.add_model(db, packing, other, 3)
+    assert line.model_id == other.id
+    assert line.planned_quantity == 3
+    assert line.quantity == 3  # факт = план для количественных
+    assert len([ln for ln in packing.lines if ln.model_id == other.id]) == 1
+
+
+def test_add_model_merges_existing(env):
+    db, project, qty_model, serial_model = env
+    packing = service.create_from_estimate(db, project)
+    line = next(ln for ln in packing.lines if ln.model_id == qty_model.id)
+    before = line.planned_quantity  # 10
+    same = service.add_model(db, packing, qty_model, 4)
+    assert same.id == line.id
+    assert same.planned_quantity == before + 4
+    assert same.quantity == before + 4  # факт тоже увеличен
+    # строка не задвоилась
+    assert len([ln for ln in packing.lines if ln.model_id == qty_model.id]) == 1
+
+
+def test_add_serial_model_new_line(env):
+    db, project, qty_model, serial_model = env
+    packing = service.create_from_estimate(db, project)
+    other = eq_service.create_model(
+        db,
+        EquipmentModelCreate(
+            category_id=qty_model.category_id, name="Радио", accounting_type=AccountingType.SERIAL
+        ),
+    )
+    line = service.add_model(db, packing, other, 2)
+    assert line.is_serial
+    assert line.planned_quantity == 2
+    assert line.fact_quantity == 0  # серийные назначаются экземплярами
+
+
 # --- Серийные экземпляры (ТЗ §17.7, §17.8, §22) -------------------------
 
 

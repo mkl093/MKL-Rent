@@ -79,6 +79,30 @@ def test_packing_create_and_view(auth_client, project_with_estimate):
     assert "Комплектуется" in auth_client.get(base).text
 
 
+def test_packing_add_equipment_web(auth_client, project_with_estimate):
+    pid = project_with_estimate.id
+    base = f"/projects/{pid}/packing"
+    token = _csrf(auth_client, base)
+    auth_client.post(f"{base}/create", data={"csrf_token": token}, follow_redirects=False)
+
+    # Страница подбора со складским оборудованием
+    page = auth_client.get(f"{base}/add")
+    assert page.status_code == 200
+    assert "Добавить оборудование" in page.text
+    assert "Колонка" in page.text
+    mid = re.search(r'name="select_(\d+)"', page.text).group(1)
+
+    # Добавляем 5 шт той же модели → план вырастет с 8 до 13 (строка не задвоится)
+    token = _csrf(auth_client, f"{base}/add")
+    auth_client.post(
+        f"{base}/add",
+        data={f"select_{mid}": "1", f"qty_{mid}": "5", "csrf_token": token},
+        follow_redirects=False,
+    )
+    page = auth_client.get(base).text
+    assert "план 13" in page
+
+
 def test_packing_blocks_project_delete(auth_client, project_with_estimate):
     pid = project_with_estimate.id
     base = f"/projects/{pid}/packing"

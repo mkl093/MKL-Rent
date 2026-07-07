@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 m-0">Добавить оборудование в packing {{ packing.number }}</h1>
+  <a href="/projects/{{ project.id }}/packing" class="btn btn-outline-secondary">К packing-листу</a>
+</div>
+
+{% if not (project.start_date and project.end_date) %}
+<div class="alert alert-info">Даты проекта не заданы — доступность не рассчитывается.</div>
+{% endif %}
+
+<form method="get" action="/projects/{{ project.id }}/packing/add" class="card card-body mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-5">
+      <label class="form-label" for="q">Поиск (название, производитель)</label>
+      <input class="form-control" id="q" name="q" value="{{ q }}">
+    </div>
+    <div class="col-8 col-md-5">
+      <label class="form-label" for="category_id">Категория</label>
+      <select class="form-select" id="category_id" name="category_id">
+        <option value="">Все</option>
+        {% for c in categories %}
+          <option value="{{ c.id }}" {% if filters.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-4 col-md-2"><button class="btn btn-primary w-100">Фильтр</button></div>
+  </div>
+</form>
+
+<form method="post" action="/projects/{{ project.id }}/packing/add">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="d-flex flex-wrap gap-3 align-items-center mb-2">
+    <div class="text-secondary small">Если модель уже в листе — план увеличится (строки не задваиваются).</div>
+    <button class="btn btn-primary" type="submit">Добавить выбранное</button>
+  </div>
+
+  {% if models %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr>
+        <th></th><th></th><th>Модель</th><th>Производитель</th><th>Тип учёта</th>
+        <th>Упаковка</th><th class="text-end">Доступно</th><th class="text-end">Кол-во</th>
+      </tr></thead>
+      <tbody>
+        {% for m in models %}
+        {% set av = availability.get(m.id) %}
+        <tr>
+          <td><input class="form-check-input" type="checkbox" name="select_{{ m.id }}" value="1"></td>
+          <td style="width:44px">{% if m.photo_path %}<img src="/media/{{ m.photo_path }}" width="36" height="36" class="rounded object-fit-cover" alt="">{% endif %}</td>
+          <td><a href="/inventory/models/{{ m.id }}" target="_blank">{{ m.name }}</a></td>
+          <td>{{ m.manufacturer or "—" }}</td>
+          <td>{{ m.accounting_type.label }}</td>
+          <td>{{ m.packing.packing_type.label if m.has_packing else "—" }}</td>
+          <td class="text-end {% if av and av.available <= 0 %}text-danger fw-semibold{% endif %}">{{ av.available if av is not none else "—" }}</td>
+          <td class="text-end"><input class="form-control form-control-sm text-end" name="qty_{{ m.id }}" inputmode="numeric" value="1" style="width:4.5rem"></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-secondary">Моделей не найдено.</p>
+  {% endif %}
+</form>
+{% endblock %}

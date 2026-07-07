@@ -14,12 +14,15 @@ from app.audit.service import log as audit_log
 from app.auth.models import User
 from app.database import get_db
 from app.dependencies import redirect, render, require_login, verify_csrf
-from app.inventory.enums import ItemStatus
+from app.inventory.enums import AccountingType, ItemStatus
 from app.inventory.models import EquipmentItem
+from app.inventory.services import categories as cat_service
+from app.inventory.services import equipment as eq_service
 from app.packing import service
 from app.packing.calc import compute_line
 from app.packing.enums import PackingStatus
 from app.packing.schemas import CustomPackingLine
+from app.projects.availability import compute_availability
 from app.projects.service import get_project
 from app.templating import flash
 
@@ -38,6 +41,10 @@ def _int(value: str | None, default: int = 0) -> int:
         return int(float((value or "").replace(",", ".").strip()))
     except (ValueError, AttributeError):
         return default
+
+
+def _opt_id(value: str | None) -> int | None:
+    return int(value) if value and value.strip() else None
 
 
 def _load(db: Session, project_id: int, *, require_editable: bool = False):
@@ -168,6 +175,92 @@ def packing_sync(
         object_id=packing.id,
     )
     flash(request, "План синхронизирован со сметой.", "success")
+    return redirect(f"/projects/{project_id}/packing")
+
+
+@router.get("/add")
+def add_picker(
+    request: Request,
+    project_id: int,
+    q: str | None = None,
+    category_id: str | None = None,
+    subcategory_id: str | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    project, packing, editable = _load(db, project_id)
+    if project is None or packing is None:
+        flash(request, "Packing-лист не создан.", "warning")
+        return redirect(f"/projects/{project_id}/packing")
+
+    filters = eq_service.ModelFilters(
+        query=q,
+        category_id=_opt_id(category_id),
+        subcategory_id=_opt_id(subcategory_id),
+        archived=False,
+    )
+    models = eq_service.list_models(db, filters)
+
+    availability = {}
+    if project.start_date and project.end_date:
+        for m in models:
+            availability[m.id] = compute_availability(
+                db, m, project.start_date, project.end_date, exclude_project_id=project.id
+            )
+
+    return render(
+        request,
+        "packing/add.html",
+        {
+            "page_title": "Добавить оборудование",
+            "project": project,
+            "packing": packing,
+            "models": models,
+            "availability": availability,
+            "categories": cat_service.list_categories(db),
+            "filters": filters,
+            "q": q or "",
+            "editable": editable,
+            "AccountingType": AccountingType,
+        },
+        db=db,
+        user=user,
+    )
+
+
+@router.post("/add", dependencies=[Depends(verify_csrf)])
+async def add_submit(
+    request: Request,
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    project, packing, editable = _load(db, project_id, require_editable=True)
+    if project is None or packing is None or not editable:
+        return redirect(f"/projects/{project_id}/packing")
+
+    form = await request.form()
+    added = 0
+    for key in form:
+        if not key.startswith("select_"):
+            continue
+        model_id = int(key.split("_", 1)[1])
+        model = eq_service.get_model(db, model_id)
+        if model is None:
+            continue
+        qty = _int(form.get(f"qty_{model_id}"), 1)
+        service.add_model(db, packing, model, qty)
+        added += 1
+    if added:
+        audit_log(
+            db,
+            user,
+            EventType.PACKING_ADD,
+            f"Packing {packing.number}: добавлено оборудование со склада — позиций {added}",
+            object_type="packing_list",
+            object_id=packing.id,
+        )
+    flash(request, f"Добавлено позиций: {added}.", "success" if added else "warning")
     return redirect(f"/projects/{project_id}/packing")
 
 

@@ -14,6 +14,7 @@ class EventType(enum.StrEnum):
     PROJECT_DELETE = "project_delete"
     ESTIMATE_CHANGE = "estimate_change"
     PACKING_CREATE = "packing_create"
+    PACKING_ADD = "packing_add"
     PACKING_SYNC = "packing_sync"
     PACKING_STATUS = "packing_status"
     PACKING_SCAN = "packing_scan"
@@ -35,6 +36,7 @@ class EventType(enum.StrEnum):
             "project_delete": "Удалён проект",
             "estimate_change": "Изменение сметы",
             "packing_create": "Создан packing-лист",
+            "packing_add": "Добавление оборудования в packing-лист",
             "packing_sync": "Синхронизация packing-листа",
             "packing_status": "Статус packing-листа",
             "packing_scan": "Комплектация (сканирование/добавление)",

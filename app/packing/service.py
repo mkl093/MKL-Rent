@@ -170,6 +170,36 @@ def apply_sync(db: Session, project: Project, packing: PackingList) -> None:
 # --- Строки -------------------------------------------------------------
 
 
+def add_model(
+    db: Session, packing: PackingList, model: EquipmentModel, quantity: int
+) -> PackingLine:
+    """Добавить складскую модель в packing-лист вручную — как в смете.
+
+    Если строка этой модели уже есть, увеличиваем план (и факт у количественных),
+    чтобы не задваивать строки и не сломать сканирование серийных (ТЗ §17.7, §22).
+    Для новой строки берётся тот же снимок модели, что и в create_from_estimate.
+    """
+    quantity = max(1, quantity)
+    existing = next(
+        (ln for ln in packing.lines if not ln.is_custom and ln.model_id == model.id), None
+    )
+    if existing is not None:
+        existing.planned_quantity += quantity
+        if not existing.is_serial:
+            existing.quantity += quantity
+            if existing.has_packing:
+                existing.packed_quantity += quantity
+        db.commit()
+        return existing
+
+    sort_order = max((ln.sort_order for ln in packing.lines), default=0) + 1
+    line = _new_line_from_model(model, quantity, sort_order)
+    packing.lines.append(line)
+    db.commit()
+    db.refresh(line)
+    return line
+
+
 def get_line(db: Session, packing: PackingList, line_id: int) -> PackingLine | None:
     return next((ln for ln in packing.lines if ln.id == line_id), None)
 
