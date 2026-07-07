@@ -38,6 +38,11 @@ def _int(value: str | None, default: int = 1) -> int:
         return default
 
 
+def _pct(value: str | None) -> Decimal:
+    """Скидка/процент, приведённый к диапазону 0–100."""
+    return max(Decimal("0"), min(Decimal("100"), _dec(value)))
+
+
 def _opt_id(value: str | None) -> int | None:
     return int(value) if value and value.strip() else None
 
@@ -152,7 +157,8 @@ async def add_submit(
         if model is None:
             continue
         qty = _int(form.get(f"qty_{model_id}"), 1)
-        service.add_model(db, estimate, project, model, qty, merge=merge)
+        disc = _pct(form.get(f"disc_{model_id}"))
+        service.add_model(db, estimate, project, model, qty, merge=merge, discount_percent=disc)
         added += 1
     if added:
         audit_log(
@@ -175,6 +181,7 @@ def add_custom(
     quantity: str = Form("1"),
     unit_price: str = Form("0"),
     coefficient: str = Form("1"),
+    discount_percent: str = Form("0"),
     comment: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
@@ -191,6 +198,7 @@ def add_custom(
             quantity=_int(quantity, 1),
             unit_price=_dec(unit_price),
             coefficient=_dec(coefficient, "1"),
+            discount_percent=_pct(discount_percent),
             comment=(comment.strip() if comment else None),
         ),
     )
@@ -214,6 +222,7 @@ def update_line(
     quantity: str = Form("1"),
     unit_price: str = Form("0"),
     coefficient: str = Form("1"),
+    discount_percent: str = Form("0"),
     comment: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
@@ -230,6 +239,7 @@ def update_line(
                 quantity=_int(quantity, 1),
                 unit_price=_dec(unit_price),
                 coefficient=_dec(coefficient, "1"),
+                discount_percent=_pct(discount_percent),
                 comment=(comment.strip() if comment else None),
             ),
         )

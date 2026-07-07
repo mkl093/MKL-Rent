@@ -67,6 +67,11 @@ class EstimateLine(Base):
     coefficient: Mapped[Decimal] = mapped_column(
         Numeric(6, 3), default=Decimal("1"), nullable=False
     )
+    # Индивидуальная скидка строки в процентах (ТЗ §16.7). Применяется к строке
+    # до общей скидки сметы, которая считается от подытога.
+    discount_percent: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), default=Decimal("0"), nullable=False
+    )
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
@@ -74,7 +79,8 @@ class EstimateLine(Base):
 
     @property
     def line_total(self) -> Decimal:
-        """Итог строки = цена × количество × коэффициент (ТЗ §16.4)."""
+        """Итог строки = цена × количество × коэффициент × (1 − скидка строки) (ТЗ §16.4)."""
         from app.estimates.totals import money
 
-        return money(self.unit_price * self.quantity * self.coefficient)
+        gross = self.unit_price * self.quantity * self.coefficient
+        return money(gross * (Decimal("1") - self.discount_percent / Decimal("100")))

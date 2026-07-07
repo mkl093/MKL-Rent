@@ -58,6 +58,64 @@ def test_add_model_snapshots_price_and_coefficient(db_session, setup):
     assert line.line_total == Decimal("300.00")
 
 
+def test_line_discount_applied_to_line_total(db_session, setup):
+    project, estimate, model = setup
+    # 100 × 2 × 1.5 = 300, скидка строки 10% → 270
+    line = service.add_model(
+        db_session, estimate, project, model, 2, discount_percent=Decimal("10")
+    )
+    assert line.discount_percent == Decimal("10")
+    assert line.line_total == Decimal("270.00")
+
+
+def test_update_line_sets_discount(db_session, setup):
+    project, estimate, model = setup
+    line = service.add_model(db_session, estimate, project, model, 2)
+    assert line.line_total == Decimal("300.00")
+    service.update_line(
+        db_session,
+        line,
+        LineUpdate(
+            quantity=2,
+            unit_price=Decimal("100"),
+            coefficient=Decimal("1.5"),
+            discount_percent=Decimal("25"),
+        ),
+    )
+    assert line.discount_percent == Decimal("25")
+    assert line.line_total == Decimal("225.00")  # 300 × 0.75
+
+
+def test_line_and_overall_discount_combine(db_session, setup):
+    project, estimate, model = setup
+    # строка со скидкой 10% → 270, затем общая скидка 10% и VAT 19%
+    service.add_model(db_session, estimate, project, model, 2, discount_percent=Decimal("10"))
+    service.set_discount(db_session, estimate, Decimal("10"))
+    t = service.totals(db_session, estimate, project)
+    assert t.subtotal == Decimal("270.00")
+    assert t.discount_amount == Decimal("27.00")
+    assert t.after_discount == Decimal("243.00")
+    assert t.vat_amount == Decimal("46.17")  # 243 × 19%
+    assert t.total == Decimal("289.17")
+
+
+def test_custom_line_discount(db_session, setup):
+    project, estimate, _ = setup
+    service.add_custom_line(
+        db_session,
+        estimate,
+        project,
+        CustomLineInput(
+            name="Монтаж",
+            quantity=1,
+            unit_price=Decimal("200"),
+            coefficient=Decimal("1"),
+            discount_percent=Decimal("50"),
+        ),
+    )
+    assert estimate.lines[0].line_total == Decimal("100.00")
+
+
 def test_merge_vs_separate(db_session, setup):
     project, estimate, model = setup
     service.add_model(db_session, estimate, project, model, 2, merge=True)

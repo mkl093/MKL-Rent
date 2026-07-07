@@ -57,6 +57,10 @@ def _next_sort_order(estimate: Estimate) -> int:
     return (max((ln.sort_order for ln in estimate.lines), default=0)) + 1
 
 
+def _clamp_percent(value: Decimal) -> Decimal:
+    return max(Decimal("0"), min(Decimal("100"), value))
+
+
 def add_model(
     db: Session,
     estimate: Estimate,
@@ -65,6 +69,7 @@ def add_model(
     quantity: int,
     *,
     merge: bool = True,
+    discount_percent: Decimal = Decimal("0"),
 ) -> EstimateLine:
     """Добавить складскую модель в смету.
 
@@ -91,6 +96,7 @@ def add_model(
         quantity=quantity,
         unit_price=model.base_price_eur,
         coefficient=project.rental_coefficient,
+        discount_percent=_clamp_percent(discount_percent),
         sort_order=_next_sort_order(estimate),
     )
     estimate.lines.append(line)
@@ -115,6 +121,7 @@ def add_custom_line(
         quantity=data.quantity,
         unit_price=data.unit_price,
         coefficient=data.coefficient,
+        discount_percent=_clamp_percent(data.discount_percent),
         comment=(data.comment or None),
         sort_order=_next_sort_order(estimate),
     )
@@ -128,6 +135,7 @@ def update_line(db: Session, line: EstimateLine, data: LineUpdate) -> EstimateLi
     line.quantity = data.quantity
     line.unit_price = data.unit_price
     line.coefficient = data.coefficient
+    line.discount_percent = _clamp_percent(data.discount_percent)
     line.comment = data.comment or None
     db.commit()
     db.refresh(line)
@@ -236,6 +244,7 @@ def copy_estimate(db: Session, source: Project, target: Project) -> Estimate:
                 quantity=line.quantity,
                 unit_price=line.unit_price,
                 coefficient=line.coefficient,
+                discount_percent=line.discount_percent,
                 comment=line.comment,
                 sort_order=line.sort_order,
             )

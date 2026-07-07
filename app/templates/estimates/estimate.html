@@ -31,7 +31,7 @@
             <div class="col-3 text-end">Кол-во</div>
             <div class="col-3 text-end">Цена, €</div>
             <div class="col-3 text-end">Коэф.</div>
-            <div class="col-3 text-end">Итог, €</div>
+            <div class="col-3 text-end">Скидка, %</div>
           </div>
           <div class="col-md-2"></div>
         </div>
@@ -48,8 +48,9 @@
             <div class="col-3"><label class="d-md-none form-label small mb-0">Кол-во</label><input class="form-control form-control-sm text-end" name="quantity" inputmode="numeric" value="{{ line.quantity }}" aria-label="Количество"></div>
             <div class="col-3"><label class="d-md-none form-label small mb-0">Цена, €</label><input class="form-control form-control-sm text-end" name="unit_price" inputmode="decimal" value="{{ '%.2f'|format(line.unit_price) }}" aria-label="Цена"></div>
             <div class="col-3"><label class="d-md-none form-label small mb-0">Коэф.</label><input class="form-control form-control-sm text-end" name="coefficient" inputmode="decimal" value="{{ line.coefficient }}" aria-label="Коэффициент"></div>
-            <div class="col-3 text-end fw-semibold">{{ '%.2f'|format(line.line_total) }} €</div>
-            <div class="col-9"><input class="form-control form-control-sm" name="comment" value="{{ line.comment or '' }}" placeholder="Комментарий"></div>
+            <div class="col-3"><label class="d-md-none form-label small mb-0">Скидка, %</label><input class="form-control form-control-sm text-end" name="discount_percent" inputmode="decimal" value="{{ line.discount_percent }}" aria-label="Скидка строки"></div>
+            <div class="col-6"><input class="form-control form-control-sm" name="comment" value="{{ line.comment or '' }}" placeholder="Комментарий"></div>
+            <div class="col-3 text-end fw-semibold align-self-center">{{ '%.2f'|format(line.line_total) }} €</div>
             <div class="col-3 d-grid"><button class="btn btn-sm btn-outline-primary" type="submit">Сохранить</button></div>
           </form>
           <div class="col-12 col-md-2 d-flex gap-1 justify-content-md-end">
@@ -69,7 +70,7 @@
       {% else %}
         <div class="table-responsive"><table class="table table-sm align-middle m-0">
           <thead><tr><th>Позиция</th><th class="text-end">Кол-во</th><th class="text-end">Цена, €</th>
-            <th class="text-end">Коэф.</th><th class="text-end">Итог, €</th><th>Комментарий</th></tr></thead>
+            <th class="text-end">Коэф.</th><th class="text-end">Скидка, %</th><th class="text-end">Итог, €</th><th>Комментарий</th></tr></thead>
           <tbody>
             {% for line in g.lines %}
             <tr>
@@ -77,6 +78,7 @@
               <td class="text-end">{{ line.quantity }}</td>
               <td class="text-end">{{ '%.2f'|format(line.unit_price) }}</td>
               <td class="text-end">{{ line.coefficient }}</td>
+              <td class="text-end">{{ line.discount_percent }}</td>
               <td class="text-end fw-semibold">{{ '%.2f'|format(line.line_total) }}</td>
               <td>{{ line.comment or '' }}</td>
             </tr>
@@ -100,12 +102,14 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <div class="col-12"><label class="form-label small mb-0">Наименование</label>
             <input class="form-control" name="name" placeholder="например, Доставка" required></div>
-          <div class="col-4"><label class="form-label small mb-0">Кол-во</label>
+          <div class="col-3"><label class="form-label small mb-0">Кол-во</label>
             <input class="form-control" name="quantity" inputmode="numeric" value="1"></div>
-          <div class="col-4"><label class="form-label small mb-0">Цена, €</label>
+          <div class="col-3"><label class="form-label small mb-0">Цена, €</label>
             <input class="form-control" name="unit_price" inputmode="decimal" value="0"></div>
-          <div class="col-4"><label class="form-label small mb-0">Коэф.</label>
+          <div class="col-3"><label class="form-label small mb-0">Коэф.</label>
             <input class="form-control" name="coefficient" inputmode="decimal" value="1"></div>
+          <div class="col-3"><label class="form-label small mb-0">Скидка, %</label>
+            <input class="form-control" name="discount_percent" inputmode="decimal" value="0"></div>
           <div class="col-12"><label class="form-label small mb-0">Комментарий</label>
             <input class="form-control" name="comment" placeholder="необязательно"></div>
           <div class="col-12 text-end"><button class="btn btn-outline-primary">Добавить строку</button></div>

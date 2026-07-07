@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 class AddModelItem(BaseModel):
     model_id: int
     quantity: int = Field(ge=1)
+    discount_percent: Decimal = Field(default=Decimal("0"), ge=0, le=100)
 
 
 class CustomLineInput(BaseModel):
@@ -17,6 +18,7 @@ class CustomLineInput(BaseModel):
     quantity: int = Field(default=1, ge=1)
     unit_price: Decimal = Field(default=Decimal("0"), ge=0)
     coefficient: Decimal = Field(default=Decimal("1"), ge=0)
+    discount_percent: Decimal = Field(default=Decimal("0"), ge=0, le=100)
     comment: str | None = None
 
 
@@ -24,4 +26,5 @@ class LineUpdate(BaseModel):
     quantity: int = Field(ge=1)
     unit_price: Decimal = Field(ge=0)
     coefficient: Decimal = Field(ge=0)
+    discount_percent: Decimal = Field(default=Decimal("0"), ge=0, le=100)
     comment: str | None = None

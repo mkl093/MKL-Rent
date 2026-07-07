@@ -171,6 +171,7 @@ def _estimate_render(
                     ln.quantity,
                     str(ln.unit_price),
                     str(ln.coefficient),
+                    str(ln.discount_percent),
                     ln.comment,
                     g.category_name,
                 ]

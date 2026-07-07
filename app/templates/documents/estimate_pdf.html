@@ -52,17 +52,18 @@
   <table class="items">
     <thead><tr>
       <th>{{ L.name }}</th><th class="num">{{ L.qty }}</th><th class="num">{{ L.price }}</th>
-      <th class="num">{{ L.coef }}</th><th class="num">{{ L.total }}</th>
+      <th class="num">{{ L.coef }}</th><th class="num">{{ L.discount }}</th><th class="num">{{ L.total }}</th>
     </tr></thead>
     <tbody>
       {% for g in groups %}
-      <tr class="cat"><td colspan="5">{{ g.category_name }}</td></tr>
+      <tr class="cat"><td colspan="6">{{ g.category_name }}</td></tr>
       {% for line in g.lines %}
       <tr>
         <td>{{ line.name }}{% if line.comment %}<br><span style="color:#666;font-size:8pt">{{ line.comment }}</span>{% endif %}</td>
         <td class="num">{{ line.quantity }}</td>
         <td class="num">{{ fmt_money(line.unit_price) }}</td>
         <td class="num">{{ line.coefficient }}</td>
+        <td class="num">{% if line.discount_percent %}{{ fmt_percent(line.discount_percent) }}{% else %}—{% endif %}</td>
         <td class="num">{{ fmt_money(line.line_total) }}</td>
       </tr>
       {% endfor %}
