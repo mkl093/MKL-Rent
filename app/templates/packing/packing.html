@@ -6,6 +6,10 @@
     <h1 class="h3 m-0">Packing {{ packing.number }}
       <span class="badge text-bg-{{ packing.status.badge }} align-middle">{{ packing.status.label }}</span></h1>
     <div class="text-secondary"><a href="/projects/{{ project.id }}">{{ project.number }} · {{ project.name }}</a></div>
+    <div class="small text-secondary">
+      Отгрузка: {{ project.shipped_date.strftime('%d.%m.%Y') if project.shipped_date else "—" }} ·
+      Возврат: {{ project.returned_date.strftime('%d.%m.%Y') if project.returned_date else "—" }}
+    </div>
   </div>
   <div class="d-flex gap-2">
     {% if editable %}<a href="{{ base }}/scan" class="btn btn-primary">Сканировать</a>

@@ -34,6 +34,12 @@ class Project(Base, TimestampMixin):
     )
     vat: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0"), nullable=False)
 
+    # Фактические даты выдачи/возврата оборудования (отдельно от дат аренды).
+    # Отгружённый и не возвращённый проект держит сток даже после конца аренды
+    # (просрочка блокирует доступность — см. projects/availability.py).
+    shipped_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    returned_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
     # Необязательные поля (ТЗ §13.2).
     customer: Mapped[str | None] = mapped_column(String(255), nullable=True)
     address: Mapped[str | None] = mapped_column(Text, nullable=True)

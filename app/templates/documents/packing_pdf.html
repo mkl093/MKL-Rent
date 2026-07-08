@@ -42,7 +42,8 @@
   <div class="meta">
     {{ L.date }}: {{ fmt_date(generated_at.date()) }} ·
     {{ L.project }}: {{ project.name }} ({{ project.number }}) ·
-    {{ L.rental_dates }}: {{ fmt_date(project.start_date) }} – {{ fmt_date(project.end_date) }}
+    {{ L.rental_dates }}: {{ fmt_date(project.start_date) }} – {{ fmt_date(project.end_date) }} ·
+    {{ L.shipped }}: {{ fmt_date(project.shipped_date) }} · {{ L.returned }}: {{ fmt_date(project.returned_date) }}
   </div>
 
   <table class="items">

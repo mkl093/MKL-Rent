@@ -156,15 +156,14 @@ def test_warehouse_availability_by_dates(auth_client, db_session):
     db_session.add(ProjectReservation(project_id=neighbor.id, model_id=model.id, quantity=5))
     db_session.commit()
 
-    # Без дат — колонки доступности нет.
-    assert "Доступно</th>" not in auth_client.get("/inventory").text
+    # Колонка состояния (доступно/зарезервировано/в работе) присутствует всегда.
+    assert "Состояние</th>" in auth_client.get("/inventory").text
 
     # На пересекающийся период доступно 20 − 5 = 15.
     page = auth_client.get(
         "/inventory", params={"avail_start": "2026-07-03", "avail_end": "2026-07-04"}
     ).text
-    assert "Доступно</th>" in page
-    assert "15" in page
+    assert ">15<" in page
 
     # На непересекающийся период — все 20 доступны.
     page2 = auth_client.get(

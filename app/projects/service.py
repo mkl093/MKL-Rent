@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -51,6 +52,18 @@ def _current_year() -> int:
     return to_local(utcnow()).year
 
 
+def _today() -> date:
+    from app.utils.timezone import to_local
+
+    return to_local(utcnow()).date()
+
+
+def _validate_actual_dates(shipped: date | None, returned: date | None) -> None:
+    """Дата возврата не может быть раньше даты отгрузки."""
+    if shipped is not None and returned is not None and returned < shipped:
+        raise ValidationError("Дата возврата не может быть раньше даты отгрузки")
+
+
 def list_projects(db: Session, archived: bool = False) -> list[Project]:
     """Активные (черновик/забронирован) или архивные (завершён/отменён) проекты (ТЗ §13.6)."""
     archived_statuses = [ProjectStatus.COMPLETED, ProjectStatus.CANCELLED]
@@ -72,6 +85,7 @@ def get_project(db: Session, project_id: int) -> Project | None:
 
 def create_project(db: Session, data: ProjectInput) -> Project:
     """Создать проект-черновик с автоматическим номером PRJ-YYYY-NNN (ТЗ §14)."""
+    _validate_actual_dates(data.shipped_date, data.returned_date)
     year = _current_year()
     number = next_number(db, DocType.PROJECT, year)
     project = Project(
@@ -79,6 +93,8 @@ def create_project(db: Session, data: ProjectInput) -> Project:
         name=data.name.strip(),
         start_date=data.start_date,
         end_date=data.end_date,
+        shipped_date=data.shipped_date,
+        returned_date=data.returned_date,
         rental_coefficient=data.rental_coefficient,
         vat=data.vat,
         customer=(data.customer or None),
@@ -94,9 +110,12 @@ def create_project(db: Session, data: ProjectInput) -> Project:
 
 def update_project(db: Session, project: Project, data: ProjectInput) -> Project:
     """Обновить поля проекта. Номер и статус не меняются здесь."""
+    _validate_actual_dates(data.shipped_date, data.returned_date)
     project.name = data.name.strip()
     project.start_date = data.start_date
     project.end_date = data.end_date
+    project.shipped_date = data.shipped_date
+    project.returned_date = data.returned_date
     project.rental_coefficient = data.rental_coefficient
     project.vat = data.vat
     project.customer = data.customer or None
@@ -204,8 +223,14 @@ def set_status(db: Session, project: Project, status: ProjectStatus) -> Project:
     """Прямой перевод статуса (завершить/отменить/вернуть в черновик).
 
     Дата окончания сама бронь не освобождает — освобождение происходит только
-    при смене статуса (ТЗ §13.4).
+    при смене статуса (ТЗ §13.4). Фактические даты проставляются автоматически
+    (если ещё пусты), при этом ранее введённые вручную значения сохраняются:
+    «Отгружено» → shipped_date = сегодня, «Завершён» → returned_date = сегодня.
     """
+    if status == ProjectStatus.SHIPPED and project.shipped_date is None:
+        project.shipped_date = _today()
+    if status == ProjectStatus.COMPLETED and project.returned_date is None:
+        project.returned_date = _today()
     project.status = status
     db.commit()
     db.refresh(project)

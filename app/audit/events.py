@@ -9,6 +9,7 @@ class EventType(enum.StrEnum):
     PROJECT_CREATE = "project_create"
     PROJECT_UPDATE = "project_update"
     PROJECT_STATUS = "project_status"
+    PROJECT_DATES = "project_dates"
     PROJECT_BOOK = "project_book"
     PROJECT_COPY = "project_copy"
     PROJECT_DELETE = "project_delete"
@@ -32,6 +33,7 @@ class EventType(enum.StrEnum):
             "project_create": "Создан проект",
             "project_update": "Изменён проект",
             "project_status": "Смена статуса проекта",
+            "project_dates": "Даты отгрузки/возврата",
             "project_book": "Бронирование",
             "project_copy": "Копирование проекта",
             "project_delete": "Удалён проект",

@@ -86,6 +86,13 @@ def _date(value: str | None) -> date | None:
         return None
 
 
+def _today() -> date:
+    from app.database import utcnow
+    from app.utils.timezone import to_local
+
+    return to_local(utcnow()).date()
+
+
 def _packing_from_form(
     has_packing: str | None,
     packing_type: str | None,
@@ -157,10 +164,12 @@ def index(
     models = eq_service.list_models(db, filters)
     stock = {m.id: eq_service.stock_quantity(db, m) for m in models}
 
-    # Доступность на выбранный период (для «гипотетического» проекта — ТЗ §15).
-    availability = {}
-    if start and end:
-        availability = {m.id: compute_availability(db, m, start, end) for m in models}
+    # Три состояния исправного оборудования (ТЗ §15): доступно (зелёный),
+    # зарезервировано (жёлтый), в работе (красный). Считаем на выбранный период,
+    # а без него — на сегодня (текущее состояние склада).
+    avail_is_period = bool(start and end)
+    ref_start, ref_end = (start, end) if avail_is_period else (_today(), _today())
+    availability = {m.id: compute_availability(db, m, ref_start, ref_end) for m in models}
 
     categories = cat_service.list_categories(db)
     tree = _build_tree(categories, models) if view == "tree" else None
@@ -173,6 +182,7 @@ def index(
             "models": models,
             "stock": stock,
             "availability": availability,
+            "avail_is_period": avail_is_period,
             "avail_start": saved.get("start", ""),
             "avail_end": saved.get("end", ""),
             "categories": categories,

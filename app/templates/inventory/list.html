@@ -1,4 +1,9 @@
 {% extends "base.html" %}
+{% macro state_chips(av) -%}
+  <span class="badge rounded-pill text-bg-success" title="Доступно">{{ av.available }}</span>
+  <span class="badge rounded-pill text-bg-warning" title="Зарезервировано">{{ av.reserved }}</span>
+  <span class="badge rounded-pill text-bg-danger" title="В работе">{{ av.in_work }}</span>
+{%- endmacro %}
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
   <h1 class="h3 m-0">Склад</h1>
@@ -65,7 +70,15 @@
 
   {# Доступность на предполагаемый период (ТЗ §15) #}
   <div class="row g-2 align-items-end mt-1 border-top pt-2">
-    <div class="col-12"><label class="form-label small text-secondary mb-0">Доступность на предполагаемый период проекта</label></div>
+    <div class="col-12">
+      <label class="form-label small text-secondary mb-0">Доступность на предполагаемый период проекта</label>
+      <div class="small text-secondary">
+        Состояние {% if avail_is_period %}на период{% else %}на сегодня{% endif %}:
+        <span class="badge rounded-pill text-bg-success">доступно</span>
+        <span class="badge rounded-pill text-bg-warning">зарезервировано</span>
+        <span class="badge rounded-pill text-bg-danger">в работе</span>
+      </div>
+    </div>
     <div class="col-6 col-md-3">
       <input class="form-control" type="date" name="avail_start" value="{{ avail_start }}" aria-label="Дата начала">
     </div>
@@ -88,7 +101,8 @@
         {% for m in cat.direct %}
         <li class="list-group-item d-flex justify-content-between align-items-center">
           <a href="/inventory/models/{{ m.id }}" class="text-decoration-none">{{ m.name }}{% if m.is_archived %} <span class="badge text-bg-secondary">архив</span>{% endif %}</a>
-          <span class="text-secondary small">{{ m.accounting_type.label }} · остаток {{ stock[m.id] }}{% if availability %} · доступно {{ availability[m.id].available }}{% endif %}</span>
+          <span class="text-secondary small">{{ m.accounting_type.label }} · остаток {{ stock[m.id] }}</span>
+          {% if availability.get(m.id) %}<span class="ms-1">{{ state_chips(availability[m.id]) }}</span>{% endif %}
         </li>
         {% endfor %}
         {% for sub in cat.subgroups %}
@@ -96,7 +110,8 @@
           {% for m in sub.models %}
           <li class="list-group-item d-flex justify-content-between align-items-center ps-4">
             <a href="/inventory/models/{{ m.id }}" class="text-decoration-none">{{ m.name }}{% if m.is_archived %} <span class="badge text-bg-secondary">архив</span>{% endif %}</a>
-            <span class="text-secondary small">{{ m.accounting_type.label }} · остаток {{ stock[m.id] }}{% if availability %} · доступно {{ availability[m.id].available }}{% endif %}</span>
+            <span class="text-secondary small">{{ m.accounting_type.label }} · остаток {{ stock[m.id] }}</span>
+          {% if availability.get(m.id) %}<span class="ms-1">{{ state_chips(availability[m.id]) }}</span>{% endif %}
           </li>
           {% endfor %}
         {% endfor %}
@@ -114,7 +129,7 @@
       <tr>
         <th></th><th>Модель</th><th>Категория</th><th>Производитель</th>
         <th>Тип учёта</th><th class="text-end">Остаток</th>
-        {% if availability %}<th class="text-end">Доступно</th>{% endif %}
+        <th class="text-center">Состояние</th>
         <th>Упаковка</th><th class="text-end">Цена, €</th>
       </tr>
     </thead>
@@ -129,10 +144,7 @@
         <td>{{ m.manufacturer or "—" }}</td>
         <td>{{ m.accounting_type.label }}</td>
         <td class="text-end">{{ stock[m.id] }}</td>
-        {% if availability %}
-        {% set av = availability[m.id] %}
-        <td class="text-end fw-semibold {% if av.available <= 0 %}text-danger{% elif av.available < av.total %}text-warning-emphasis{% endif %}">{{ av.available }}</td>
-        {% endif %}
+        <td class="text-center text-nowrap">{% if availability.get(m.id) %}{{ state_chips(availability[m.id]) }}{% else %}—{% endif %}</td>
         <td>{{ m.packing.packing_type.label if m.has_packing else "—" }}</td>
         <td class="text-end">{{ "%.2f"|format(m.base_price_eur) }}</td>
       </tr>
@@ -150,8 +162,8 @@
         <div class="fw-semibold">{{ m.name }}{% if m.is_archived %} <span class="badge text-bg-secondary">архив</span>{% endif %}</div>
         <div class="small text-secondary">{{ m.category.name }}{% if m.subcategory %} / {{ m.subcategory.name }}{% endif %}</div>
         <div class="small">{{ m.accounting_type.label }} · остаток {{ stock[m.id] }} · {{ "%.2f"|format(m.base_price_eur) }} €</div>
-        {% if availability %}{% set av = availability[m.id] %}
-        <div class="small fw-semibold {% if av.available <= 0 %}text-danger{% endif %}">Доступно на период: {{ av.available }}{% if av.deficit > 0 %} · дефицит {{ av.deficit }}{% endif %}</div>
+        {% if availability.get(m.id) %}
+        <div class="small mt-1">{{ state_chips(availability[m.id]) }}</div>
         {% endif %}
       </div>
     </div>

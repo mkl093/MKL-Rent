@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.inventory.enums import UNAVAILABLE_STATUSES
@@ -25,16 +25,29 @@ def ranges_overlap(a_start: date, a_end: date, b_start: date, b_end: date) -> bo
 
 @dataclass
 class ModelAvailability:
-    """Сводка доступности модели на период (ТЗ §15)."""
+    """Сводка доступности модели на период (ТЗ §15).
+
+    Занятость делится на два состояния (для 3-цветной индикации на складе):
+    - «Зарезервировано» (жёлтый) — брони проектов в статусе «Забронирован»;
+    - «В работе» (красный) — брони отгружённых проектов. Отгружённый и ещё не
+      возвращённый проект держит оборудование и после конца аренды (просрочка).
+    Свободное (зелёное) = total − unavailable_by_status − reserved − in_work.
+    """
 
     total: int
     unavailable_by_status: int
-    reserved_other: int
+    reserved: int  # «зарезервировано» — статус «Забронирован» (жёлтый)
+    in_work: int  # «в работе» — отгружено/не возвращено (красный)
     required: int
 
     @property
+    def reserved_other(self) -> int:
+        """Суммарная занятость в других проектах (бронь + в работе)."""
+        return self.reserved + self.in_work
+
+    @property
     def available(self) -> int:
-        return self.total - self.unavailable_by_status - self.reserved_other
+        return self.total - self.unavailable_by_status - self.reserved - self.in_work
 
     @property
     def deficit(self) -> int:
@@ -82,6 +95,48 @@ def _unavailable_by_status(db: Session, model: EquipmentModel) -> int:
     )
 
 
+def _booked_overlap(start: date, end: date):
+    """Пересечение по датам аренды для проектов в статусе «Забронирован» (ТЗ §13.3)."""
+    return and_(
+        Project.status == ProjectStatus.BOOKED,
+        Project.start_date.is_not(None),
+        Project.end_date.is_not(None),
+        Project.start_date <= end,
+        Project.end_date >= start,
+    )
+
+
+def _in_work_overlap(start: date, end: date):
+    """Пересечение для отгружённых проектов.
+
+    Окно занятости — от даты начала аренды и до returned_date; пока проект не
+    возвращён (returned_date пуст), он держит сток бессрочно, в т.ч. после конца
+    аренды (просрочка). Возвращённый до начала периода — уже свободен.
+    """
+    return and_(
+        Project.status == ProjectStatus.SHIPPED,
+        Project.start_date.is_not(None),
+        Project.start_date <= end,
+        or_(Project.returned_date.is_(None), Project.returned_date >= start),
+    )
+
+
+def _sum_reservations(
+    db: Session,
+    model_id: int,
+    overlap,
+    exclude_project_id: int | None,
+) -> int:
+    stmt = (
+        select(func.coalesce(func.sum(ProjectReservation.quantity), 0))
+        .join(Project, Project.id == ProjectReservation.project_id)
+        .where(ProjectReservation.model_id == model_id, overlap)
+    )
+    if exclude_project_id is not None:
+        stmt = stmt.where(Project.id != exclude_project_id)
+    return db.scalar(stmt) or 0
+
+
 def reserved_in_other_projects(
     db: Session,
     model_id: int,
@@ -89,22 +144,13 @@ def reserved_in_other_projects(
     end: date,
     exclude_project_id: int | None = None,
 ) -> int:
-    """Сумма броней модели в других забронированных пересекающихся проектах (ТЗ §15)."""
-    stmt = (
-        select(func.coalesce(func.sum(ProjectReservation.quantity), 0))
-        .join(Project, Project.id == ProjectReservation.project_id)
-        .where(
-            ProjectReservation.model_id == model_id,
-            Project.status.in_(RESERVING_STATUSES),
-            Project.start_date.is_not(None),
-            Project.end_date.is_not(None),
-            Project.start_date <= end,
-            Project.end_date >= start,
-        )
+    """Суммарная занятость модели (бронь + в работе) в других проектах (ТЗ §15)."""
+    return _sum_reservations(
+        db,
+        model_id,
+        or_(_booked_overlap(start, end), _in_work_overlap(start, end)),
+        exclude_project_id,
     )
-    if exclude_project_id is not None:
-        stmt = stmt.where(Project.id != exclude_project_id)
-    return db.scalar(stmt) or 0
 
 
 def compute_availability(
@@ -120,7 +166,8 @@ def compute_availability(
     return ModelAvailability(
         total=_total_stock(db, model),
         unavailable_by_status=_unavailable_by_status(db, model),
-        reserved_other=reserved_in_other_projects(db, model.id, start, end, exclude_project_id),
+        reserved=_sum_reservations(db, model.id, _booked_overlap(start, end), exclude_project_id),
+        in_work=_sum_reservations(db, model.id, _in_work_overlap(start, end), exclude_project_id),
         required=required,
     )
 
@@ -188,11 +235,7 @@ def occupancy_detail(
         .join(ProjectReservation, Project.id == ProjectReservation.project_id)
         .where(
             ProjectReservation.model_id == model_id,
-            Project.status.in_(RESERVING_STATUSES),
-            Project.start_date.is_not(None),
-            Project.end_date.is_not(None),
-            Project.start_date <= end,
-            Project.end_date >= start,
+            or_(_booked_overlap(start, end), _in_work_overlap(start, end)),
         )
         .order_by(Project.start_date)
     )

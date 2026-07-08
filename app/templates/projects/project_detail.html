@@ -15,6 +15,8 @@
   <dl class="row mb-0">
     <dt class="col-5 col-sm-3">Даты аренды</dt>
     <dd class="col-7 col-sm-9">{{ project.start_date.strftime('%d.%m.%Y') if project.start_date else "—" }} – {{ project.end_date.strftime('%d.%m.%Y') if project.end_date else "—" }}</dd>
+    <dt class="col-5 col-sm-3">Отгрузка / возврат</dt>
+    <dd class="col-7 col-sm-9">{{ project.shipped_date.strftime('%d.%m.%Y') if project.shipped_date else "—" }} – {{ project.returned_date.strftime('%d.%m.%Y') if project.returned_date else "—" }}</dd>
     <dt class="col-5 col-sm-3">Коэффициент</dt><dd class="col-7 col-sm-9">{{ project.rental_coefficient }}</dd>
     <dt class="col-5 col-sm-3">VAT</dt><dd class="col-7 col-sm-9">{{ project.vat }} %</dd>
     {% if project.customer %}<dt class="col-5 col-sm-3">Заказчик</dt><dd class="col-7 col-sm-9">{{ project.customer }}</dd>{% endif %}

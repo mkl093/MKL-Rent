@@ -47,10 +47,17 @@ def _str(value: str | None) -> str | None:
     return value or None
 
 
+def _dates_label(shipped: date | None, returned: date | None) -> str:
+    fmt = lambda d: d.strftime("%d.%m.%Y") if d else "—"  # noqa: E731
+    return f"отгрузка {fmt(shipped)}, возврат {fmt(returned)}"
+
+
 def _input(
     name: str,
     start_date: str | None,
     end_date: str | None,
+    shipped_date: str | None,
+    returned_date: str | None,
     rental_coefficient: str | None,
     vat: str | None,
     customer: str | None,
@@ -61,6 +68,8 @@ def _input(
         name=name,
         start_date=_date(start_date),
         end_date=_date(end_date),
+        shipped_date=_date(shipped_date),
+        returned_date=_date(returned_date),
         rental_coefficient=_dec(rental_coefficient, "1"),
         vat=_dec(vat, "0"),
         customer=_str(customer),
@@ -112,6 +121,8 @@ def project_create(
     name: str = Form(...),
     start_date: str | None = Form(None),
     end_date: str | None = Form(None),
+    shipped_date: str | None = Form(None),
+    returned_date: str | None = Form(None),
     rental_coefficient: str | None = Form("1"),
     vat: str | None = Form("0"),
     customer: str | None = Form(None),
@@ -120,8 +131,23 @@ def project_create(
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    data = _input(name, start_date, end_date, rental_coefficient, vat, customer, address, comment)
-    project = service.create_project(db, data)
+    data = _input(
+        name,
+        start_date,
+        end_date,
+        shipped_date,
+        returned_date,
+        rental_coefficient,
+        vat,
+        customer,
+        address,
+        comment,
+    )
+    try:
+        project = service.create_project(db, data)
+    except service.ValidationError as exc:
+        flash(request, str(exc), "danger")
+        return redirect("/projects/new")
     audit_log(
         db,
         user,
@@ -228,6 +254,8 @@ def project_update(
     name: str = Form(...),
     start_date: str | None = Form(None),
     end_date: str | None = Form(None),
+    shipped_date: str | None = Form(None),
+    returned_date: str | None = Form(None),
     rental_coefficient: str | None = Form("1"),
     vat: str | None = Form("0"),
     customer: str | None = Form(None),
@@ -240,8 +268,24 @@ def project_update(
     if project is None or project.is_archived:
         return redirect("/projects")
     was_booked = project.status == ProjectStatus.BOOKED
-    data = _input(name, start_date, end_date, rental_coefficient, vat, customer, address, comment)
-    service.update_project(db, project, data)
+    old_dates = (project.shipped_date, project.returned_date)
+    data = _input(
+        name,
+        start_date,
+        end_date,
+        shipped_date,
+        returned_date,
+        rental_coefficient,
+        vat,
+        customer,
+        address,
+        comment,
+    )
+    try:
+        service.update_project(db, project, data)
+    except service.ValidationError as exc:
+        flash(request, str(exc), "danger")
+        return redirect(f"/projects/{project.id}/edit")
     audit_log(
         db,
         user,
@@ -250,6 +294,17 @@ def project_update(
         object_type="project",
         object_id=project.id,
     )
+    if old_dates != (project.shipped_date, project.returned_date):
+        audit_log(
+            db,
+            user,
+            EventType.PROJECT_DATES,
+            f"Даты отгрузки/возврата проекта {project.number}",
+            object_type="project",
+            object_id=project.id,
+            old_value=_dates_label(*old_dates),
+            new_value=_dates_label(project.shipped_date, project.returned_date),
+        )
     # Изменение дат брони пересчитывает доступность (ТЗ §13.5).
     if was_booked:
         deficits = service.project_deficits(db, project)
@@ -314,6 +369,7 @@ def project_status(
     except ValueError:
         return redirect(f"/projects/{project.id}")
     old_status = project.status
+    old_dates = (project.shipped_date, project.returned_date)
     service.set_status(db, project, new_status)
     audit_log(
         db,
@@ -325,6 +381,17 @@ def project_status(
         old_value=old_status.label,
         new_value=new_status.label,
     )
+    if old_dates != (project.shipped_date, project.returned_date):
+        audit_log(
+            db,
+            user,
+            EventType.PROJECT_DATES,
+            f"Даты отгрузки/возврата проекта {project.number} (авто)",
+            object_type="project",
+            object_id=project.id,
+            old_value=_dates_label(*old_dates),
+            new_value=_dates_label(project.shipped_date, project.returned_date),
+        )
     flash(request, f"Статус: {new_status.label}.", "info")
     return redirect(f"/projects/{project.id}")
 
