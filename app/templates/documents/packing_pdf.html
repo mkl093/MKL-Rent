@@ -15,14 +15,17 @@
   .logo { max-height: 50px; }
   h1 { font-size: 14pt; margin: 10px 0 2px; }
   .meta { font-size: 8.5pt; color: #444; margin-bottom: 8px; }
-  table.items { width: 100%; border-collapse: collapse; font-size: 7pt; }
-  table.items th, table.items td { padding: 2px 3px; border: 1px solid #ddd; text-align: left; vertical-align: top; }
+  table.items { width: 100%; border-collapse: collapse; font-size: 7pt; table-layout: fixed; }
+  table.items th, table.items td {
+    padding: 2px 3px; border: 1px solid #ddd; text-align: left; vertical-align: top;
+    overflow-wrap: break-word; word-break: break-word;
+  }
   table.items th { background: #f2f2f2; }
   .num { text-align: right; }
   .cat td { background: #e9ecef; font-weight: bold; }
   .totals { margin-top: 8px; font-size: 10pt; font-weight: bold; text-align: right; }
   .shortage { margin-top: 8px; color: #b00; font-size: 9pt; }
-  .bc { font-family: monospace; font-size: 8pt; }
+  .bc { font-family: monospace; font-size: 7pt; overflow-wrap: anywhere; }
   .footer { margin-top: 18px; padding-top: 6px; border-top: 1px solid #ccc; font-size: 8pt; color: #666; text-align: center; }
 </style>
 </head>
@@ -44,11 +47,10 @@
 
   <table class="items">
     <thead><tr>
-      <th width="11%">{{ L.name }}</th>
+      <th width="14%">{{ L.name }}</th>
       <th class="num" width="6%">{{ L.plan }}/{{ L.fact }}</th>
       <th width="14%">{{ L.serial }} / {{ L.barcode }}</th>
-      <th class="num" width="5%">{{ L.packed }}</th><th class="num" width="5%">{{ L.unpacked }}</th>
-      <th width="6%">{{ L.packages }}</th>
+      <th class="num" width="8%">{{ L.packed }}</th><th class="num" width="5%">{{ L.unpacked }}</th>
       <th class="num" width="8%">{{ L.eq_weight }}</th><th class="num" width="8%">{{ L.pack_weight }}</th><th class="num" width="7%">{{ L.weight }}</th>
       <th class="num" width="8%">{{ L.vol_loose }}</th><th class="num" width="8%">{{ L.vol_pack }}</th><th class="num" width="7%">{{ L.volume }}</th>
       <th width="7%">{{ L.comment }}</th>
@@ -58,7 +60,7 @@
       {% for line, c in rows %}
         {% set gname = (L.packing if line.is_custom else (line.category_name or "—") ~ (" / " ~ line.subcategory_name if line.subcategory_name else "")) %}
         {% if gname != ns.group %}{% set ns.group = gname %}
-        <tr class="cat"><td colspan="13">{{ gname }}</td></tr>{% endif %}
+        <tr class="cat"><td colspan="12">{{ gname }}</td></tr>{% endif %}
         <tr>
           <td>{{ line.name }}{% if line.is_kit %} ({{ L.kit if L.kit is defined else "комплект" }})
             {% for g in kit_content.get(line.id, []) %}<div style="color:#555">— {{ g.model_name }}: {% for it in g.items %}{{ it.barcode or it.serial_number or "—" }}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endfor %}
@@ -67,9 +69,8 @@
           <td>
             {% if line.is_kit %}—{% else %}{% for si in line.serial_items %}<span class="bc">{{ si.barcode }}{% if si.serial_number %} ({{ si.serial_number }}){% endif %}</span>{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}{% endif %}
           </td>
-          <td class="num">{{ c.packed }}</td>
+          <td class="num">{{ c.packed }}{% if c.packages %} <span style="color:#666">/ {{ c.packages }} уп.</span>{% endif %}</td>
           <td class="num">{{ c.unpacked }}</td>
-          <td style="padding-left:6px">{{ c.packages or "" }}</td>
           <td class="num">{{ fmt_weight(c.equipment_weight) }}</td>
           <td class="num">{{ fmt_weight(c.packaging_weight) }}</td>
           <td class="num">{{ fmt_weight(c.total_weight) }}</td>
