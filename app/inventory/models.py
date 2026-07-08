@@ -155,6 +155,28 @@ class PackingRule(Base, TimestampMixin):
         return math.ceil(quantity / self.capacity)
 
 
+class Kit(Base, TimestampMixin):
+    """Комплект — кейс с фиксированной комплектацией (структура «Комплект»).
+
+    В комплект помещаются конкретные единицы (EquipmentItem). Помещённая единица
+    занята комплектом и НЕ входит в свободный сток своей модели.
+    Комплект — бронируемая позиция: его можно добавлять в смету и packing-лист.
+    """
+
+    __tablename__ = "kits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    photo_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    items: Mapped[list[EquipmentItem]] = relationship(
+        back_populates="kit",
+        order_by="EquipmentItem.model_id, EquipmentItem.barcode",
+    )
+
+
 class EquipmentItem(Base, TimestampMixin):
     """Физический экземпляр посерийной модели (ТЗ §8.2)."""
 
@@ -176,7 +198,14 @@ class EquipmentItem(Base, TimestampMixin):
     inventory_number: Mapped[str | None] = mapped_column(String(255), nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Комплект, в который помещена единица (структура «Комплект»). Пока задан —
+    # единица исключена из свободного стока модели (см. availability/stock).
+    kit_id: Mapped[int | None] = mapped_column(
+        ForeignKey("kits.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
     model: Mapped[EquipmentModel] = relationship(back_populates="items")
+    kit: Mapped[Kit | None] = relationship(back_populates="items")
     status_history: Mapped[list[EquipmentStatusHistory]] = relationship(
         back_populates="item",
         cascade="all, delete-orphan",

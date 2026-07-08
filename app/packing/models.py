@@ -59,6 +59,10 @@ class PackingLine(Base):
     model_id: Mapped[int | None] = mapped_column(
         ForeignKey("equipment_models.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Строка-комплект: выводится с названием и перечнем комплектации (структура «Комплект»).
+    kit_id: Mapped[int | None] = mapped_column(
+        ForeignKey("kits.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     is_custom: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_serial: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
@@ -102,6 +106,11 @@ class PackingLine(Base):
     serial_items: Mapped[list[PackingSerialItem]] = relationship(
         back_populates="line", cascade="all, delete-orphan", order_by="PackingSerialItem.barcode"
     )
+
+    @property
+    def is_kit(self) -> bool:
+        """Строка-комплект (бронируемая позиция «Комплект»)."""
+        return self.kit_id is not None
 
     @property
     def fact_quantity(self) -> int:

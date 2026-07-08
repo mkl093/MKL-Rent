@@ -222,3 +222,39 @@ def test_unit_view_and_tree(auth_client, db_session):
     tree = auth_client.get("/inventory", params={"view": "tree"})
     assert tree.status_code == 200
     assert "XLR 5м" in tree.text
+
+
+def test_edit_item_without_barcode_ok(auth_client, db_session):
+    """Редактирование единицы количественного оборудования без штрих-кода
+    не должно требовать его заполнения (regression, ТЗ §38)."""
+    from decimal import Decimal
+
+    from app.inventory.enums import AccountingType
+    from app.inventory.schemas import EquipmentModelCreate
+    from app.inventory.services import categories as cat_service
+    from app.inventory.services import equipment as eq_service
+
+    cat = cat_service.create_category(db_session, "Кабели")
+    model = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id,
+            name="XLR 5м",
+            accounting_type=AccountingType.QUANTITY,
+            total_quantity=1,
+            base_price_eur=Decimal("0"),
+        ),
+    )
+    detail = auth_client.get(f"/inventory/models/{model.id}").text
+    item_id = re.search(r"/inventory/items/(\d+)", detail).group(1)
+
+    token = _csrf(auth_client, f"/inventory/items/{item_id}")
+    resp = auth_client.post(
+        f"/inventory/items/{item_id}",
+        data={"barcode": "", "inventory_number": "INV-1", "comment": "", "csrf_token": token},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    updated = auth_client.get(f"/inventory/items/{item_id}").text
+    assert "INV-1" in updated

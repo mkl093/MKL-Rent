@@ -40,6 +40,32 @@
     <button class="btn btn-primary" type="submit">Добавить выбранное</button>
   </div>
 
+  {% if kits %}
+  <h2 class="h6 mt-2">Комплекты</h2>
+  <div class="table-responsive mb-3">
+    <table class="table table-hover align-middle">
+      <thead><tr>
+        <th></th><th>Комплект</th><th>Состав</th><th class="text-end">Доступно на период</th>
+      </tr></thead>
+      <tbody>
+        {% for k in kits %}
+        {% set ka = kit_availability.get(k.id) %}
+        {% set in_est = k.id in kit_in_estimate %}
+        <tr>
+          <td><input class="form-check-input" type="checkbox" name="selectkit_{{ k.id }}" value="1" {% if in_est %}disabled title="Уже в смете"{% endif %}></td>
+          <td><a href="/inventory/kits/{{ k.id }}" target="_blank">{{ k.name }}</a>{% if in_est %} <span class="badge text-bg-secondary">в смете</span>{% endif %}</td>
+          <td class="small text-secondary">{{ k.items|length }} ед.</td>
+          <td class="text-end {% if ka and not ka.available %}text-danger fw-semibold{% endif %}">
+            {% if ka is none %}—{% elif ka.available %}свободен{% else %}занят{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <h2 class="h6 mt-2">Оборудование</h2>
   {% if models %}
   <div class="table-responsive">
     <table class="table table-hover align-middle">

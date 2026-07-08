@@ -17,7 +17,8 @@ from app.estimates.schemas import CustomLineInput, LineUpdate
 from app.inventory.enums import AccountingType
 from app.inventory.services import categories as cat_service
 from app.inventory.services import equipment as eq_service
-from app.projects.availability import compute_availability
+from app.inventory.services import kits as kit_service
+from app.projects.availability import compute_availability, compute_kit_availability
 from app.projects.service import get_project
 from app.templating import flash
 
@@ -104,12 +105,19 @@ def add_picker(
         archived=False,
     )
     models = eq_service.list_models(db, filters)
+    kits = kit_service.list_kits(db)
+    kit_in_estimate = {ln.kit_id for ln in estimate.lines if ln.kit_id is not None}
 
     availability = {}
+    kit_availability = {}
     if project.start_date and project.end_date:
         for m in models:
             availability[m.id] = compute_availability(
                 db, m, project.start_date, project.end_date, exclude_project_id=project.id
+            )
+        for k in kits:
+            kit_availability[k.id] = compute_kit_availability(
+                db, k.id, project.start_date, project.end_date, exclude_project_id=project.id
             )
 
     return render(
@@ -120,7 +128,10 @@ def add_picker(
             "project": project,
             "estimate": estimate,
             "models": models,
+            "kits": kits,
+            "kit_in_estimate": kit_in_estimate,
             "availability": availability,
+            "kit_availability": kit_availability,
             "categories": cat_service.list_categories(db),
             "filters": filters,
             "q": q or "",
@@ -150,16 +161,22 @@ async def add_submit(
     merge = mode != "separate"
     added = 0
     for key in form:
-        if not key.startswith("select_"):
-            continue
-        model_id = int(key.split("_", 1)[1])
-        model = eq_service.get_model(db, model_id)
-        if model is None:
-            continue
-        qty = _int(form.get(f"qty_{model_id}"), 1)
-        disc = _pct(form.get(f"disc_{model_id}"))
-        service.add_model(db, estimate, project, model, qty, merge=merge, discount_percent=disc)
-        added += 1
+        if key.startswith("select_"):
+            model_id = int(key.split("_", 1)[1])
+            model = eq_service.get_model(db, model_id)
+            if model is None:
+                continue
+            qty = _int(form.get(f"qty_{model_id}"), 1)
+            disc = _pct(form.get(f"disc_{model_id}"))
+            service.add_model(db, estimate, project, model, qty, merge=merge, discount_percent=disc)
+            added += 1
+        elif key.startswith("selectkit_"):
+            kit_id = int(key.split("_", 1)[1])
+            kit = kit_service.get_kit(db, kit_id)
+            if kit is None:
+                continue
+            if service.add_kit_line(db, estimate, project, kit) is not None:
+                added += 1
     if added:
         audit_log(
             db,

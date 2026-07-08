@@ -65,23 +65,28 @@ class Project(Base, TimestampMixin):
 
 
 class ProjectReservation(Base):
-    """Бронь количества модели проектом (ТЗ §15).
+    """Бронь проекта: количество модели ИЛИ один комплект (ТЗ §15, структура «Комплект»).
 
     Заполняется из сметы (Этап 4). На доступность влияет только пока проект
-    в статусе «Забронирован».
+    в статусе «Забронирован». Ровно одно из (model_id, kit_id) заполнено:
+    строка модели резервирует количество; строка комплекта резервирует его целиком.
     """
 
     __tablename__ = "project_reservations"
     __table_args__ = (
         UniqueConstraint("project_id", "model_id", name="uq_reservation_project_model"),
+        UniqueConstraint("project_id", "kit_id", name="uq_reservation_project_kit"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    model_id: Mapped[int] = mapped_column(
-        ForeignKey("equipment_models.id", ondelete="CASCADE"), nullable=False, index=True
+    model_id: Mapped[int | None] = mapped_column(
+        ForeignKey("equipment_models.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    kit_id: Mapped[int | None] = mapped_column(
+        ForeignKey("kits.id", ondelete="CASCADE"), nullable=True, index=True
     )
     quantity: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 

@@ -60,10 +60,12 @@
         {% if gname != ns.group %}{% set ns.group = gname %}
         <tr class="cat"><td colspan="13">{{ gname }}</td></tr>{% endif %}
         <tr>
-          <td>{{ line.name }}</td>
-          <td class="num">{{ c.planned }} / {{ c.fact }}{% if c.missing %} <span style="color:#b00">−{{ c.missing }}</span>{% endif %}{% if c.over %} <span style="color:#a60">+{{ c.over }}</span>{% endif %}</td>
+          <td>{{ line.name }}{% if line.is_kit %} ({{ L.kit if L.kit is defined else "комплект" }})
+            {% for g in kit_content.get(line.id, []) %}<div style="color:#555">— {{ g.model_name }}: {% for it in g.items %}{{ it.barcode or it.serial_number or "—" }}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endfor %}
+          {% endif %}</td>
+          <td class="num">{% if line.is_kit %}1 / 1{% else %}{{ c.planned }} / {{ c.fact }}{% if c.missing %} <span style="color:#b00">−{{ c.missing }}</span>{% endif %}{% if c.over %} <span style="color:#a60">+{{ c.over }}</span>{% endif %}{% endif %}</td>
           <td>
-            {% for si in line.serial_items %}<span class="bc">{{ si.barcode }}{% if si.serial_number %} ({{ si.serial_number }}){% endif %}</span>{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}
+            {% if line.is_kit %}—{% else %}{% for si in line.serial_items %}<span class="bc">{{ si.barcode }}{% if si.serial_number %} ({{ si.serial_number }}){% endif %}</span>{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}{% endif %}
           </td>
           <td class="num">{{ c.packed }}</td>
           <td class="num">{{ c.unpacked }}</td>

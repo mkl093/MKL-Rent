@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.estimates.service import get_estimate
 from app.inventory.enums import AccountingType, ItemStatus
-from app.inventory.models import EquipmentItem, EquipmentModel
+from app.inventory.models import EquipmentItem, EquipmentModel, Kit
+from app.inventory.services import kits as kit_service
 from app.numbering.models import DocType
 from app.numbering.service import next_number
 from app.packing.calc import PackingTotals, compute_totals
@@ -49,6 +50,9 @@ def get_packing(db: Session, project: Project) -> PackingList | None:
     return db.execute(stmt).scalar_one_or_none()
 
 
+KIT_GROUP_NAME = "Комплекты"
+
+
 def _estimate_warehouse_quantities(db: Session, project: Project) -> dict[int, int]:
     """Складские модели сметы, агрегированные по модели (ТЗ §17.1)."""
     estimate = get_estimate(db, project)
@@ -59,6 +63,40 @@ def _estimate_warehouse_quantities(db: Session, project: Project) -> dict[int, i
         if not line.is_custom and line.model_id is not None:
             result[line.model_id] = result.get(line.model_id, 0) + line.quantity
     return result
+
+
+def _estimate_kit_ids(db: Session, project: Project) -> list[int]:
+    """Комплекты, добавленные в смету (структура «Комплект»)."""
+    estimate = get_estimate(db, project)
+    if estimate is None:
+        return []
+    return [line.kit_id for line in estimate.lines if line.kit_id is not None]
+
+
+def _new_line_from_kit(kit: Kit, sort_order: int) -> PackingLine:
+    """Строка packing-листа для комплекта: название + снимок веса комплектации.
+
+    Перечень комплектации отображается «живьём» по kit_id (см. packing.router).
+    """
+    return PackingLine(
+        model_id=None,
+        kit_id=kit.id,
+        is_custom=False,
+        is_serial=False,
+        name=kit.name,
+        category_id=None,
+        category_name=KIT_GROUP_NAME,
+        subcategory_name=None,
+        planned_quantity=1,
+        quantity=1,
+        packed_quantity=0,
+        sort_order=sort_order,
+        unit_weight_kg=kit_service.total_weight(kit),
+        length_mm=0,
+        width_mm=0,
+        height_mm=0,
+        has_packing=False,
+    )
 
 
 def _new_line_from_model(model: EquipmentModel, planned: int, sort_order: int) -> PackingLine:
@@ -113,6 +151,13 @@ def create_from_estimate(db: Session, project: Project) -> PackingList:
             continue
         packing.lines.append(_new_line_from_model(model, planned, sort_order))
         sort_order += 1
+    # Комплекты сметы — отдельными строками с перечнем комплектации (ТЗ §17, «Комплект»).
+    for kit_id in _estimate_kit_ids(db, project):
+        kit = kit_service.get_kit(db, kit_id)
+        if kit is None:
+            continue
+        packing.lines.append(_new_line_from_kit(kit, sort_order))
+        sort_order += 1
     db.commit()
     db.refresh(packing)
     return packing
@@ -123,10 +168,11 @@ def create_from_estimate(db: Session, project: Project) -> PackingList:
 
 @dataclass
 class Discrepancy:
-    model_id: int
+    model_id: int | None
     name: str
     estimate_quantity: int
     planned_quantity: int
+    is_kit: bool = False
 
 
 def discrepancies(db: Session, project: Project, packing: PackingList) -> list[Discrepancy]:
@@ -143,6 +189,18 @@ def discrepancies(db: Session, project: Project, packing: PackingList) -> list[D
     for model_id, line in by_model.items():
         if model_id not in estimate_qty and line.planned_quantity != 0:
             result.append(Discrepancy(model_id, line.name, 0, line.planned_quantity))
+
+    # Комплекты: расхождение состава сметы и packing-листа («Комплект»).
+    est_kits = set(_estimate_kit_ids(db, project))
+    packing_kits = {ln.kit_id: ln for ln in packing.lines if ln.kit_id is not None}
+    for kit_id in est_kits:
+        if kit_id not in packing_kits:
+            kit = kit_service.get_kit(db, kit_id)
+            if kit is not None:
+                result.append(Discrepancy(None, kit.name, 1, 0, is_kit=True))
+    for kit_id, line in packing_kits.items():
+        if kit_id not in est_kits:
+            result.append(Discrepancy(None, line.name, 0, 1, is_kit=True))
     return result
 
 
@@ -164,6 +222,19 @@ def apply_sync(db: Session, project: Project, packing: PackingList) -> None:
     for model_id, line in by_model.items():
         if model_id not in estimate_qty:
             line.planned_quantity = 0
+
+    # Комплекты: добавить новые, убрать отсутствующие в смете («Комплект»).
+    est_kits = set(_estimate_kit_ids(db, project))
+    by_kit = {ln.kit_id: ln for ln in packing.lines if ln.kit_id is not None}
+    for kit_id in est_kits:
+        if kit_id not in by_kit:
+            kit = kit_service.get_kit(db, kit_id)
+            if kit is not None:
+                packing.lines.append(_new_line_from_kit(kit, next_sort))
+                next_sort += 1
+    for kit_id, line in by_kit.items():
+        if kit_id not in est_kits:
+            db.delete(line)
     db.commit()
 
 
@@ -194,6 +265,21 @@ def add_model(
 
     sort_order = max((ln.sort_order for ln in packing.lines), default=0) + 1
     line = _new_line_from_model(model, quantity, sort_order)
+    packing.lines.append(line)
+    db.commit()
+    db.refresh(line)
+    return line
+
+
+def add_kit(db: Session, packing: PackingList, kit: Kit) -> PackingLine | None:
+    """Добавить комплект в packing-лист вручную (структура «Комплект»).
+
+    Комплект — одна позиция; повторно тот же комплект не добавляется.
+    """
+    if any(ln.kit_id == kit.id for ln in packing.lines):
+        return None
+    sort_order = max((ln.sort_order for ln in packing.lines), default=0) + 1
+    line = _new_line_from_kit(kit, sort_order)
     packing.lines.append(line)
     db.commit()
     db.refresh(line)

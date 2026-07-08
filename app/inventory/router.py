@@ -18,11 +18,13 @@ from app.inventory.schemas import (
     EquipmentItemInput,
     EquipmentModelCreate,
     EquipmentModelUpdate,
+    KitInput,
     PackingRuleInput,
 )
 from app.inventory.services import categories as cat_service
 from app.inventory.services import equipment as eq_service
 from app.inventory.services import items as item_service
+from app.inventory.services import kits as kit_service
 from app.projects.availability import compute_availability
 from app.templating import flash
 from app.utils.images import ImageError, delete_photo, save_model_photo
@@ -211,6 +213,198 @@ def scan_form(
     )
 
 
+# --- Комплекты (структура «Комплект») -----------------------------------
+
+
+@router.get("/kits")
+def kits_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    kits = kit_service.list_kits(db)
+    counts = {k.id: kit_service.item_count(db, k.id) for k in kits}
+    return render(
+        request,
+        "inventory/kits.html",
+        {"page_title": "Комплекты", "kits": kits, "counts": counts},
+        db=db,
+        user=user,
+    )
+
+
+@router.post("/kits", dependencies=[Depends(verify_csrf)])
+def kit_create(
+    request: Request,
+    name: str = Form(...),
+    description: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    if not _str(name):
+        flash(request, "Укажите название комплекта.", "danger")
+        return redirect("/inventory/kits")
+    kit = kit_service.create_kit(db, KitInput(name=name, description=_str(description)))
+    audit_log(
+        db,
+        user,
+        EventType.KIT_MANAGE,
+        f"Создан комплект «{kit.name}»",
+        object_type="kit",
+        object_id=kit.id,
+    )
+    flash(request, "Комплект создан.", "success")
+    return redirect(f"/inventory/kits/{kit.id}")
+
+
+@router.get("/kits/{kit_id}")
+def kit_detail(
+    request: Request,
+    kit_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    kit = kit_service.get_kit(db, kit_id)
+    if kit is None:
+        flash(request, "Комплект не найден.", "danger")
+        return redirect("/inventory/kits")
+    return render(
+        request,
+        "inventory/kit_detail.html",
+        {
+            "page_title": kit.name,
+            "kit": kit,
+            "groups": kit_service.content_groups(kit),
+            "ItemStatus": ItemStatus,
+        },
+        db=db,
+        user=user,
+    )
+
+
+@router.post("/kits/{kit_id}", dependencies=[Depends(verify_csrf)])
+def kit_update(
+    request: Request,
+    kit_id: int,
+    name: str = Form(...),
+    description: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    kit = kit_service.get_kit(db, kit_id)
+    if kit and _str(name):
+        kit_service.update_kit(db, kit, KitInput(name=name, description=_str(description)))
+        flash(request, "Комплект сохранён.", "success")
+    return redirect(f"/inventory/kits/{kit_id}")
+
+
+@router.post("/kits/{kit_id}/delete", dependencies=[Depends(verify_csrf)])
+def kit_delete(
+    request: Request,
+    kit_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    kit = kit_service.get_kit(db, kit_id)
+    if kit:
+        try:
+            name = kit.name
+            kit_service.delete_kit(db, kit)
+            audit_log(
+                db,
+                user,
+                EventType.KIT_MANAGE,
+                f"Удалён комплект «{name}»",
+                object_type="kit",
+                object_id=kit_id,
+            )
+            flash(request, "Комплект удалён (единицы возвращены на склад).", "success")
+            return redirect("/inventory/kits")
+        except kit_service.InUse as exc:
+            flash(request, str(exc), "danger")
+    return redirect(f"/inventory/kits/{kit_id}")
+
+
+@router.get("/kits/{kit_id}/add")
+def kit_add_picker(
+    request: Request,
+    kit_id: int,
+    q: str | None = None,
+    category_id: str | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    kit = kit_service.get_kit(db, kit_id)
+    if kit is None:
+        return redirect("/inventory/kits")
+    items = kit_service.free_items(db, query=_str(q), category_id=_opt_id(category_id))
+    return render(
+        request,
+        "inventory/kit_add.html",
+        {
+            "page_title": f"Наполнение комплекта: {kit.name}",
+            "kit": kit,
+            "items": items,
+            "categories": cat_service.list_categories(db),
+            "category_id": _opt_id(category_id),
+            "q": q or "",
+            "ItemStatus": ItemStatus,
+        },
+        db=db,
+        user=user,
+    )
+
+
+@router.post("/kits/{kit_id}/add", dependencies=[Depends(verify_csrf)])
+async def kit_add_submit(
+    request: Request,
+    kit_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    kit = kit_service.get_kit(db, kit_id)
+    if kit is None:
+        return redirect("/inventory/kits")
+    form = await request.form()
+    item_ids = [int(key.split("_", 1)[1]) for key in form if key.startswith("select_")]
+    added = kit_service.add_items(db, kit, item_ids)
+    if added:
+        audit_log(
+            db,
+            user,
+            EventType.KIT_MANAGE,
+            f"Комплект «{kit.name}»: добавлено единиц — {added}",
+            object_type="kit",
+            object_id=kit.id,
+        )
+    flash(request, f"Добавлено единиц: {added}.", "success" if added else "warning")
+    return redirect(f"/inventory/kits/{kit_id}")
+
+
+@router.post("/kits/{kit_id}/items/{item_id}/remove", dependencies=[Depends(verify_csrf)])
+def kit_remove_item(
+    request: Request,
+    kit_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    kit = kit_service.get_kit(db, kit_id)
+    if kit:
+        item = kit_service.remove_item(db, kit, item_id)
+        if item is not None:
+            audit_log(
+                db,
+                user,
+                EventType.KIT_MANAGE,
+                f"Комплект «{kit.name}»: единица возвращена на склад",
+                object_type="kit",
+                object_id=kit.id,
+            )
+            flash(request, "Единица возвращена в свободный сток.", "info")
+    return redirect(f"/inventory/kits/{kit_id}")
+
+
 # --- Категории (ТЗ §6.1) ------------------------------------------------
 
 
@@ -392,6 +586,7 @@ def model_detail(
         "page_title": model.name,
         "model": model,
         "stock": eq_service.stock_quantity(db, model),
+        "in_kits": eq_service.kit_count(db, model.id),
         "active": eq_service.active_count(db, model.id),
         "items": item_service.list_items(db, model.id),
         "status_counts": eq_service.serial_status_counts(db, model.id),
@@ -648,7 +843,7 @@ def item_detail(
 def item_update(
     request: Request,
     item_id: int,
-    barcode: str = Form(...),
+    barcode: str | None = Form(None),
     serial_number: str | None = Form(None),
     inventory_number: str | None = Form(None),
     comment: str | None = Form(None),
@@ -662,7 +857,7 @@ def item_update(
                 db,
                 item,
                 EquipmentItemInput(
-                    barcode=barcode,
+                    barcode=_str(barcode),
                     serial_number=_str(serial_number),
                     inventory_number=_str(inventory_number),
                     comment=_str(comment),

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 m-0">Комплекты</h1>
+  <a href="/inventory" class="btn btn-outline-secondary">К складу</a>
+</div>
+
+<div class="card card-body mb-3">
+  <form method="post" action="/inventory/kits" class="row g-2 align-items-end">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="col-12 col-md-4">
+      <label class="form-label" for="name">Название комплекта</label>
+      <input class="form-control" id="name" name="name" placeholder="например, Кейс DJ-стойки" required>
+    </div>
+    <div class="col-12 col-md-6">
+      <label class="form-label" for="description">Описание</label>
+      <input class="form-control" id="description" name="description" placeholder="необязательно">
+    </div>
+    <div class="col-12 col-md-2"><button class="btn btn-primary w-100">Создать комплект</button></div>
+  </form>
+</div>
+
+{% if kits %}
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead><tr><th>Комплект</th><th>Описание</th><th class="text-end">Единиц</th></tr></thead>
+    <tbody>
+      {% for k in kits %}
+      <tr role="button" onclick="location.href='/inventory/kits/{{ k.id }}'">
+        <td class="fw-semibold">{{ k.name }}</td>
+        <td class="text-secondary">{{ k.description or "—" }}</td>
+        <td class="text-end">{{ counts[k.id] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-secondary">Комплектов пока нет. Создайте первый выше.</p>
+{% endif %}
+{% endblock %}

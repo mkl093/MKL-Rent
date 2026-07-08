@@ -52,6 +52,10 @@ class EstimateLine(Base):
     model_id: Mapped[int | None] = mapped_column(
         ForeignKey("equipment_models.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Строка-комплект: бронируемая позиция, в смете выводится только название (kit).
+    kit_id: Mapped[int | None] = mapped_column(
+        ForeignKey("kits.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     is_custom: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Снимки на момент добавления (ТЗ §7.3).
@@ -76,6 +80,11 @@ class EstimateLine(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     estimate: Mapped[Estimate] = relationship(back_populates="lines")
+
+    @property
+    def is_kit(self) -> bool:
+        """Строка-комплект (бронируемая позиция «Комплект»)."""
+        return self.kit_id is not None
 
     @property
     def line_total(self) -> Decimal:

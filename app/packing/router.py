@@ -18,11 +18,12 @@ from app.inventory.enums import AccountingType, ItemStatus
 from app.inventory.models import EquipmentItem
 from app.inventory.services import categories as cat_service
 from app.inventory.services import equipment as eq_service
+from app.inventory.services import kits as kit_service
 from app.packing import service
 from app.packing.calc import compute_line
 from app.packing.enums import PackingStatus
 from app.packing.schemas import CustomPackingLine
-from app.projects.availability import compute_availability
+from app.projects.availability import compute_availability, compute_kit_availability
 from app.projects.service import get_project
 from app.templating import flash
 
@@ -108,6 +109,14 @@ def packing_page(
             )
             available[ln.id] = [it for it in items if it.id not in assigned]
 
+    # Перечень комплектации для строк-комплектов — «живьём» по kit_id («Комплект»).
+    kit_content: dict[int, list] = {}
+    for ln in packing.lines:
+        if ln.kit_id is not None:
+            kit = kit_service.get_kit(db, ln.kit_id)
+            if kit is not None:
+                kit_content[ln.id] = kit_service.content_groups(kit)
+
     return render(
         request,
         "packing/packing.html",
@@ -118,6 +127,7 @@ def packing_page(
             "ordered": ordered,
             "calcs": calcs,
             "available": available,
+            "kit_content": kit_content,
             "totals": service.totals(db, packing),
             "discrepancies": service.discrepancies(db, project, packing),
             "undercomplete": service.is_undercomplete(packing),
@@ -200,12 +210,19 @@ def add_picker(
         archived=False,
     )
     models = eq_service.list_models(db, filters)
+    kits = kit_service.list_kits(db)
+    kit_in_packing = {ln.kit_id for ln in packing.lines if ln.kit_id is not None}
 
     availability = {}
+    kit_availability = {}
     if project.start_date and project.end_date:
         for m in models:
             availability[m.id] = compute_availability(
                 db, m, project.start_date, project.end_date, exclude_project_id=project.id
+            )
+        for k in kits:
+            kit_availability[k.id] = compute_kit_availability(
+                db, k.id, project.start_date, project.end_date, exclude_project_id=project.id
             )
 
     return render(
@@ -216,7 +233,10 @@ def add_picker(
             "project": project,
             "packing": packing,
             "models": models,
+            "kits": kits,
+            "kit_in_packing": kit_in_packing,
             "availability": availability,
+            "kit_availability": kit_availability,
             "categories": cat_service.list_categories(db),
             "filters": filters,
             "q": q or "",
@@ -242,15 +262,21 @@ async def add_submit(
     form = await request.form()
     added = 0
     for key in form:
-        if not key.startswith("select_"):
-            continue
-        model_id = int(key.split("_", 1)[1])
-        model = eq_service.get_model(db, model_id)
-        if model is None:
-            continue
-        qty = _int(form.get(f"qty_{model_id}"), 1)
-        service.add_model(db, packing, model, qty)
-        added += 1
+        if key.startswith("select_"):
+            model_id = int(key.split("_", 1)[1])
+            model = eq_service.get_model(db, model_id)
+            if model is None:
+                continue
+            qty = _int(form.get(f"qty_{model_id}"), 1)
+            service.add_model(db, packing, model, qty)
+            added += 1
+        elif key.startswith("selectkit_"):
+            kit_id = int(key.split("_", 1)[1])
+            kit = kit_service.get_kit(db, kit_id)
+            if kit is None:
+                continue
+            if service.add_kit(db, packing, kit) is not None:
+                added += 1
     if added:
         audit_log(
             db,

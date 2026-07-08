@@ -41,7 +41,7 @@
     <div class="card card-body">
       <dl class="row mb-0">
         <dt class="col-5 col-sm-3">Тип учёта</dt><dd class="col-7 col-sm-9">{{ model.accounting_type.label }}</dd>
-        <dt class="col-5 col-sm-3">Остаток</dt><dd class="col-7 col-sm-9">{{ stock }}</dd>
+        <dt class="col-5 col-sm-3">Остаток (свободно)</dt><dd class="col-7 col-sm-9">{{ stock }}{% if in_kits %} <span class="text-secondary">· в комплектах: {{ in_kits }}</span>{% endif %}</dd>
         <dt class="col-5 col-sm-3">Производитель</dt><dd class="col-7 col-sm-9">{{ model.manufacturer or "—" }}</dd>
         <dt class="col-5 col-sm-3">Артикул</dt><dd class="col-7 col-sm-9">{{ model.internal_sku or "—" }}</dd>
         <dt class="col-5 col-sm-3">Цена аренды</dt><dd class="col-7 col-sm-9">{{ "%.2f"|format(model.base_price_eur) }} €</dd>
@@ -84,7 +84,7 @@
             <td>{% if it.barcode %}<code>{{ it.barcode }}</code>{% else %}<span class="text-secondary">—</span>{% endif %}</td>
             <td>{{ it.serial_number or "—" }}</td>
             <td>{{ it.inventory_number or "—" }}</td>
-            <td><span class="badge text-bg-{{ it.status.badge }}">{{ it.status.label }}</span></td>
+            <td><span class="badge text-bg-{{ it.status.badge }}">{{ it.status.label }}</span>{% if it.kit_id %} <a href="/inventory/kits/{{ it.kit_id }}" class="badge text-bg-info text-decoration-none">в комплекте</a>{% endif %}</td>
             <td class="text-end"><a href="/inventory/items/{{ it.id }}" class="btn btn-sm btn-outline-secondary">Открыть</a></td>
           </tr>
           {% endfor %}

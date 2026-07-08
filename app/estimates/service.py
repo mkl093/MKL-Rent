@@ -12,7 +12,7 @@ from app.database import utcnow
 from app.estimates.models import Estimate, EstimateLine
 from app.estimates.schemas import CustomLineInput, LineUpdate
 from app.estimates.totals import EstimateTotals, compute_totals
-from app.inventory.models import EquipmentModel
+from app.inventory.models import EquipmentModel, Kit
 from app.numbering.models import DocType
 from app.numbering.service import next_number
 from app.projects.models import Project, ProjectReservation
@@ -106,6 +106,41 @@ def add_model(
     return line
 
 
+KIT_GROUP_NAME = "Комплекты"
+
+
+def add_kit_line(
+    db: Session, estimate: Estimate, project: Project, kit: Kit
+) -> EstimateLine | None:
+    """Добавить комплект в смету одной строкой — только название (структура «Комплект»).
+
+    Комплект существует в одном экземпляре, поэтому количество всегда 1 и повторно
+    один и тот же комплект не добавляется. Цена — редактируемый снимок (по умолчанию 0).
+    """
+    if any(ln.kit_id == kit.id for ln in estimate.lines):
+        return None
+    line = EstimateLine(
+        estimate_id=estimate.id,
+        model_id=None,
+        kit_id=kit.id,
+        is_custom=False,
+        name=kit.name,
+        category_id=None,
+        category_name=KIT_GROUP_NAME,
+        manufacturer=None,
+        quantity=1,
+        unit_price=Decimal("0"),
+        coefficient=project.rental_coefficient,
+        discount_percent=Decimal("0"),
+        sort_order=_next_sort_order(estimate),
+    )
+    estimate.lines.append(line)
+    db.commit()
+    db.refresh(estimate)
+    sync_reservations(db, project, estimate)
+    return line
+
+
 def add_custom_line(
     db: Session, estimate: Estimate, project: Project, data: CustomLineInput
 ) -> EstimateLine:
@@ -132,7 +167,8 @@ def add_custom_line(
 
 
 def update_line(db: Session, line: EstimateLine, data: LineUpdate) -> EstimateLine:
-    line.quantity = data.quantity
+    # Комплект — одна бронируемая позиция: количество всегда 1 («Комплект»).
+    line.quantity = 1 if line.is_kit else data.quantity
     line.unit_price = data.unit_price
     line.coefficient = data.coefficient
     line.discount_percent = _clamp_percent(data.discount_percent)
@@ -182,45 +218,72 @@ class LineGroup:
 
 
 def grouped_lines(estimate: Estimate) -> list[LineGroup]:
-    """Сгруппировать строки по категориям; произвольные — в группе «Прочее» (ТЗ §16.6)."""
-    groups: dict[int | None, LineGroup] = {}
+    """Сгруппировать строки по категориям; комплекты — в «Комплекты», произвольные —
+    в «Прочее» (ТЗ §16.6, структура «Комплект»)."""
+    groups: dict[object, LineGroup] = {}
     for line in sorted(estimate.lines, key=lambda ln: (ln.sort_order, ln.id)):
-        key = None if line.is_custom else line.category_id
+        if line.is_kit:
+            key: object = "kit"
+            name = KIT_GROUP_NAME
+        elif line.is_custom:
+            key = None
+            name = "Прочее"
+        else:
+            key = line.category_id
+            name = line.category_name or "Без категории"
         if key not in groups:
-            name = "Прочее" if line.is_custom else (line.category_name or "Без категории")
-            groups[key] = LineGroup(category_id=key, category_name=name, lines=[])
+            cat_id = line.category_id if isinstance(key, int) else None
+            groups[key] = LineGroup(category_id=cat_id, category_name=name, lines=[])
         groups[key].lines.append(line)
-    # Категории — по имени, «Прочее» (custom) в конце.
-    return sorted(groups.values(), key=lambda g: (g.category_id is None, g.category_name))
+
+    # Комплекты — первыми, затем категории по имени, «Прочее» (custom) в конце.
+    def _order(g: LineGroup) -> tuple:
+        if g.category_name == KIT_GROUP_NAME:
+            return (0, "")
+        return (1 if g.category_id is None else 0, g.category_name)
+
+    return sorted(groups.values(), key=_order)
 
 
 def sync_reservations(db: Session, project: Project, estimate: Estimate) -> None:
     """Синхронизировать бронь проекта со складскими строками сметы (ТЗ §15).
 
-    Бронь = сумма количеств по модели среди складских строк. Влияет на доступность
+    Бронь модели = сумма количеств по модели среди складских строк.
+    Бронь комплекта («Комплект») = 1 за каждую строку-комплект. Влияет на доступность
     только когда проект «Забронирован», поэтому синхронизировать можно всегда.
     """
-    wanted: dict[int, int] = {}
+    wanted_models: dict[int, int] = {}
+    wanted_kits: set[int] = set()
     for line in estimate.lines:
-        if not line.is_custom and line.model_id is not None:
-            wanted[line.model_id] = wanted.get(line.model_id, 0) + line.quantity
+        if line.is_custom:
+            continue
+        if line.kit_id is not None:
+            wanted_kits.add(line.kit_id)
+        elif line.model_id is not None:
+            wanted_models[line.model_id] = wanted_models.get(line.model_id, 0) + line.quantity
 
-    existing = {
-        res.model_id: res
-        for res in db.execute(
-            select(ProjectReservation).where(ProjectReservation.project_id == project.id)
-        )
+    reservations = (
+        db.execute(select(ProjectReservation).where(ProjectReservation.project_id == project.id))
         .scalars()
         .all()
-    }
+    )
+    existing_models = {res.model_id: res for res in reservations if res.model_id is not None}
+    existing_kits = {res.kit_id: res for res in reservations if res.kit_id is not None}
 
-    for model_id, qty in wanted.items():
-        if model_id in existing:
-            existing[model_id].quantity = qty
+    for model_id, qty in wanted_models.items():
+        if model_id in existing_models:
+            existing_models[model_id].quantity = qty
         else:
             db.add(ProjectReservation(project_id=project.id, model_id=model_id, quantity=qty))
-    for model_id, res in existing.items():
-        if model_id not in wanted:
+    for model_id, res in existing_models.items():
+        if model_id not in wanted_models:
+            db.delete(res)
+
+    for kit_id in wanted_kits:
+        if kit_id not in existing_kits:
+            db.add(ProjectReservation(project_id=project.id, kit_id=kit_id, quantity=1))
+    for kit_id, res in existing_kits.items():
+        if kit_id not in wanted_kits:
             db.delete(res)
     db.commit()
 
@@ -236,6 +299,7 @@ def copy_estimate(db: Session, source: Project, target: Project) -> Estimate:
         dst.lines.append(
             EstimateLine(
                 model_id=line.model_id,
+                kit_id=line.kit_id,
                 is_custom=line.is_custom,
                 name=line.name,
                 category_id=line.category_id,

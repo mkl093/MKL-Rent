@@ -64,3 +64,10 @@ class EquipmentItemInput(BaseModel):
     serial_number: str | None = Field(default=None, max_length=255)
     inventory_number: str | None = Field(default=None, max_length=255)
     comment: str | None = None
+
+
+class KitInput(BaseModel):
+    """Данные комплекта (структура «Комплект»)."""
+
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = None

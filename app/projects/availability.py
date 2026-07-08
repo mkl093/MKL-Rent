@@ -55,25 +55,26 @@ class OccupancyEntry:
 
 
 def _total_stock(db: Session, model: EquipmentModel) -> int:
-    """Всего единиц модели (поединичный учёт для всех типов, пункт 3)."""
+    """Свободный сток модели: единицы, не помещённые в комплект (пункт 3, «Комплект»)."""
     return (
         db.scalar(
             select(func.count())
             .select_from(EquipmentItem)
-            .where(EquipmentItem.model_id == model.id)
+            .where(EquipmentItem.model_id == model.id, EquipmentItem.kit_id.is_(None))
         )
         or 0
     )
 
 
 def _unavailable_by_status(db: Session, model: EquipmentModel) -> int:
-    """Единицы, недоступные по статусу (в ремонте/с дефектом/списаны)."""
+    """Свободные единицы, недоступные по статусу (в ремонте/с дефектом/списаны)."""
     return (
         db.scalar(
             select(func.count())
             .select_from(EquipmentItem)
             .where(
                 EquipmentItem.model_id == model.id,
+                EquipmentItem.kit_id.is_(None),
                 EquipmentItem.status.in_(UNAVAILABLE_STATUSES),
             )
         )
@@ -121,6 +122,56 @@ def compute_availability(
         unavailable_by_status=_unavailable_by_status(db, model),
         reserved_other=reserved_in_other_projects(db, model.id, start, end, exclude_project_id),
         required=required,
+    )
+
+
+@dataclass
+class KitAvailability:
+    """Доступность комплекта на период: комплект существует в 1 экземпляре («Комплект»)."""
+
+    reserved_other: int  # брони комплекта в других пересекающихся забронированных проектах
+
+    @property
+    def available(self) -> bool:
+        return self.reserved_other <= 0
+
+
+def reserved_kit_in_other_projects(
+    db: Session,
+    kit_id: int,
+    start: date,
+    end: date,
+    exclude_project_id: int | None = None,
+) -> int:
+    """Сколько раз комплект забронирован в других пересекающихся проектах (ТЗ §15)."""
+    stmt = (
+        select(func.coalesce(func.sum(ProjectReservation.quantity), 0))
+        .join(Project, Project.id == ProjectReservation.project_id)
+        .where(
+            ProjectReservation.kit_id == kit_id,
+            Project.status.in_(RESERVING_STATUSES),
+            Project.start_date.is_not(None),
+            Project.end_date.is_not(None),
+            Project.start_date <= end,
+            Project.end_date >= start,
+        )
+    )
+    if exclude_project_id is not None:
+        stmt = stmt.where(Project.id != exclude_project_id)
+    return db.scalar(stmt) or 0
+
+
+def compute_kit_availability(
+    db: Session,
+    kit_id: int,
+    start: date,
+    end: date,
+    *,
+    exclude_project_id: int | None = None,
+) -> KitAvailability:
+    """Доступность комплекта на период (свободен, если не забронирован другим проектом)."""
+    return KitAvailability(
+        reserved_other=reserved_kit_in_other_projects(db, kit_id, start, end, exclude_project_id)
     )
 
 

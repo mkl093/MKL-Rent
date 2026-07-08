@@ -46,10 +46,11 @@
   <div class="border-bottom py-2">
     <div class="d-flex flex-wrap justify-content-between gap-2">
       <div class="fw-semibold">
-        {% if line.model_id %}<a href="/inventory/models/{{ line.model_id }}">{{ line.name }}</a>{% else %}{{ line.name }}{% endif %}
+        {% if line.is_kit %}<a href="/inventory/kits/{{ line.kit_id }}">{{ line.name }}</a> <span class="badge text-bg-info">комплект</span>
+        {% elif line.model_id %}<a href="/inventory/models/{{ line.model_id }}">{{ line.name }}</a>{% else %}{{ line.name }}{% endif %}
         {% if line.is_custom %}<span class="badge text-bg-light">доп.</span>{% endif %}
-        {% if c.over > 0 %}<span class="badge text-bg-warning">сверх плана +{{ c.over }}</span>{% endif %}
-        {% if c.missing > 0 %}<span class="badge text-bg-danger">недокомплект −{{ c.missing }}</span>{% endif %}
+        {% if not line.is_kit and c.over > 0 %}<span class="badge text-bg-warning">сверх плана +{{ c.over }}</span>{% endif %}
+        {% if not line.is_kit and c.missing > 0 %}<span class="badge text-bg-danger">недокомплект −{{ c.missing }}</span>{% endif %}
       </div>
       <div class="text-secondary small">
         план {{ c.planned }} · факт {{ c.fact }} · упак. {{ c.packed }} / без {{ c.unpacked }}
@@ -61,8 +62,23 @@
       · объём: {{ "%.3f"|format(c.equipment_volume) }} + {{ "%.3f"|format(c.package_volume) }} = <b>{{ "%.3f"|format(c.total_volume) }} м³</b>
     </div>
 
+    {% if line.is_kit %}
+      {# Перечень комплектации комплекта (структура «Комплект») #}
+      <div class="ms-3 mt-1 small">
+        {% for g in kit_content.get(line.id, []) %}
+        <div><span class="text-secondary">{{ g.model_name }}</span> — {{ g.count }} ед.
+          {% for it in g.items %}{% if it.barcode %}<code>{{ it.barcode }}</code>{% elif it.serial_number %}{{ it.serial_number }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+        </div>
+        {% else %}
+        <div class="text-secondary">Комплект пуст.</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
     {% if editable %}
-      {% if line.is_serial %}
+      {% if line.is_kit %}
+        {# Комплект комплектуется целиком; строка без факта/сканирования #}
+      {% elif line.is_serial %}
         {# Серийная строка: экземпляры (ТЗ §17.7) #}
         {% if line.serial_items %}
         <div class="d-flex flex-wrap gap-1 my-1">

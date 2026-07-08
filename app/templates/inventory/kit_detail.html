@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h1 class="h3 m-0">{{ kit.name }} <span class="badge text-bg-info align-middle">комплект</span></h1>
+    {% if kit.description %}<div class="text-secondary">{{ kit.description }}</div>{% endif %}
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a href="/inventory/kits" class="btn btn-outline-secondary">К комплектам</a>
+    <a href="/inventory/kits/{{ kit.id }}/add" class="btn btn-primary">Добавить единицы</a>
+    <form method="post" action="/inventory/kits/{{ kit.id }}/delete" class="m-0"
+          onsubmit="return confirm('Удалить комплект? Единицы вернутся на склад.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-outline-danger">Удалить</button>
+    </form>
+  </div>
+</div>
+
+<div class="card card-body mb-3">
+  <form method="post" action="/inventory/kits/{{ kit.id }}" class="row g-2 align-items-end">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="col-12 col-md-4">
+      <label class="form-label small mb-0">Название</label>
+      <input class="form-control" name="name" value="{{ kit.name }}" required>
+    </div>
+    <div class="col-12 col-md-6">
+      <label class="form-label small mb-0">Описание</label>
+      <input class="form-control" name="description" value="{{ kit.description or '' }}">
+    </div>
+    <div class="col-12 col-md-2"><button class="btn btn-outline-primary w-100">Сохранить</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Комплектация ({{ kit.items|length }} ед.)</strong>
+  </div>
+  <div class="card-body">
+    {% if groups %}
+      {% for g in groups %}
+      <div class="mb-3">
+        <div class="fw-semibold border-bottom pb-1 mb-1">
+          <a href="/inventory/models/{{ g.model_id }}">{{ g.model_name }}</a>
+          <span class="text-secondary">— {{ g.count }} ед.</span>
+        </div>
+        <table class="table table-sm table-hover align-middle m-0">
+          <tbody>
+            {% for it in g.items %}
+            <tr>
+              <td>{% if it.barcode %}<code>{{ it.barcode }}</code>{% else %}<span class="text-secondary">без штрих-кода</span>{% endif %}</td>
+              <td>{{ it.serial_number or "" }}</td>
+              <td><span class="badge text-bg-{{ it.status.badge }}">{{ it.status.label }}</span></td>
+              <td class="text-end">
+                <form method="post" action="/inventory/kits/{{ kit.id }}/items/{{ it.id }}/remove" class="m-0 d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="btn btn-sm btn-outline-secondary" title="Вернуть на склад">Извлечь</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="text-secondary m-0">Комплект пуст. <a href="/inventory/kits/{{ kit.id }}/add">Добавьте единицы со склада</a>.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

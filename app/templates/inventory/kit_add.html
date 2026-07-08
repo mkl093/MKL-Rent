@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 m-0">Наполнение комплекта: {{ kit.name }}</h1>
+  <a href="/inventory/kits/{{ kit.id }}" class="btn btn-outline-secondary">К комплекту</a>
+</div>
+
+<p class="text-secondary">Выберите свободные единицы со склада. Помещённая в комплект единица вычитается из свободного остатка своей модели.</p>
+
+<form method="get" action="/inventory/kits/{{ kit.id }}/add" class="card card-body mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-6">
+      <label class="form-label" for="q">Поиск (модель, штрих-код, серийный №)</label>
+      <input class="form-control" id="q" name="q" value="{{ q }}">
+    </div>
+    <div class="col-8 col-md-4">
+      <label class="form-label" for="category_id">Категория</label>
+      <select class="form-select" id="category_id" name="category_id">
+        <option value="">Все</option>
+        {% for c in categories %}
+          <option value="{{ c.id }}" {% if category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-4 col-md-2"><button class="btn btn-primary w-100">Фильтр</button></div>
+  </div>
+</form>
+
+<form method="post" action="/inventory/kits/{{ kit.id }}/add">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="mb-2"><button class="btn btn-primary" type="submit">Добавить выбранное в комплект</button></div>
+
+  {% if items %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th></th><th>Модель</th><th>Штрих-код</th><th>Серийный №</th><th>Статус</th></tr></thead>
+      <tbody>
+        {% for it in items %}
+        <tr>
+          <td><input class="form-check-input" type="checkbox" name="select_{{ it.id }}" value="1"></td>
+          <td><a href="/inventory/models/{{ it.model_id }}" target="_blank">{{ it.model.name }}</a></td>
+          <td>{% if it.barcode %}<code>{{ it.barcode }}</code>{% else %}<span class="text-secondary">—</span>{% endif %}</td>
+          <td>{{ it.serial_number or "—" }}</td>
+          <td><span class="badge text-bg-{{ it.status.badge }}">{{ it.status.label }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-secondary">Свободных единиц не найдено.</p>
+  {% endif %}
+</form>
+{% endblock %}

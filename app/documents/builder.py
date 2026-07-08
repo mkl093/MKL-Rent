@@ -217,6 +217,16 @@ def _packing_render(
     rows = [(ln, compute_line(ln)) for ln in ordered]
     totals = compute_totals(packing.lines)
 
+    # Перечень комплектации для строк-комплектов (структура «Комплект»).
+    from app.inventory.services import kits as kit_service
+
+    kit_content: dict[int, list] = {}
+    for ln in ordered:
+        if ln.kit_id is not None:
+            kit = kit_service.get_kit(db, ln.kit_id)
+            if kit is not None:
+                kit_content[ln.id] = kit_service.content_groups(kit)
+
     fingerprint = json.dumps(
         {
             "company": [company.company_name, company.address, company.pdf_footer],
@@ -238,6 +248,10 @@ def _packing_render(
                     ln.width_mm,
                     ln.height_mm,
                     sorted(si.barcode for si in ln.serial_items),
+                    [
+                        [g.model_name, [it.barcode or it.serial_number or "" for it in g.items]]
+                        for g in kit_content.get(ln.id, [])
+                    ],
                 ]
                 for ln in ordered
             ],
@@ -251,6 +265,7 @@ def _packing_render(
         packing=packing,
         rows=rows,
         totals=totals,
+        kit_content=kit_content,
         generated_at=utcnow(),
         logo_uri=_logo_uri(company),
         fontface=fontface,

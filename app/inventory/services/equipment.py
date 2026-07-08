@@ -159,12 +159,14 @@ def adjust_quantity(
         for _ in range(diff):
             db.add(EquipmentItem(model_id=model.id, barcode=None, status=ItemStatus.ACTIVE))
     elif diff < 0:
-        # Удаляем лишние активные единицы без штрих-кода (обезличенные).
+        # Удаляем лишние свободные активные единицы без штрих-кода (обезличенные).
+        # Единицы, помещённые в комплект, не трогаем — они вне свободного стока.
         extra = (
             db.execute(
                 select(EquipmentItem)
                 .where(
                     EquipmentItem.model_id == model.id,
+                    EquipmentItem.kit_id.is_(None),
                     EquipmentItem.status == ItemStatus.ACTIVE,
                 )
                 .order_by(EquipmentItem.barcode.is_(None).desc(), EquipmentItem.id.desc())
@@ -215,24 +217,40 @@ def serial_status_counts(db: Session, model_id: int) -> dict[ItemStatus, int]:
 
 
 def stock_quantity(db: Session, model: EquipmentModel) -> int:
-    """Общий остаток = число единиц модели (поединичный учёт, пункт 3)."""
+    """Свободный остаток = единицы модели вне комплектов (поединичный учёт, «Комплект»)."""
     return (
         db.scalar(
             select(func.count())
             .select_from(EquipmentItem)
-            .where(EquipmentItem.model_id == model.id)
+            .where(EquipmentItem.model_id == model.id, EquipmentItem.kit_id.is_(None))
+        )
+        or 0
+    )
+
+
+def kit_count(db: Session, model_id: int) -> int:
+    """Число единиц модели, помещённых в комплекты (исключены из свободного стока)."""
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(EquipmentItem)
+            .where(EquipmentItem.model_id == model_id, EquipmentItem.kit_id.is_not(None))
         )
         or 0
     )
 
 
 def active_count(db: Session, model_id: int) -> int:
-    """Число активных единиц модели."""
+    """Число свободных активных единиц модели (вне комплектов)."""
     return (
         db.scalar(
             select(func.count())
             .select_from(EquipmentItem)
-            .where(EquipmentItem.model_id == model_id, EquipmentItem.status == ItemStatus.ACTIVE)
+            .where(
+                EquipmentItem.model_id == model_id,
+                EquipmentItem.kit_id.is_(None),
+                EquipmentItem.status == ItemStatus.ACTIVE,
+            )
         )
         or 0
     )
