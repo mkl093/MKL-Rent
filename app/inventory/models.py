@@ -23,7 +23,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base, TimestampMixin
-from app.inventory.enums import AccountingType, ItemStatus, PackingType
+from app.inventory.enums import AccountingType, ItemStatus, KitWeightMode, PackingType
 
 
 def _enum_column(enum_cls: type, length: int) -> Enum:
@@ -170,6 +170,13 @@ class Kit(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     photo_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Настройка веса для packing (необязательная). weight_value интерпретируется
+    # по weight_mode: содержимое / содержимое+упаковка / фиксированный общий вес.
+    weight_mode: Mapped[KitWeightMode] = mapped_column(
+        _enum_column(KitWeightMode, 12), default=KitWeightMode.CONTENT, nullable=False
+    )
+    weight_value: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
 
     items: Mapped[list[EquipmentItem]] = relationship(
         back_populates="kit",

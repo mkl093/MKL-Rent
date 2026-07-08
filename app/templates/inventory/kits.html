@@ -12,11 +12,24 @@
       <label class="form-label" for="name">Название комплекта</label>
       <input class="form-control" id="name" name="name" placeholder="например, Кейс DJ-стойки" required>
     </div>
-    <div class="col-12 col-md-6">
+    <div class="col-12 col-md-8">
       <label class="form-label" for="description">Описание</label>
       <input class="form-control" id="description" name="description" placeholder="необязательно">
     </div>
-    <div class="col-12 col-md-2"><button class="btn btn-primary w-100">Создать комплект</button></div>
+    <div class="col-12 col-md-5">
+      <label class="form-label" for="weight_mode">Расчёт веса для packing</label>
+      <select class="form-select" id="weight_mode" name="weight_mode">
+        {% for m in KitWeightMode %}
+        <option value="{{ m.value }}">{{ m.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-8 col-md-4">
+      <label class="form-label" for="weight_value">Вес, кг</label>
+      <input class="form-control" id="weight_value" name="weight_value" inputmode="decimal"
+             placeholder="для «+ упаковки» и «фиксированного»">
+    </div>
+    <div class="col-4 col-md-3"><button class="btn btn-primary w-100">Создать комплект</button></div>
   </form>
 </div>
 

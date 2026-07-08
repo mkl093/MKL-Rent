@@ -7,7 +7,7 @@ from decimal import Decimal
 import pytest
 
 from app.estimates import service as est_service
-from app.inventory.enums import AccountingType
+from app.inventory.enums import AccountingType, KitWeightMode
 from app.inventory.schemas import EquipmentItemInput, EquipmentModelCreate, KitInput
 from app.inventory.services import categories as cat_service
 from app.inventory.services import equipment as eq_service
@@ -148,6 +148,63 @@ def test_packing_from_estimate_includes_kit_with_composition(db_session, serial_
     groups = kit_service.content_groups(kit)
     assert groups[0].model_name == "Прожектор"
     assert groups[0].count == 2
+
+
+@pytest.fixture
+def weighted_model(db_session):
+    cat = cat_service.create_category(db_session, "Звук")
+    m = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id,
+            name="Колонка",
+            accounting_type=AccountingType.SERIAL,
+            weight_kg=Decimal("10"),
+        ),
+    )
+    for bc in ("W1", "W2"):
+        item_service.create_item(db_session, m, EquipmentItemInput(barcode=bc), user_id=None)
+    return m
+
+
+def test_kit_weight_content_mode(db_session, weighted_model):
+    """По умолчанию вес комплекта = сумма веса содержимого."""
+    kit = kit_service.create_kit(db_session, KitInput(name="K"))
+    items = item_service.list_items(db_session, weighted_model.id)
+    kit_service.add_items(db_session, kit, [i.id for i in items])
+    assert kit_service.content_weight(kit) == Decimal("20")
+    assert kit_service.total_weight(kit) == Decimal("20")
+
+
+def test_kit_weight_packaging_mode(db_session, weighted_model):
+    """Режим «содержимое + упаковка»: к весу содержимого прибавляется вес упаковки."""
+    kit = kit_service.create_kit(
+        db_session,
+        KitInput(name="K", weight_mode=KitWeightMode.PACKAGING, weight_value=Decimal("5.5")),
+    )
+    items = item_service.list_items(db_session, weighted_model.id)
+    kit_service.add_items(db_session, kit, [i.id for i in items])
+    assert kit_service.total_weight(kit) == Decimal("25.5")
+
+
+def test_kit_weight_total_mode_ignores_content(db_session, weighted_model):
+    """Режим «фиксированный общий вес»: содержимое не учитывается."""
+    kit = kit_service.create_kit(
+        db_session,
+        KitInput(name="K", weight_mode=KitWeightMode.TOTAL, weight_value=Decimal("30")),
+    )
+    items = item_service.list_items(db_session, weighted_model.id)
+    kit_service.add_items(db_session, kit, [i.id for i in items])
+    assert kit_service.total_weight(kit) == Decimal("30")
+
+
+def test_kit_weight_value_cleared_in_content_mode(db_session):
+    """В режиме «по содержимому» числовое значение веса не сохраняется."""
+    kit = kit_service.create_kit(
+        db_session,
+        KitInput(name="K", weight_mode=KitWeightMode.CONTENT, weight_value=Decimal("99")),
+    )
+    assert kit.weight_value is None
 
 
 # --- Веб-поток -----------------------------------------------------------

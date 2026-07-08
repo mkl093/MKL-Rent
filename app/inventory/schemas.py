@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
-from app.inventory.enums import AccountingType, PackingType
+from app.inventory.enums import AccountingType, KitWeightMode, PackingType
 
 
 class PackingRuleInput(BaseModel):
@@ -71,3 +71,5 @@ class KitInput(BaseModel):
 
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
+    weight_mode: KitWeightMode = KitWeightMode.CONTENT
+    weight_value: Decimal | None = Field(default=None, ge=0)

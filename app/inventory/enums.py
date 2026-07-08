@@ -70,3 +70,24 @@ class ItemStatus(enum.StrEnum):
 
 # Статусы, делающие единицу недоступной по состоянию (ТЗ §9, §15).
 UNAVAILABLE_STATUSES = [ItemStatus.REPAIR, ItemStatus.DEFECT, ItemStatus.RETIRED]
+
+
+class KitWeightMode(enum.StrEnum):
+    """Как считается вес комплекта для packing (структура «Комплект»)."""
+
+    CONTENT = "content"  # только сумма веса содержимого (значение веса не задаётся)
+    PACKAGING = "packaging"  # содержимое + вес упаковки/кейса
+    TOTAL = "total"  # фиксированный общий вес (содержимое не учитывается)
+
+    @property
+    def label(self) -> str:
+        return {
+            "content": "По содержимому",
+            "packaging": "Содержимое + вес упаковки",
+            "total": "Фиксированный общий вес",
+        }[self.value]
+
+    @property
+    def needs_value(self) -> bool:
+        """Требуется ли числовое значение веса для режима."""
+        return self != KitWeightMode.CONTENT

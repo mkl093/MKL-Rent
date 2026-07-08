@@ -13,7 +13,7 @@ from app.audit.service import log as audit_log
 from app.auth.models import User
 from app.database import get_db
 from app.dependencies import redirect, render, require_login, verify_csrf
-from app.inventory.enums import AccountingType, ItemStatus, PackingType
+from app.inventory.enums import AccountingType, ItemStatus, KitWeightMode, PackingType
 from app.inventory.schemas import (
     EquipmentItemInput,
     EquipmentModelCreate,
@@ -58,6 +58,23 @@ def _str(value: str | None) -> str | None:
 
 def _opt_id(value: str | None) -> int | None:
     return int(value) if value and value.strip() else None
+
+
+def _kit_input(
+    name: str, description: str | None, weight_mode: str | None, weight_value: str | None
+) -> KitInput:
+    """Собрать данные комплекта из формы (вес — необязателен)."""
+    try:
+        mode = KitWeightMode(weight_mode or "")
+    except ValueError:
+        mode = KitWeightMode.CONTENT
+    raw = _str(weight_value)
+    return KitInput(
+        name=name,
+        description=_str(description),
+        weight_mode=mode,
+        weight_value=_dec(raw) if raw else None,
+    )
 
 
 def _date(value: str | None) -> date | None:
@@ -227,7 +244,12 @@ def kits_page(
     return render(
         request,
         "inventory/kits.html",
-        {"page_title": "Комплекты", "kits": kits, "counts": counts},
+        {
+            "page_title": "Комплекты",
+            "kits": kits,
+            "counts": counts,
+            "KitWeightMode": KitWeightMode,
+        },
         db=db,
         user=user,
     )
@@ -238,13 +260,15 @@ def kit_create(
     request: Request,
     name: str = Form(...),
     description: str | None = Form(None),
+    weight_mode: str | None = Form(None),
+    weight_value: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
     if not _str(name):
         flash(request, "Укажите название комплекта.", "danger")
         return redirect("/inventory/kits")
-    kit = kit_service.create_kit(db, KitInput(name=name, description=_str(description)))
+    kit = kit_service.create_kit(db, _kit_input(name, description, weight_mode, weight_value))
     audit_log(
         db,
         user,
@@ -275,7 +299,10 @@ def kit_detail(
             "page_title": kit.name,
             "kit": kit,
             "groups": kit_service.content_groups(kit),
+            "content_weight": kit_service.content_weight(kit),
+            "total_weight": kit_service.total_weight(kit),
             "ItemStatus": ItemStatus,
+            "KitWeightMode": KitWeightMode,
         },
         db=db,
         user=user,
@@ -288,12 +315,14 @@ def kit_update(
     kit_id: int,
     name: str = Form(...),
     description: str | None = Form(None),
+    weight_mode: str | None = Form(None),
+    weight_value: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
     kit = kit_service.get_kit(db, kit_id)
     if kit and _str(name):
-        kit_service.update_kit(db, kit, KitInput(name=name, description=_str(description)))
+        kit_service.update_kit(db, kit, _kit_input(name, description, weight_mode, weight_value))
         flash(request, "Комплект сохранён.", "success")
     return redirect(f"/inventory/kits/{kit_id}")
 

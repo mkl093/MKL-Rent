@@ -13,6 +13,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.inventory.enums import KitWeightMode
 from app.inventory.models import EquipmentItem, EquipmentModel, Kit
 from app.inventory.schemas import KitInput
 from app.inventory.services.categories import InUse, InventoryError
@@ -42,8 +43,20 @@ def item_count(db: Session, kit_id: int) -> int:
     )
 
 
+def _weight_value_for(data: KitInput) -> Decimal | None:
+    """Значение веса хранится только для режимов, где оно требуется."""
+    if data.weight_mode == KitWeightMode.CONTENT:
+        return None
+    return data.weight_value
+
+
 def create_kit(db: Session, data: KitInput) -> Kit:
-    kit = Kit(name=data.name.strip(), description=(data.description or None))
+    kit = Kit(
+        name=data.name.strip(),
+        description=(data.description or None),
+        weight_mode=data.weight_mode,
+        weight_value=_weight_value_for(data),
+    )
     db.add(kit)
     db.commit()
     db.refresh(kit)
@@ -53,6 +66,8 @@ def create_kit(db: Session, data: KitInput) -> Kit:
 def update_kit(db: Session, kit: Kit, data: KitInput) -> Kit:
     kit.name = data.name.strip()
     kit.description = data.description or None
+    kit.weight_mode = data.weight_mode
+    kit.weight_value = _weight_value_for(data)
     db.commit()
     db.refresh(kit)
     return kit
@@ -166,13 +181,29 @@ def content_groups(kit: Kit) -> list[KitGroup]:
     return sorted(groups.values(), key=lambda g: g.model_name)
 
 
-def total_weight(kit: Kit) -> Decimal:
-    """Суммарный вес комплектации (снимок для packing-итогов)."""
+def content_weight(kit: Kit) -> Decimal:
+    """Суммарный вес содержимого комплекта (сумма веса единиц)."""
     total = Decimal("0")
     for item in kit.items:
         if item.model is not None:
             total += item.model.weight_kg
     return total
+
+
+def total_weight(kit: Kit) -> Decimal:
+    """Расчётный вес комплекта для packing (снимок), с учётом настройки веса.
+
+    TOTAL — фиксированный общий вес (содержимое не учитывается);
+    PACKAGING — вес содержимого + вес упаковки/кейса;
+    CONTENT (или значение не задано) — только вес содержимого.
+    """
+    content = content_weight(kit)
+    if kit.weight_value is not None:
+        if kit.weight_mode == KitWeightMode.TOTAL:
+            return kit.weight_value
+        if kit.weight_mode == KitWeightMode.PACKAGING:
+            return content + kit.weight_value
+    return content
 
 
 __all__ = [
@@ -181,6 +212,7 @@ __all__ = [
     "KitGroup",
     "add_items",
     "content_groups",
+    "content_weight",
     "create_kit",
     "delete_kit",
     "free_items",
