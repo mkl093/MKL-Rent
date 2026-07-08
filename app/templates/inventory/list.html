@@ -129,7 +129,9 @@
       <tr>
         <th></th><th>Модель</th><th>Категория</th><th>Производитель</th>
         <th>Тип учёта</th><th class="text-end">Остаток</th>
-        <th class="text-center">Состояние</th>
+        <th class="text-end table-success" title="Свободно к аренде">Доступно</th>
+        <th class="text-end table-warning" title="Забронировано (статус «Забронирован»)">Зарезервир.</th>
+        <th class="text-end table-danger" title="Отгружено / не возвращено">В работе</th>
         <th>Упаковка</th><th class="text-end">Цена, €</th>
       </tr>
     </thead>
@@ -144,7 +146,10 @@
         <td>{{ m.manufacturer or "—" }}</td>
         <td>{{ m.accounting_type.label }}</td>
         <td class="text-end">{{ stock[m.id] }}</td>
-        <td class="text-center text-nowrap">{% if availability.get(m.id) %}{{ state_chips(availability[m.id]) }}{% else %}—{% endif %}</td>
+        {% set av = availability.get(m.id) %}
+        <td class="text-end table-success fw-semibold">{{ av.available if av is not none else "—" }}</td>
+        <td class="text-end table-warning">{{ av.reserved if av is not none else "—" }}</td>
+        <td class="text-end table-danger">{{ av.in_work if av is not none else "—" }}</td>
         <td>{{ m.packing.packing_type.label if m.has_packing else "—" }}</td>
         <td class="text-end">{{ "%.2f"|format(m.base_price_eur) }}</td>
       </tr>

@@ -156,8 +156,10 @@ def test_warehouse_availability_by_dates(auth_client, db_session):
     db_session.add(ProjectReservation(project_id=neighbor.id, model_id=model.id, quantity=5))
     db_session.commit()
 
-    # Колонка состояния (доступно/зарезервировано/в работе) присутствует всегда.
-    assert "Состояние</th>" in auth_client.get("/inventory").text
+    # Три колонки состояния (доступно/зарезервировано/в работе) присутствуют всегда.
+    home = auth_client.get("/inventory").text
+    assert "Доступно</th>" in home
+    assert "В работе</th>" in home
 
     # На пересекающийся период доступно 20 − 5 = 15.
     page = auth_client.get(
