@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.inventory.enums import UNAVAILABLE_STATUSES
 from app.inventory.models import EquipmentItem, EquipmentModel
-from app.projects.enums import RESERVING_STATUSES, ProjectStatus
+from app.projects.enums import ProjectStatus
 from app.projects.models import Project, ProjectReservation
 
 
@@ -190,17 +190,18 @@ def reserved_kit_in_other_projects(
     end: date,
     exclude_project_id: int | None = None,
 ) -> int:
-    """Сколько раз комплект забронирован в других пересекающихся проектах (ТЗ §15)."""
+    """Сколько раз комплект занят в других пересекающихся проектах (ТЗ §15).
+
+    Комплект — сформированная единица (его содержимое уходит с общего склада),
+    поэтому занятость считается как у модели: бронь — по датам аренды, отгрузка —
+    до возврата (просрочка держит комплект и после конца аренды).
+    """
     stmt = (
         select(func.coalesce(func.sum(ProjectReservation.quantity), 0))
         .join(Project, Project.id == ProjectReservation.project_id)
         .where(
             ProjectReservation.kit_id == kit_id,
-            Project.status.in_(RESERVING_STATUSES),
-            Project.start_date.is_not(None),
-            Project.end_date.is_not(None),
-            Project.start_date <= end,
-            Project.end_date >= start,
+            or_(_booked_overlap(start, end), _in_work_overlap(start, end)),
         )
     )
     if exclude_project_id is not None:

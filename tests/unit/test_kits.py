@@ -107,6 +107,28 @@ def test_kit_booking_and_availability(db_session, serial_model):
     assert ka2.available is True
 
 
+def test_overdue_shipped_kit_stays_busy_after_rental_end(db_session):
+    """Отгружённый и не возвращённый комплект занят и после конца аренды (просрочка)."""
+    kit = kit_service.create_kit(db_session, KitInput(name="Кейс"))
+    proj = create_project(
+        db_session,
+        ProjectInput(name="Отгружен", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5)),
+    )
+    proj.status = ProjectStatus.SHIPPED
+    db_session.add(ProjectReservation(project_id=proj.id, kit_id=kit.id, quantity=1))
+    db_session.commit()
+
+    # Аренда закончилась 5-го, возврат не отмечен — комплект занят и 10-го.
+    ka = compute_kit_availability(db_session, kit.id, date(2026, 7, 10), date(2026, 7, 12))
+    assert ka.available is False
+
+    # После возврата 6-го — на период с 10-го снова свободен.
+    proj.returned_date = date(2026, 7, 6)
+    db_session.commit()
+    ka2 = compute_kit_availability(db_session, kit.id, date(2026, 7, 10), date(2026, 7, 12))
+    assert ka2.available is True
+
+
 def test_estimate_kit_line_creates_reservation(db_session):
     """Добавление комплекта в смету создаёт бронь-комплект (одна позиция)."""
     kit = kit_service.create_kit(db_session, KitInput(name="Комплект A"))
