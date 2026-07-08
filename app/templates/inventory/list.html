@@ -4,6 +4,16 @@
   <span class="badge rounded-pill text-bg-warning" title="Зарезервировано">{{ av.reserved }}</span>
   <span class="badge rounded-pill text-bg-danger" title="В работе">{{ av.in_work }}</span>
 {%- endmacro %}
+{% macro occ_list(entries) -%}
+  {% for e in entries %}
+  <div class="d-flex flex-wrap align-items-center gap-2 py-1 {% if not loop.first %}border-top{% endif %}">
+    <span class="badge text-bg-{{ e.status.badge }}">{{ e.status.label }}</span>
+    <a href="/projects/{{ e.project_id }}" class="text-decoration-none">{{ e.number }} · {{ e.name }}</a>
+    <span class="text-secondary small">{{ e.start_date.strftime('%d.%m.%Y') if e.start_date else '?' }} – {{ e.end_date.strftime('%d.%m.%Y') if e.end_date else '?' }}</span>
+    <span class="ms-auto fw-semibold">× {{ e.quantity }}</span>
+  </div>
+  {% endfor %}
+{%- endmacro %}
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
   <h1 class="h3 m-0">Склад</h1>
@@ -148,11 +158,31 @@
         <td class="text-end">{{ stock[m.id] }}</td>
         {% set av = availability.get(m.id) %}
         <td class="text-end table-success fw-semibold">{{ av.available if av is not none else "—" }}</td>
-        <td class="text-end table-warning">{{ av.reserved if av is not none else "—" }}</td>
-        <td class="text-end table-danger">{{ av.in_work if av is not none else "—" }}</td>
+        <td class="text-end table-warning">
+          {% if av and av.reserved > 0 %}
+          <button type="button" class="btn btn-link btn-sm p-0 fw-semibold text-reset text-decoration-none"
+                  data-bs-toggle="collapse" data-bs-target="#occ-{{ m.id }}" aria-expanded="false"
+                  title="Показать проекты" onclick="event.stopPropagation()">{{ av.reserved }}</button>
+          {% else %}{{ av.reserved if av is not none else "—" }}{% endif %}
+        </td>
+        <td class="text-end table-danger">
+          {% if av and av.in_work > 0 %}
+          <button type="button" class="btn btn-link btn-sm p-0 fw-semibold text-reset text-decoration-none"
+                  data-bs-toggle="collapse" data-bs-target="#occ-{{ m.id }}" aria-expanded="false"
+                  title="Показать проекты" onclick="event.stopPropagation()">{{ av.in_work }}</button>
+          {% else %}{{ av.in_work if av is not none else "—" }}{% endif %}
+        </td>
         <td>{{ m.packing.packing_type.label if m.has_packing else "—" }}</td>
         <td class="text-end">{{ "%.2f"|format(m.base_price_eur) }}</td>
       </tr>
+      {% if occupancy.get(m.id) %}
+      <tr class="collapse" id="occ-{{ m.id }}">
+        <td colspan="11" class="bg-body-tertiary">
+          <div class="fw-semibold small mb-1">Занятость: {{ m.name }}</div>
+          {{ occ_list(occupancy[m.id]) }}
+        </td>
+      </tr>
+      {% endif %}
       {% endfor %}
     </tbody>
   </table>
@@ -169,6 +199,14 @@
         <div class="small">{{ m.accounting_type.label }} · остаток {{ stock[m.id] }} · {{ "%.2f"|format(m.base_price_eur) }} €</div>
         {% if availability.get(m.id) %}
         <div class="small mt-1">{{ state_chips(availability[m.id]) }}</div>
+        {% endif %}
+        {% if occupancy.get(m.id) %}
+        <button type="button" class="btn btn-link btn-sm p-0 mt-1 text-decoration-none"
+                data-bs-toggle="collapse" data-bs-target="#moc-{{ m.id }}"
+                onclick="event.stopPropagation();event.preventDefault()">Кто занял</button>
+        <div class="collapse" id="moc-{{ m.id }}" onclick="event.preventDefault()">
+          {{ occ_list(occupancy[m.id]) }}
+        </div>
         {% endif %}
       </div>
     </div>

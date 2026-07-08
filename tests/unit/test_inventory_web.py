@@ -166,6 +166,8 @@ def test_warehouse_availability_by_dates(auth_client, db_session):
         "/inventory", params={"avail_start": "2026-07-03", "avail_end": "2026-07-04"}
     ).text
     assert ">15<" in page
+    # В раскрывающемся перечне занятости — имя занимающего проекта.
+    assert "Сосед" in page
 
     # На непересекающийся период — все 20 доступны.
     page2 = auth_client.get(

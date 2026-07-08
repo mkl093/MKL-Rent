@@ -25,7 +25,7 @@ from app.inventory.services import categories as cat_service
 from app.inventory.services import equipment as eq_service
 from app.inventory.services import items as item_service
 from app.inventory.services import kits as kit_service
-from app.projects.availability import compute_availability
+from app.projects.availability import compute_availability, occupancy_detail
 from app.templating import flash
 from app.utils.images import ImageError, delete_photo, save_model_photo
 
@@ -171,6 +171,14 @@ def index(
     ref_start, ref_end = (start, end) if avail_is_period else (_today(), _today())
     availability = {m.id: compute_availability(db, m, ref_start, ref_end) for m in models}
 
+    # Перечень занимающих проектов (бронь + в работе) — только там, где занятость
+    # есть; раскрывается по клику на цифру в списке.
+    occupancy = {
+        m.id: occupancy_detail(db, m.id, ref_start, ref_end)
+        for m in models
+        if availability[m.id].reserved_other > 0
+    }
+
     categories = cat_service.list_categories(db)
     tree = _build_tree(categories, models) if view == "tree" else None
 
@@ -182,6 +190,7 @@ def index(
             "models": models,
             "stock": stock,
             "availability": availability,
+            "occupancy": occupancy,
             "avail_is_period": avail_is_period,
             "avail_start": saved.get("start", ""),
             "avail_end": saved.get("end", ""),
