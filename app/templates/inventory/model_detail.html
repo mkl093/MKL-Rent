@@ -67,13 +67,21 @@
     </span>
   </div>
   <div class="card-body">
-    <form method="post" action="/inventory/models/{{ model.id }}/items" class="row g-2 mb-3">
+    <form method="post" action="/inventory/models/{{ model.id }}/items" class="row g-2 mb-2">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <div class="col-12 col-md-3"><input class="form-control" name="barcode" placeholder="Штрих-код (необязательно)"></div>
+      <div class="col-12 col-md-3">
+        <div class="input-group">
+          <input class="form-control" id="add-barcode" name="barcode" placeholder="Штрих-код (необязательно)">
+          <button class="btn btn-outline-secondary" type="button"
+                  data-scan-target="add-barcode" data-scan-reader="add-barcode-reader"
+                  data-label="📷" title="Сканировать камерой">📷</button>
+        </div>
+      </div>
       <div class="col-6 col-md-3"><input class="form-control" name="serial_number" placeholder="Серийный №"></div>
       <div class="col-6 col-md-3"><input class="form-control" name="inventory_number" placeholder="Инв. №"></div>
       <div class="col-12 col-md-3"><button class="btn btn-primary w-100">Добавить единицу</button></div>
     </form>
+    <div id="add-barcode-reader" class="mb-3" style="display:none;max-width:360px"></div>
     {% if items %}
     <div class="table-responsive">
       <table class="table table-sm table-hover align-middle">
@@ -138,4 +146,7 @@
   </div>
 </div>
 {% endif %}
+
+<script src="/static/vendor/html5-qrcode.min.js"></script>
+<script src="/static/js/barcode-scan.js"></script>
 {% endblock %}

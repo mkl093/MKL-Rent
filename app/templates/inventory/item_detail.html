@@ -24,7 +24,13 @@
       <form method="post" action="/inventory/items/{{ item.id }}" class="row g-2">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="col-12"><label class="form-label small">Штрих-код</label>
-          <input class="form-control" name="barcode" value="{{ item.barcode or '' }}" placeholder="необязательно"></div>
+          <div class="input-group">
+            <input class="form-control" id="edit-barcode" name="barcode" value="{{ item.barcode or '' }}" placeholder="необязательно">
+            <button class="btn btn-outline-secondary" type="button"
+                    data-scan-target="edit-barcode" data-scan-reader="edit-barcode-reader"
+                    data-label="📷" title="Сканировать камерой">📷</button>
+          </div>
+          <div id="edit-barcode-reader" class="mt-2" style="display:none;max-width:360px"></div></div>
         <div class="col-6"><label class="form-label small">Серийный №</label>
           <input class="form-control" name="serial_number" value="{{ item.serial_number or '' }}"></div>
         <div class="col-6"><label class="form-label small">Инвентарный №</label>
@@ -65,4 +71,7 @@
     </div>
   </div>
 </div>
+
+<script src="/static/vendor/html5-qrcode.min.js"></script>
+<script src="/static/js/barcode-scan.js"></script>
 {% endblock %}
