@@ -97,6 +97,35 @@ def test_deficit_day_is_busy(db_session, model):
     assert cell.state == "busy"
 
 
+def test_booking_across_month_boundary(db_session, model):
+    """Бронь с конца июля по начало августа — непрерывна на стыке месяцев."""
+    _reserve(db_session, model.id, 4, date(2026, 7, 28), date(2026, 8, 3), ProjectStatus.BOOKED)
+    days, rows = compute_planboard(db_session, [model.id], date(2026, 7, 25), date(2026, 8, 5))
+    cells = rows[model.id]
+    assert _cell(cells, date(2026, 7, 27)).state == "free"
+    for d in (
+        date(2026, 7, 28),
+        date(2026, 7, 31),
+        date(2026, 8, 1),
+        date(2026, 8, 3),
+    ):
+        c = _cell(cells, d)
+        assert c.reserved == 4 and c.available == 6 and c.state == "reserved"
+    assert _cell(cells, date(2026, 8, 4)).state == "free"
+
+
+def test_booking_clamped_to_window_edges(db_session, model):
+    """Бронь длиннее окна: видимые дни заняты, край окна не «теряется»."""
+    # Длинная бронь, выходящая за оба края окна.
+    _reserve(db_session, model.id, 2, date(2026, 7, 20), date(2026, 8, 31), ProjectStatus.BOOKED)
+    days, rows = compute_planboard(db_session, [model.id], date(2026, 7, 25), date(2026, 8, 5))
+    cells = rows[model.id]
+    assert len(cells) == 12
+    # Все дни окна, включая первый и последний, заняты.
+    assert all(c.reserved == 2 for c in cells)
+    assert cells[0].day == date(2026, 7, 25) and cells[-1].day == date(2026, 8, 5)
+
+
 def test_draft_not_counted(db_session, model):
     _reserve(db_session, model.id, 4, date(2026, 7, 3), date(2026, 7, 5), ProjectStatus.DRAFT)
     days, rows = compute_planboard(db_session, [model.id], date(2026, 7, 1), date(2026, 7, 7))
