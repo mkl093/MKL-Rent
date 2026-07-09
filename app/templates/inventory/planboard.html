@@ -74,7 +74,7 @@
   <table class="table table-bordered align-middle pb-grid mb-0">
     <thead>
       <tr>
-        <th class="pb-model">Модель · остаток</th>
+        <th class="pb-model">Модель</th>
         {% for d in days %}
         <th class="{{ 'pb-weekend' if d.weekday() >= 5 }} {{ 'pb-today' if d == today }}">
           <div>{{ wd[d.weekday()] }}</div><div>{{ d.day }}</div>

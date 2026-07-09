@@ -112,7 +112,7 @@
         {% for m in cat.direct %}
         <li class="list-group-item d-flex justify-content-between align-items-center">
           <a href="/inventory/models/{{ m.id }}" class="text-decoration-none">{{ m.name }}{% if m.is_archived %} <span class="badge text-bg-secondary">архив</span>{% endif %}</a>
-          <span class="text-secondary small">{{ m.accounting_type.label }} · остаток {{ stock[m.id] }}</span>
+          <span class="text-secondary small">{{ m.accounting_type.label }} · общее кол-во {{ stock[m.id] }}</span>
           {% if availability.get(m.id) %}<span class="ms-1">{{ state_chips(availability[m.id]) }}</span>{% endif %}
         </li>
         {% endfor %}
@@ -121,7 +121,7 @@
           {% for m in sub.models %}
           <li class="list-group-item d-flex justify-content-between align-items-center ps-4">
             <a href="/inventory/models/{{ m.id }}" class="text-decoration-none">{{ m.name }}{% if m.is_archived %} <span class="badge text-bg-secondary">архив</span>{% endif %}</a>
-            <span class="text-secondary small">{{ m.accounting_type.label }} · остаток {{ stock[m.id] }}</span>
+            <span class="text-secondary small">{{ m.accounting_type.label }} · общее кол-во {{ stock[m.id] }}</span>
           {% if availability.get(m.id) %}<span class="ms-1">{{ state_chips(availability[m.id]) }}</span>{% endif %}
           </li>
           {% endfor %}
@@ -139,7 +139,7 @@
     <thead>
       <tr>
         <th></th><th>Модель</th><th>Категория</th><th>Производитель</th>
-        <th>Тип учёта</th><th class="text-end">Остаток</th>
+        <th>Тип учёта</th><th class="text-end" title="Всего единиц модели на складе (без учёта помещённых в комплекты)">Общее кол-во</th>
         <th class="text-end table-success" title="Свободно к аренде">Доступно</th>
         <th class="text-end table-warning" title="Забронировано (статус «Забронирован»)">Зарезервир.</th>
         <th class="text-end table-danger" title="Отгружено / не возвращено">В работе</th>
@@ -197,7 +197,7 @@
       <div class="flex-grow-1">
         <div class="fw-semibold">{{ m.name }}{% if m.is_archived %} <span class="badge text-bg-secondary">архив</span>{% endif %}</div>
         <div class="small text-secondary">{{ m.category.name }}{% if m.subcategory %} / {{ m.subcategory.name }}{% endif %}</div>
-        <div class="small">{{ m.accounting_type.label }} · остаток {{ stock[m.id] }} · {{ "%.2f"|format(m.base_price_eur) }} €</div>
+        <div class="small">{{ m.accounting_type.label }} · общее кол-во {{ stock[m.id] }} · {{ "%.2f"|format(m.base_price_eur) }} €</div>
         {% if availability.get(m.id) %}
         <div class="small mt-1">{{ state_chips(availability[m.id]) }}</div>
         {% endif %}
