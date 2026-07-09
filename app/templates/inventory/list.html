@@ -159,20 +159,14 @@
         <td class="text-end">{{ stock[m.id] }}</td>
         {% set av = availability.get(m.id) %}
         <td class="text-end table-success fw-semibold">{{ av.available if av is not none else "—" }}</td>
-        <td class="text-end table-warning">
-          {% if av and av.reserved > 0 %}
-          <button type="button" class="btn btn-link btn-sm p-0 fw-semibold text-reset text-decoration-none"
-                  data-bs-toggle="collapse" data-bs-target="#occ-{{ m.id }}" aria-expanded="false"
-                  title="Показать проекты" onclick="event.stopPropagation()">{{ av.reserved }}</button>
-          {% else %}{{ av.reserved if av is not none else "—" }}{% endif %}
-        </td>
-        <td class="text-end table-danger">
-          {% if av and av.in_work > 0 %}
-          <button type="button" class="btn btn-link btn-sm p-0 fw-semibold text-reset text-decoration-none"
-                  data-bs-toggle="collapse" data-bs-target="#occ-{{ m.id }}" aria-expanded="false"
-                  title="Показать проекты" onclick="event.stopPropagation()">{{ av.in_work }}</button>
-          {% else %}{{ av.in_work if av is not none else "—" }}{% endif %}
-        </td>
+        <td class="text-end table-warning fw-semibold {% if av and av.reserved > 0 %}text-decoration-underline{% endif %}"
+            {% if av and av.reserved > 0 %}role="button" style="cursor:pointer" title="Показать проекты"
+            data-bs-toggle="collapse" data-bs-target="#occ-{{ m.id }}" aria-expanded="false"
+            onclick="event.stopPropagation()"{% endif %}>{{ av.reserved if av is not none else "—" }}</td>
+        <td class="text-end table-danger fw-semibold {% if av and av.in_work > 0 %}text-decoration-underline{% endif %}"
+            {% if av and av.in_work > 0 %}role="button" style="cursor:pointer" title="Показать проекты"
+            data-bs-toggle="collapse" data-bs-target="#occ-{{ m.id }}" aria-expanded="false"
+            onclick="event.stopPropagation()"{% endif %}>{{ av.in_work if av is not none else "—" }}</td>
         <td>{{ m.packing.packing_type.label if m.has_packing else "—" }}</td>
         <td class="text-end">{{ "%.2f"|format(m.base_price_eur) }}</td>
       </tr>
