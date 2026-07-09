@@ -126,6 +126,33 @@ def test_booking_clamped_to_window_edges(db_session, model):
     assert cells[0].day == date(2026, 7, 25) and cells[-1].day == date(2026, 8, 5)
 
 
+def test_edge_continuation_flags(db_session, model):
+    """Бронь выходит за оба края окна — на крайних ячейках стоят флаги продолжения."""
+    _reserve(db_session, model.id, 2, date(2026, 7, 20), date(2026, 8, 10), ProjectStatus.BOOKED)
+    days, rows = compute_planboard(db_session, [model.id], date(2026, 7, 25), date(2026, 8, 5))
+    cells = rows[model.id]
+    assert cells[0].cont_before is True
+    assert cells[-1].cont_after is True
+
+
+def test_no_continuation_when_inside_window(db_session, model):
+    """Бронь целиком внутри окна — флагов продолжения нет."""
+    _reserve(db_session, model.id, 2, date(2026, 7, 26), date(2026, 8, 4), ProjectStatus.BOOKED)
+    days, rows = compute_planboard(db_session, [model.id], date(2026, 7, 25), date(2026, 8, 5))
+    cells = rows[model.id]
+    assert cells[0].cont_before is False
+    assert cells[-1].cont_after is False
+
+
+def test_shipped_unreturned_continues_after_window(db_session, model):
+    """Отгружено и не возвращено — тянется за правый край окна (просрочка)."""
+    _reserve(db_session, model.id, 2, date(2026, 7, 28), date(2026, 7, 30), ProjectStatus.SHIPPED)
+    days, rows = compute_planboard(db_session, [model.id], date(2026, 7, 25), date(2026, 8, 5))
+    cells = rows[model.id]
+    assert cells[-1].cont_after is True
+    assert cells[0].cont_before is False
+
+
 def test_draft_not_counted(db_session, model):
     _reserve(db_session, model.id, 4, date(2026, 7, 3), date(2026, 7, 5), ProjectStatus.DRAFT)
     days, rows = compute_planboard(db_session, [model.id], date(2026, 7, 1), date(2026, 7, 7))

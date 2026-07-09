@@ -270,6 +270,10 @@ class DayCell:
     total: int
     reserved: int  # занято бронью (статус «Забронирован»)
     in_work: int  # занято отгружёнными (в работе)
+    # Занятость этой модели продолжается до/после видимого окна (только для
+    # крайних дней): показываем стрелку «‹»/«›» на границе периода.
+    cont_before: bool = False
+    cont_after: bool = False
 
     @property
     def available(self) -> int:
@@ -320,6 +324,9 @@ def compute_planboard(
 
     # (model_id, day) -> [reserved, in_work]
     busy: dict[tuple[int, date], list[int]] = {}
+    # Модели, чья занятость выходит за левую/правую границу окна.
+    cont_before: set[int] = set()
+    cont_after: set[int] = set()
     stmt = (
         select(
             ProjectReservation.model_id,
@@ -345,6 +352,13 @@ def compute_planboard(
             bucket = busy.setdefault((model_id, day), [0, 0])
             bucket[1 if shipped else 0] += qty
             day += timedelta(days=1)
+        # Занятость начинается раньше окна (крайняя левая ячейка модели занята).
+        if s_date < start:
+            cont_before.add(model_id)
+        # Продолжается за правым краем: отгружено и не возвращено — бессрочно;
+        # иначе дата возврата/окончания аренды позже конца окна.
+        if (r_date is None or r_date > end) if shipped else e_date > end:
+            cont_after.add(model_id)
 
     rows: dict[int, list[DayCell]] = {}
     for mid in model_ids:
@@ -353,5 +367,9 @@ def compute_planboard(
         for d in days:
             reserved, in_work = busy.get((mid, d), (0, 0))
             cells.append(DayCell(day=d, total=base, reserved=reserved, in_work=in_work))
+        if cells and mid in cont_before:
+            cells[0].cont_before = True
+        if cells and mid in cont_after:
+            cells[-1].cont_after = True
         rows[mid] = cells
     return days, rows

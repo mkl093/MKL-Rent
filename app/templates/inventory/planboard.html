@@ -11,6 +11,7 @@
   .pb-grid th, .pb-grid td { text-align: center; white-space: nowrap; font-size: .85rem; }
   .pb-grid th.pb-model, .pb-grid td.pb-model { text-align: left; position: sticky; left: 0; background: var(--bs-body-bg); z-index: 1; min-width: 220px; }
   .pb-grid td.pb-cell { cursor: pointer; font-weight: 600; }
+  .pb-grid .pb-cont { opacity: .65; font-weight: 700; cursor: help; }
   .pb-grid .pb-weekend { color: var(--bs-secondary-color); }
   .pb-grid .pb-today { box-shadow: inset 0 0 0 2px var(--bs-primary); }
 </style>
@@ -97,7 +98,7 @@
           <td class="pb-cell {{ state_cls[cell.state] }} {{ 'pb-today' if cell.day == today }}"
               hx-get="/inventory/planboard/cell?model_id={{ m.id }}&d={{ cell.day.isoformat() }}"
               hx-target="#pb-detail" hx-swap="innerHTML"
-              title="Показать проекты">{{ cell.available }}</td>
+              title="Показать проекты">{% if cell.cont_before %}<span class="pb-cont" title="Занято и до начала периода — откройте, чтобы увидеть даты">&lsaquo;</span>{% endif %}{{ cell.available }}{% if cell.cont_after %}<span class="pb-cont" title="Занято и после конца периода — откройте, чтобы увидеть даты">&rsaquo;</span>{% endif %}</td>
           {% endif %}
           {% endfor %}
         </tr>
