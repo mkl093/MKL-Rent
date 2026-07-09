@@ -2,6 +2,7 @@
 {% block content %}
 {% set wd = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'] %}
 {% set state_cls = {'free': 'table-success', 'reserved': 'table-warning', 'busy': 'table-danger'} %}
+{% set span_label = {7: 'Неделя', 14: '2 недели', 31: 'Месяц'} %}
 {% set qs = 'span=' ~ span %}
 {% if q %}{% set qs = qs ~ '&q=' ~ (q|urlencode) %}{% endif %}
 {% if filters.category_id %}{% set qs = qs ~ '&category_id=' ~ filters.category_id %}{% endif %}
@@ -55,7 +56,7 @@
     {% for s in spans %}
     <a class="btn btn-outline-secondary {% if span == s %}active{% endif %}"
        href="/inventory/planboard?start={{ start_date.isoformat() }}&span={{ s }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if filters.category_id %}&category_id={{ filters.category_id }}{% endif %}">
-      {{ s }} дн.
+      {{ span_label[s] }}
     </a>
     {% endfor %}
   </div>

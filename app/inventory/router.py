@@ -218,12 +218,12 @@ def planboard(
     category_id: str | None = None,
     subcategory_id: str | None = None,
     start: str | None = None,
-    span: int = 14,
+    span: int = 31,
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
     if span not in _PLANBOARD_SPANS:
-        span = 14
+        span = 31
     start_date = _date(start) or _today()
     end_date = start_date + timedelta(days=span - 1)
 
