@@ -45,3 +45,22 @@ def start() -> None:
         return
     threading.Thread(target=_loop, name="backup-scheduler", daemon=True).start()
     logger.info("Планировщик авто-backup запущен (время %s)", get_settings().backup_time)
+
+
+def run_foreground() -> None:
+    """Запуск планировщика в foreground — для отдельного сервиса compose (ТЗ §35).
+
+    При нескольких воркерах web авто-backup не запускают внутри web (иначе N копий),
+    а выносят в один сервис `scheduler`, который выполняет тот же цикл, что и start().
+    """
+    settings = get_settings()
+    if not settings.backup_auto:
+        logger.info("BACKUP_AUTO выключен — планировщик не запускается")
+        return
+    logger.info("Планировщик авто-backup (foreground) запущен, время %s", settings.backup_time)
+    _loop()
+
+
+if __name__ == "__main__":  # pragma: no cover — точка входа сервиса scheduler
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s")
+    run_foreground()

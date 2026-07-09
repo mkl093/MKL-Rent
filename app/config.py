@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     app_secret_key: str = "change-me-in-production"
     app_base_url: str = "http://localhost:8000"
     app_timezone: str = "Europe/Berlin"
+    # Разрешённые Host-заголовки (защита от Host-header injection за прокси, ТЗ §41.2).
+    # Список через запятую; пусто — проверка отключена (dev). В проде укажите домен(ы).
+    app_allowed_hosts: str = ""
     # Движок генерации PDF: auto | weasyprint | xhtml2pdf.
     # auto — WeasyPrint при наличии (Docker), иначе xhtml2pdf (локально на Windows).
     pdf_engine: str = "auto"
@@ -51,6 +54,11 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() in {"production", "prod"}
+
+    @property
+    def allowed_hosts(self) -> list[str]:
+        """Список разрешённых Host из app_allowed_hosts (пустой — проверка выключена)."""
+        return [h.strip() for h in self.app_allowed_hosts.split(",") if h.strip()]
 
     @property
     def sqlalchemy_url(self) -> str:

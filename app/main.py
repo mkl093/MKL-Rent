@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 # Импорт моделей регистрирует таблицы в Base.metadata.
 from app.audit import models as _audit_models  # noqa: F401
@@ -59,6 +60,15 @@ def create_app() -> FastAPI:
         same_site="lax",
         https_only=settings.is_production,
     )
+
+    # Защита от подмены Host-заголовка за обратным прокси (ТЗ §41.2).
+    # Включается только если задан APP_ALLOWED_HOSTS; localhost всегда разрешён
+    # для healthcheck контейнера (curl http://localhost:8000/healthz).
+    if settings.allowed_hosts:
+        app.add_middleware(
+            TrustedHostMiddleware,
+            allowed_hosts=[*settings.allowed_hosts, "localhost", "127.0.0.1"],
+        )
 
     # Security-заголовки на все ответы (ТЗ §41.2).
     @app.middleware("http")

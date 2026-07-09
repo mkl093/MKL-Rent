@@ -17,8 +17,10 @@ htmlcov/
 
 # Секреты и данные (ТЗ §37, §41.2)
 .env
+.env.production
 /storage/
 /backups/
+/pgdata/
 *.db
 
 # Локальные TLS-сертификаты (самоподписанные, для камеры по HTTPS)
