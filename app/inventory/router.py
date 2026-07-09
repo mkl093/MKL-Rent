@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
@@ -25,7 +25,7 @@ from app.inventory.services import categories as cat_service
 from app.inventory.services import equipment as eq_service
 from app.inventory.services import items as item_service
 from app.inventory.services import kits as kit_service
-from app.projects.availability import compute_availability, occupancy_detail
+from app.projects.availability import compute_availability, compute_planboard, occupancy_detail
 from app.templating import flash
 from app.utils.images import ImageError, delete_photo, save_model_photo
 
@@ -201,6 +201,82 @@ def index(
             "view": view,
             "tree": tree,
         },
+        db=db,
+        user=user,
+    )
+
+
+# --- Planboard: календарь занятости склада по дням (ТЗ §15.2) -----------
+
+_PLANBOARD_SPANS = (7, 14, 31)
+
+
+@router.get("/planboard")
+def planboard(
+    request: Request,
+    q: str | None = None,
+    category_id: str | None = None,
+    subcategory_id: str | None = None,
+    start: str | None = None,
+    span: int = 14,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    if span not in _PLANBOARD_SPANS:
+        span = 14
+    start_date = _date(start) or _today()
+    end_date = start_date + timedelta(days=span - 1)
+
+    filters = eq_service.ModelFilters(
+        query=q,
+        category_id=_opt_id(category_id),
+        subcategory_id=_opt_id(subcategory_id),
+        archived=False,
+        sort="category",
+    )
+    models = eq_service.list_models(db, filters)
+    days, rows = compute_planboard(db, [m.id for m in models], start_date, end_date)
+
+    return render(
+        request,
+        "inventory/planboard.html",
+        {
+            "page_title": "Календарь склада",
+            "models": models,
+            "days": days,
+            "rows": rows,
+            "start_date": start_date,
+            "end_date": end_date,
+            "span": span,
+            "spans": _PLANBOARD_SPANS,
+            "prev_start": start_date - timedelta(days=span),
+            "next_start": start_date + timedelta(days=span),
+            "today": _today(),
+            "categories": cat_service.list_categories(db),
+            "filters": filters,
+            "q": q or "",
+        },
+        db=db,
+        user=user,
+    )
+
+
+@router.get("/planboard/cell")
+def planboard_cell(
+    request: Request,
+    model_id: int,
+    d: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    """HTMX-фрагмент: проекты, занявшие модель в конкретный день."""
+    model = eq_service.get_model(db, model_id)
+    day = _date(d)
+    entries = occupancy_detail(db, model_id, day, day) if (model and day) else []
+    return render(
+        request,
+        "inventory/_planboard_cell.html",
+        {"model": model, "day": day, "entries": entries},
         db=db,
         user=user,
     )

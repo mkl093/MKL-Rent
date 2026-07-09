@@ -176,6 +176,52 @@ def test_warehouse_availability_by_dates(auth_client, db_session):
     assert ">20<" in page2
 
 
+def test_planboard_renders_and_cell_shows_project(auth_client, db_session):
+    """Календарь склада отображается, клик по ячейке даёт список проектов (§15.2)."""
+    from datetime import date
+    from decimal import Decimal
+
+    from app.inventory.enums import AccountingType
+    from app.inventory.schemas import EquipmentModelCreate
+    from app.inventory.services import categories as cat_service
+    from app.inventory.services import equipment as eq_service
+    from app.projects import service as proj_service
+    from app.projects.enums import ProjectStatus
+    from app.projects.models import ProjectReservation
+    from app.projects.schemas import ProjectInput
+
+    cat = cat_service.create_category(db_session, "Звук")
+    model = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id,
+            name="Колонка",
+            accounting_type=AccountingType.QUANTITY,
+            total_quantity=8,
+            base_price_eur=Decimal("0"),
+        ),
+    )
+    proj = proj_service.create_project(
+        db_session,
+        ProjectInput(name="Концерт", start_date=date(2026, 7, 3), end_date=date(2026, 7, 6)),
+    )
+    proj.status = ProjectStatus.BOOKED
+    db_session.add(ProjectReservation(project_id=proj.id, model_id=model.id, quantity=3))
+    db_session.commit()
+
+    page = auth_client.get("/inventory/planboard", params={"start": "2026-07-01", "span": 14})
+    assert page.status_code == 200
+    assert "Календарь склада" in page.text
+    assert "Колонка" in page.text
+
+    # Фрагмент занятости за день брони содержит проект.
+    cell = auth_client.get(
+        "/inventory/planboard/cell", params={"model_id": model.id, "d": "2026-07-04"}
+    )
+    assert cell.status_code == 200
+    assert "Концерт" in cell.text
+
+
 def test_filter_empty_params_ok(auth_client):
     """Пустые значения фильтра (выбор «Все») не вызывают 422 (regression)."""
     resp = auth_client.get(

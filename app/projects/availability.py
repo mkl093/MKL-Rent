@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
@@ -257,3 +257,101 @@ def occupancy_detail(
             )
         )
     return entries
+
+
+# --- Planboard: доступность по дням на диапазон (календарь склада, §15.2) ----
+
+
+@dataclass
+class DayCell:
+    """Состояние модели на конкретный день диапазона planboard."""
+
+    day: date
+    total: int
+    reserved: int  # занято бронью (статус «Забронирован»)
+    in_work: int  # занято отгружёнными (в работе)
+
+    @property
+    def available(self) -> int:
+        return self.total - self.reserved - self.in_work
+
+    @property
+    def state(self) -> str:
+        """Цвет ячейки: free (зелёный) / reserved (жёлтый) / busy (красный)."""
+        if self.in_work > 0 or self.available <= 0:
+            return "busy"
+        if self.reserved > 0:
+            return "reserved"
+        return "free"
+
+
+def _daterange(start: date, end: date) -> list[date]:
+    return [start + timedelta(days=i) for i in range((end - start).days + 1)]
+
+
+def _count_by_model(db: Session, model_ids: list[int], *, only_unavailable: bool) -> dict[int, int]:
+    """Свободный сток (или недоступный по статусу) по каждой модели одним запросом."""
+    stmt = (
+        select(EquipmentItem.model_id, func.count())
+        .where(EquipmentItem.model_id.in_(model_ids), EquipmentItem.kit_id.is_(None))
+        .group_by(EquipmentItem.model_id)
+    )
+    if only_unavailable:
+        stmt = stmt.where(EquipmentItem.status.in_(UNAVAILABLE_STATUSES))
+    return {mid: cnt for mid, cnt in db.execute(stmt).all()}
+
+
+def compute_planboard(
+    db: Session, model_ids: list[int], start: date, end: date
+) -> tuple[list[date], dict[int, list[DayCell]]]:
+    """Доступность каждой модели по дням диапазона [start; end] включительно.
+
+    Один оконный запрос по броням (не N×дней): пересекающие диапазон брони
+    раскладываются по дням в Python. Бронь занимает даты аренды, отгрузка —
+    от начала аренды до даты возврата (пока не возвращено — до конца окна:
+    просрочка держит сток и после конца аренды, §15.1).
+    """
+    days = _daterange(start, end)
+    if not model_ids:
+        return days, {}
+
+    total = _count_by_model(db, model_ids, only_unavailable=False)
+    unavail = _count_by_model(db, model_ids, only_unavailable=True)
+
+    # (model_id, day) -> [reserved, in_work]
+    busy: dict[tuple[int, date], list[int]] = {}
+    stmt = (
+        select(
+            ProjectReservation.model_id,
+            ProjectReservation.quantity,
+            Project.status,
+            Project.start_date,
+            Project.end_date,
+            Project.returned_date,
+        )
+        .join(Project, Project.id == ProjectReservation.project_id)
+        .where(
+            ProjectReservation.model_id.in_(model_ids),
+            or_(_booked_overlap(start, end), _in_work_overlap(start, end)),
+        )
+    )
+    for model_id, qty, status, s_date, e_date, r_date in db.execute(stmt).all():
+        shipped = status == ProjectStatus.SHIPPED
+        occ_start = max(s_date, start)
+        occ_end = (r_date if r_date is not None else end) if shipped else e_date
+        occ_end = min(occ_end, end)
+        day = occ_start
+        while day <= occ_end:
+            bucket = busy.setdefault((model_id, day), [0, 0])
+            bucket[1 if shipped else 0] += qty
+            day += timedelta(days=1)
+
+    rows: dict[int, list[DayCell]] = {}
+    for mid in model_ids:
+        base = (total.get(mid, 0)) - (unavail.get(mid, 0))
+        cells = []
+        for d in days:
+            reserved, in_work = busy.get((mid, d), (0, 0))
+            cells.append(DayCell(day=d, total=base, reserved=reserved, in_work=in_work))
+        rows[mid] = cells
+    return days, rows

@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block content %}
+{% set wd = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'] %}
+{% set state_cls = {'free': 'table-success', 'reserved': 'table-warning', 'busy': 'table-danger'} %}
+{% set qs = 'span=' ~ span %}
+{% if q %}{% set qs = qs ~ '&q=' ~ (q|urlencode) %}{% endif %}
+{% if filters.category_id %}{% set qs = qs ~ '&category_id=' ~ filters.category_id %}{% endif %}
+
+<style>
+  .pb-grid th, .pb-grid td { text-align: center; white-space: nowrap; font-size: .85rem; }
+  .pb-grid th.pb-model, .pb-grid td.pb-model { text-align: left; position: sticky; left: 0; background: var(--bs-body-bg); z-index: 1; min-width: 220px; }
+  .pb-grid td.pb-cell { cursor: pointer; font-weight: 600; }
+  .pb-grid .pb-weekend { color: var(--bs-secondary-color); }
+  .pb-grid .pb-today { box-shadow: inset 0 0 0 2px var(--bs-primary); }
+</style>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 m-0">Календарь склада</h1>
+  <div class="d-flex flex-wrap gap-2">
+    <a href="/inventory" class="btn btn-outline-secondary">Список склада</a>
+  </div>
+</div>
+
+<form method="get" action="/inventory/planboard" class="card card-body mb-3">
+  <input type="hidden" name="start" value="{{ start_date.isoformat() }}">
+  <input type="hidden" name="span" value="{{ span }}">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-5">
+      <label class="form-label" for="q">Поиск (название, производитель)</label>
+      <input class="form-control" id="q" name="q" value="{{ q }}">
+    </div>
+    <div class="col-8 col-md-4">
+      <label class="form-label" for="category_id">Категория</label>
+      <select class="form-select" id="category_id" name="category_id" onchange="this.form.submit()">
+        <option value="">Все</option>
+        {% for c in categories %}
+          <option value="{{ c.id }}" {% if filters.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-4 col-md-3">
+      <button class="btn btn-primary w-100" type="submit">Применить</button>
+    </div>
+  </div>
+</form>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+  <div class="btn-group">
+    <a class="btn btn-outline-secondary" href="/inventory/planboard?start={{ prev_start.isoformat() }}&{{ qs }}" title="Назад">&laquo;</a>
+    <a class="btn btn-outline-secondary" href="/inventory/planboard?start={{ today.isoformat() }}&{{ qs }}">Сегодня</a>
+    <a class="btn btn-outline-secondary" href="/inventory/planboard?start={{ next_start.isoformat() }}&{{ qs }}" title="Вперёд">&raquo;</a>
+  </div>
+  <div class="fw-semibold">{{ start_date.strftime('%d.%m.%Y') }} – {{ end_date.strftime('%d.%m.%Y') }}</div>
+  <div class="btn-group">
+    {% for s in spans %}
+    <a class="btn btn-outline-secondary {% if span == s %}active{% endif %}"
+       href="/inventory/planboard?start={{ start_date.isoformat() }}&span={{ s }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if filters.category_id %}&category_id={{ filters.category_id }}{% endif %}">
+      {{ s }} дн.
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="d-flex flex-wrap gap-3 mb-2 small text-secondary">
+  <span><span class="badge text-bg-success">&nbsp;</span> свободно (число = остаток)</span>
+  <span><span class="badge text-bg-warning">&nbsp;</span> бронь</span>
+  <span><span class="badge text-bg-danger">&nbsp;</span> в работе / дефицит</span>
+</div>
+
+{% if models %}
+<div class="table-responsive">
+  <table class="table table-bordered align-middle pb-grid mb-0">
+    <thead>
+      <tr>
+        <th class="pb-model">Модель · остаток</th>
+        {% for d in days %}
+        <th class="{{ 'pb-weekend' if d.weekday() >= 5 }} {{ 'pb-today' if d == today }}">
+          <div>{{ wd[d.weekday()] }}</div><div>{{ d.day }}</div>
+        </th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% set ns = namespace(group=None) %}
+      {% for m in models %}
+        {% set gname = m.category.name ~ (' / ' ~ m.subcategory.name if m.subcategory else '') %}
+        {% if gname != ns.group %}{% set ns.group = gname %}
+        <tr><td class="pb-model bg-body-tertiary fw-semibold" colspan="{{ days|length + 1 }}">{{ gname }}</td></tr>
+        {% endif %}
+        <tr>
+          <td class="pb-model"><a href="/inventory/models/{{ m.id }}" class="text-decoration-none">{{ m.name }}</a></td>
+          {% for cell in rows[m.id] %}
+          {% if cell.state == 'free' %}
+          <td class="{{ state_cls[cell.state] }} {{ 'pb-today' if cell.day == today }}">{{ cell.available }}</td>
+          {% else %}
+          <td class="pb-cell {{ state_cls[cell.state] }} {{ 'pb-today' if cell.day == today }}"
+              hx-get="/inventory/planboard/cell?model_id={{ m.id }}&d={{ cell.day.isoformat() }}"
+              hx-target="#pb-detail" hx-swap="innerHTML"
+              title="Показать проекты">{{ cell.available }}</td>
+          {% endif %}
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div id="pb-detail" class="mt-3"></div>
+{% else %}
+<p class="text-secondary">Моделей не найдено.</p>
+{% endif %}
+{% endblock %}
