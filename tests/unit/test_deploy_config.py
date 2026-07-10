@@ -27,6 +27,18 @@ def test_allowed_hosts_parsing():
     assert Settings(app_allowed_hosts="").allowed_hosts == []
 
 
+def test_session_secure_auto_follows_env():
+    # "" — авто: Secure только в production.
+    assert Settings(app_env="production", session_cookie_secure="").session_secure is True
+    assert Settings(app_env="development", session_cookie_secure="").session_secure is False
+
+
+def test_session_secure_explicit_override():
+    # Явный false нужен, чтобы поднять прод по HTTP без поломки CSRF/входа.
+    assert Settings(app_env="production", session_cookie_secure="false").session_secure is False
+    assert Settings(app_env="development", session_cookie_secure="true").session_secure is True
+
+
 def test_trustedhost_off_by_default(monkeypatch):
     monkeypatch.delenv("APP_ALLOWED_HOSTS", raising=False)
     get_settings.cache_clear()

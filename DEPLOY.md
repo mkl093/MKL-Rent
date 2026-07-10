@@ -113,8 +113,13 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"   # или: openss
 APP_ENV=production
 APP_BASE_URL=http://SERVER_IP          # временно, до выпуска TLS
 APP_ALLOWED_HOSTS=                      # пусто до появления домена
+SESSION_COOKIE_SECURE=false            # ОБЯЗАТЕЛЬНО по HTTP: иначе вход/CSRF ломаются
 NGINX_CONF=./nginx/app.conf            # HTTP-конфиг
 ```
+
+> ⚠️ По HTTP сессионная `Secure`-cookie до сервера не доходит, и вход падает с
+> «Недействительный CSRF-токен». Поэтому на HTTP-этапе `SESSION_COOKIE_SECURE=false`.
+> После включения TLS (§5) верните `SESSION_COOKIE_SECURE=` (авто) или `true`.
 
 > 💡 PyCharm: залить `.env` на сервер удобно через **Tools → Deployment** (SFTP/SSH).
 > Не коммитьте `.env` и не держите его в проекте под гитом — только на сервере.
@@ -199,6 +204,7 @@ docker compose run --rm certbot certonly \
    ```text
    APP_BASE_URL=https://your.domain.com
    APP_ALLOWED_HOSTS=your.domain.com
+   SESSION_COOKIE_SECURE=            # авто (Secure), можно явно true
    NGINX_CONF=./nginx/app-ssl.conf
    ```
 
@@ -328,3 +334,6 @@ docker compose up -d
   UID контейнера: `sudo chown -R 1000:1000 backups` (или пересоберите с `--build-arg APP_UID`).
 - **Редиректы/ссылки ведут на http за TLS** — проверьте, что `APP_BASE_URL=https://…` и
   что `web` запущен с `--proxy-headers` (так в compose по умолчанию).
+- **«Недействительный CSRF-токен» при входе** — заходите по HTTP с `Secure`-cookie.
+  Поставьте `SESSION_COOKIE_SECURE=false` в `.env` и `docker compose up -d web`, либо
+  завершите настройку TLS (§5) и заходите по https.

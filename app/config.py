@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # Разрешённые Host-заголовки (защита от Host-header injection за прокси, ТЗ §41.2).
     # Список через запятую; пусто — проверка отключена (dev). В проде укажите домен(ы).
     app_allowed_hosts: str = ""
+    # Флаг Secure у сессионной cookie: "" (авто) = включён в production, выключен иначе.
+    # Явные "true"/"false" переопределяют — нужно, чтобы временно поднять прод по HTTP
+    # (без TLS Secure-cookie не доходит до сервера и ломает CSRF/вход). ТЗ §41.2.
+    session_cookie_secure: str = ""
     # Движок генерации PDF: auto | weasyprint | xhtml2pdf.
     # auto — WeasyPrint при наличии (Docker), иначе xhtml2pdf (локально на Windows).
     pdf_engine: str = "auto"
@@ -59,6 +63,16 @@ class Settings(BaseSettings):
     def allowed_hosts(self) -> list[str]:
         """Список разрешённых Host из app_allowed_hosts (пустой — проверка выключена)."""
         return [h.strip() for h in self.app_allowed_hosts.split(",") if h.strip()]
+
+    @property
+    def session_secure(self) -> bool:
+        """Итоговое значение Secure для сессионной cookie ("" — авто по окружению)."""
+        value = self.session_cookie_secure.strip().lower()
+        if value in {"true", "1", "yes", "on"}:
+            return True
+        if value in {"false", "0", "no", "off"}:
+            return False
+        return self.is_production
 
     @property
     def sqlalchemy_url(self) -> str:

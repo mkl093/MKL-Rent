@@ -58,7 +58,7 @@ def create_app() -> FastAPI:
         secret_key=settings.app_secret_key,
         session_cookie="rental_session",
         same_site="lax",
-        https_only=settings.is_production,
+        https_only=settings.session_secure,
     )
 
     # Защита от подмены Host-заголовка за обратным прокси (ТЗ §41.2).
