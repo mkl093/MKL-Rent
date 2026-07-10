@@ -89,6 +89,9 @@ services:
       # Миграции применяет web; здесь не дублируем (иначе гонка alembic).
       RUN_MIGRATIONS: "false"
     command: ["python", "-m", "app.backup.scheduler"]
+    # Не веб-сервер — healthcheck образа (curl /healthz) здесь неприменим.
+    healthcheck:
+      disable: true
     volumes:
       - storage:/data/storage:ro
       - ${BACKUP_PATH:-./backups}:/backups

@@ -5,6 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy import URL
 
 
 class Settings(BaseSettings):
@@ -76,13 +77,21 @@ class Settings(BaseSettings):
 
     @property
     def sqlalchemy_url(self) -> str:
-        """Итоговый URL подключения к БД для SQLAlchemy."""
+        """Итоговый URL подключения к БД для SQLAlchemy.
+
+        Логин/пароль экранируются через URL.create — иначе спецсимволы в пароле
+        (@ : / ! # ? …) ломают разбор DSN и хост определяется неверно.
+        """
         if self.database_url:
             return self.database_url
-        return (
-            f"postgresql+psycopg://{self.database_user}:{self.database_password}"
-            f"@{self.database_host}:{self.database_port}/{self.database_name}"
-        )
+        return URL.create(
+            "postgresql+psycopg",
+            username=self.database_user,
+            password=self.database_password,
+            host=self.database_host,
+            port=self.database_port,
+            database=self.database_name,
+        ).render_as_string(hide_password=False)
 
 
 @lru_cache

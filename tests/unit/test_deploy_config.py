@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import make_url
 
 from app.config import Settings, get_settings
 
@@ -25,6 +26,29 @@ def _clear_settings_cache():
 def test_allowed_hosts_parsing():
     assert Settings(app_allowed_hosts=" a.com , b.com ,").allowed_hosts == ["a.com", "b.com"]
     assert Settings(app_allowed_hosts="").allowed_hosts == []
+
+
+def test_sqlalchemy_url_escapes_special_chars():
+    # Пароль со спецсимволами (@ ! #) не должен ломать разбор DSN (хост остаётся db).
+    s = Settings(
+        database_user="rental",
+        database_password="timer555!@#",
+        database_host="db",
+        database_port=5432,
+        database_name="rental",
+        database_url=None,
+    )
+    parsed = make_url(s.sqlalchemy_url)
+    assert parsed.host == "db"
+    assert parsed.port == 5432
+    assert parsed.username == "rental"
+    assert parsed.password == "timer555!@#"
+    assert parsed.database == "rental"
+
+
+def test_sqlalchemy_url_respects_explicit_override():
+    s = Settings(database_url="sqlite:///./dev.db")
+    assert s.sqlalchemy_url == "sqlite:///./dev.db"
 
 
 def test_session_secure_auto_follows_env():
