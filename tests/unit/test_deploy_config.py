@@ -51,6 +51,26 @@ def test_sqlalchemy_url_respects_explicit_override():
     assert s.sqlalchemy_url == "sqlite:///./dev.db"
 
 
+def test_alembic_url_escapes_percent_for_configparser():
+    # Как в migrations/env.py: значение уходит в configparser, где % — интерполяция.
+    # Без экранирования percent-encoded пароль (%40, %21) бросает ValueError.
+    from configparser import ConfigParser
+
+    s = Settings(
+        database_user="rental",
+        database_password="MKL_@timer555!",
+        database_host="db",
+        database_port=5432,
+        database_name="rental",
+        database_url=None,
+    )
+    cp = ConfigParser()
+    cp.add_section("alembic")
+    cp.set("alembic", "sqlalchemy.url", s.alembic_url)  # не должно бросать
+    # configparser вернёт одиночный %, make_url декодирует пароль обратно.
+    assert make_url(cp.get("alembic", "sqlalchemy.url")).password == "MKL_@timer555!"
+
+
 def test_session_secure_auto_follows_env():
     # "" — авто: Secure только в production.
     assert Settings(app_env="production", session_cookie_secure="").session_secure is True

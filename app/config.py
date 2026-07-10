@@ -93,6 +93,16 @@ class Settings(BaseSettings):
             database=self.database_name,
         ).render_as_string(hide_password=False)
 
+    @property
+    def alembic_url(self) -> str:
+        """URL для alembic (config.set_main_option).
+
+        В sqlalchemy_url спецсимволы пароля percent-кодируются (%40, %21…). Alembic
+        прогоняет значение через configparser, где `%` — синтаксис интерполяции,
+        поэтому удваиваем его в `%%` (configparser вернёт обратно один `%`).
+        """
+        return self.sqlalchemy_url.replace("%", "%%")
+
 
 @lru_cache
 def get_settings() -> Settings:
