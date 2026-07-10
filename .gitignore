@@ -1,7 +1,6 @@
 # Окружение
 .venv/
 .idea/
-.claude/
 
 # Python
 __pycache__/

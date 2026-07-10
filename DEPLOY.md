@@ -213,8 +213,13 @@ docker compose run --rm --entrypoint certbot certbot certonly \
 3. Применить:
 
    ```bash
-   docker compose up -d web nginx      # web перечитает APP_BASE_URL/ALLOWED_HOSTS
+   docker compose up -d web                        # web перечитает APP_BASE_URL/ALLOWED_HOSTS
+   docker compose up -d --force-recreate nginx     # переключить nginx на TLS-конфиг
    ```
+
+   `--force-recreate nginx` важен: если контейнер nginx уже запущен, обычный
+   `up -d` может посчитать его актуальным и не пересоздать — тогда останется старый
+   HTTP-конфиг. Проверьте `docker compose ps`: у nginx должен обновиться аптайм.
 
 ### 5.4. Проверка TLS
 
@@ -339,3 +344,13 @@ docker compose up -d
 - **«Недействительный CSRF-токен» при входе** — заходите по HTTP с `Secure`-cookie.
   Поставьте `SESSION_COOKIE_SECURE=false` в `.env` и `docker compose up -d web`, либо
   завершите настройку TLS (§5) и заходите по https.
+- **`web` рестартует, в логах `password authentication failed` или `failed to resolve
+  host`** — пароль БД. Спецсимволы (`@ ! # : /`) в пароле поддерживаются (экранируются
+  автоматически). Но `POSTGRES_PASSWORD` применяется к тому `pgdata` только при **первой**
+  инициализации: если БД уже создавалась, смена пароля в `.env` не меняет пароль в самой БД.
+  Приведите их в соответствие — либо сменив пароль в БД:
+  `docker compose exec db psql -U rental -d rental -c "ALTER USER rental PASSWORD 'НОВЫЙ';"`
+  (и то же значение в `.env`), либо, если данными можно пожертвовать, пересоздав том:
+  `docker compose down && docker volume rm <проект>_pgdata && docker compose up -d`.
+- **certbot пишет «No renewals were attempted» вместо выпуска** — забыт `--entrypoint
+  certbot` в разовой команде выпуска (см. §5.2); без него запускается цикл продления.

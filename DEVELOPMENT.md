@@ -1,17 +1,22 @@
-# Claude Code Project Rules
+# Разработка проекта
 
-1. Read TECHNICAL_SPECIFICATION.md before implementation.
-2. This is a modular monolith built with FastAPI, PostgreSQL, SQLAlchemy 2,
-   Alembic, Jinja2, HTMX and Bootstrap 5.
-3. Do not introduce React, Flask, Redis, Celery or microservices.
-4. Keep business logic out of route handlers and templates.
-5. Use Decimal for all money calculations.
-6. Add tests for every business rule.
-7. Use PostgreSQL constraints and transactions for barcode uniqueness,
-   reservations and packing scans.
-8. Do not change the approved MVP scope without explicit instruction.
-9. Before coding, inspect existing models, services, migrations and tests.
-10. After coding, run tests and summarize changed files.
+Руководство для контрибьюторов: архитектура, конвенции и команды. Полное
+техническое задание — в [`TECHNICAL_SPECIFICATION.md`](TECHNICAL_SPECIFICATION.md),
+инструкция по деплою — в [`DEPLOY.md`](DEPLOY.md).
+
+## Правила проекта
+
+1. Перед реализацией прочитайте TECHNICAL_SPECIFICATION.md.
+2. Это модульный монолит на FastAPI, PostgreSQL, SQLAlchemy 2, Alembic, Jinja2,
+   HTMX и Bootstrap 5.
+3. Не вводить React, Flask, Redis, Celery или микросервисы.
+4. Не держать бизнес-логику в роут-хендлерах и шаблонах.
+5. Все денежные расчёты — только `Decimal`.
+6. Добавлять тесты на каждое бизнес-правило.
+7. Уникальность штрих-кодов, брони и packing-сканы — через ограничения и транзакции PostgreSQL.
+8. Не менять утверждённый scope MVP без явного указания.
+9. Перед кодом — изучить существующие модели, сервисы, миграции и тесты.
+10. После кода — прогнать тесты и перечислить изменённые файлы.
 
 ## Готовность этапов (ТЗ §44)
 
@@ -63,7 +68,7 @@ scripts/create_user.py
 - Формы защищены CSRF (`Depends(verify_csrf)`), страницы — `Depends(require_login)`; рендер через `render(...)`.
 - Номера документов — только `numbering.service.next_number` (ручное изменение запрещено, ТЗ §14).
 - Доступность/дефицит — единый движок `projects/availability.py`; формулы не дублировать.
-- Применённые миграции задним числом не править — добавлять новые (следующая — `0004_*`).
+- Применённые миграции задним числом не править — добавлять новые (по возрастанию номера `00NN_*`).
 - Этапы и бизнес-правила — в TECHNICAL_SPECIFICATION.md (§40 правила, §44 этапы).
 
 ## Команды

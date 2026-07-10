@@ -4,7 +4,7 @@
 
 **Статус:** согласованное ТЗ на MVP  
 **Тип:** адаптивное веб-приложение  
-**Среда разработки:** PyCharm + Claude Code  
+**Среда разработки:** PyCharm  
 **Архитектура:** модульный монолит  
 **Основной стек:** Python, FastAPI, Uvicorn, PostgreSQL  
 **Целевая организация:** одна рентальная компания  
@@ -1084,7 +1084,7 @@ rental-inventory/
 ├── alembic.ini
 ├── pyproject.toml
 ├── .env.example
-├── CLAUDE.md
+├── DEVELOPMENT.md
 ├── README.md
 └── TECHNICAL_SPECIFICATION.md
 ```
@@ -1379,14 +1379,14 @@ Backup, restore, безопасность, журнал, финальные те
 
 ---
 
-## 45. Правила для Claude Code
+## 45. Правила разработки
 
 ### 45.1. Перед изменениями
 
-Claude Code обязан прочитать:
+Перед изменениями изучите:
 
 - `TECHNICAL_SPECIFICATION.md`;
-- `CLAUDE.md`;
+- `DEVELOPMENT.md`;
 - `README.md`;
 - релевантные модели;
 - миграции;
@@ -1450,24 +1450,22 @@ Claude Code обязан прочитать:
 
 ---
 
-## 46. Рекомендуемый CLAUDE.md
+## 46. Краткие правила проекта
 
-```markdown
-# Claude Code Project Rules
-
-1. Read TECHNICAL_SPECIFICATION.md before implementation.
-2. This is a modular monolith built with FastAPI, PostgreSQL, SQLAlchemy 2,
-   Alembic, Jinja2, HTMX and Bootstrap 5.
-3. Do not introduce React, Flask, Redis, Celery or microservices.
-4. Keep business logic out of route handlers and templates.
-5. Use Decimal for all money calculations.
-6. Add tests for every business rule.
-7. Use PostgreSQL constraints and transactions for barcode uniqueness,
-   reservations and packing scans.
-8. Do not change the approved MVP scope without explicit instruction.
-9. Before coding, inspect existing models, services, migrations and tests.
-10. After coding, run tests and summarize changed files.
+```text
+1.  Перед реализацией прочитать TECHNICAL_SPECIFICATION.md.
+2.  Модульный монолит: FastAPI, PostgreSQL, SQLAlchemy 2, Alembic, Jinja2, HTMX, Bootstrap 5.
+3.  Не вводить React, Flask, Redis, Celery или микросервисы.
+4.  Бизнес-логика — вне роут-хендлеров и шаблонов.
+5.  Деньги — только Decimal.
+6.  Тест на каждое бизнес-правило.
+7.  Уникальность штрих-кодов, брони и packing-сканы — через ограничения и транзакции PostgreSQL.
+8.  Не менять scope MVP без явного указания.
+9.  Перед кодом — изучить модели, сервисы, миграции и тесты.
+10. После кода — прогнать тесты и перечислить изменённые файлы.
 ```
+
+Подробнее — в `DEVELOPMENT.md`.
 
 ---
 

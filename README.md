@@ -124,12 +124,24 @@ python -m scripts.restore backups/backup_YYYYMMDD_HHMMSS.tar.gz
 примонтированную директорию хоста. Локально можно включить `BACKUP_AUTO=true`
 в `.env` или запланировать `python -m scripts.backup` через планировщик ОС.
 
-## Docker (создано, локально не проверялось)
+## Деплой (Docker Compose)
+
+Production-развёртывание на VPS с PostgreSQL, несколькими воркерами за nginx,
+автоматическим backup и HTTPS (Let's Encrypt) — пошаговый runbook в
+[`DEPLOY.md`](DEPLOY.md).
+
+Локальная проверка стека одной командой:
 
 ```bash
-docker compose up --build   # web + postgres + nginx + заготовка backup
+cp .env.production.example .env    # задайте APP_SECRET_KEY и POSTGRES_PASSWORD
+docker compose up --build          # db + web + scheduler + nginx (+ certbot)
 ```
 
 ## Структура и правила
 
-См. [`CLAUDE.md`](CLAUDE.md) — раскладка модулей, конвенции и команды.
+См. [`DEVELOPMENT.md`](DEVELOPMENT.md) — раскладка модулей, конвенции и команды.
+
+## Лицензия
+
+[MIT](LICENSE) — можно свободно использовать, изменять и распространять при
+сохранении копирайта и текста лицензии.
