@@ -187,7 +187,9 @@ dig +short your.domain.com        # должен вернуть IP вашего 
 `nginx` на этом шаге уже поднят с HTTP-конфигом и отдаёт `/.well-known/acme-challenge/`.
 
 ```bash
-docker compose run --rm certbot certonly \
+# --entrypoint certbot обязателен: у сервиса certbot свой entrypoint (цикл renew),
+# иначе разовый certonly не выполнится ("No renewals were attempted").
+docker compose run --rm --entrypoint certbot certbot certonly \
   --webroot -w /var/www/certbot \
   -d your.domain.com \
   --email you@example.com --agree-tos --no-eff-email
