@@ -114,7 +114,7 @@ APP_ENV=production
 APP_BASE_URL=http://SERVER_IP          # временно, до выпуска TLS
 APP_ALLOWED_HOSTS=                      # пусто до появления домена
 SESSION_COOKIE_SECURE=false            # ОБЯЗАТЕЛЬНО по HTTP: иначе вход/CSRF ломаются
-NGINX_CONF=./nginx/app.conf            # HTTP-конфиг
+NGINX_TEMPLATE=./nginx/http.conf.template   # HTTP-шаблон nginx
 ```
 
 > ⚠️ По HTTP сессионная `Secure`-cookie до сервера не доходит, и вход падает с
@@ -199,18 +199,18 @@ docker compose run --rm --entrypoint certbot certbot certonly \
 
 ### 5.3. Включить TLS-конфиг
 
-1. В [nginx/app-ssl.conf](nginx/app-ssl.conf) заменить `example.com` на ваш домен
-   (три места: два `server_name` и путь `ssl_certificate`).
-2. В `.env`:
+Домен подставляется в конфиг nginx из переменной `SERVER_NAME` (envsubst) — файлы
+в `nginx/` править не нужно. В `.env`:
 
    ```text
    APP_BASE_URL=https://your.domain.com
    APP_ALLOWED_HOSTS=your.domain.com
-   SESSION_COOKIE_SECURE=            # авто (Secure), можно явно true
-   NGINX_CONF=./nginx/app-ssl.conf
+   SESSION_COOKIE_SECURE=                       # авто (Secure), можно явно true
+   SERVER_NAME=your.domain.com                  # server_name + путь к сертификату
+   NGINX_TEMPLATE=./nginx/tls.conf.template     # переключить nginx на TLS-шаблон
    ```
 
-3. Применить:
+Применить:
 
    ```bash
    docker compose up -d web                        # web перечитает APP_BASE_URL/ALLOWED_HOSTS
@@ -334,7 +334,9 @@ docker compose up -d
 - **`web` рестартует, в логах «БД не готова»** — проверьте `docker compose logs db`
   и что `POSTGRES_PASSWORD` в `.env` задан (compose требует его явно).
 - **nginx не стартует после переключения на TLS** — сертификат ещё не выпущен либо
-  домен в `app-ssl.conf` не совпадает с `certbot certonly`. Верните `NGINX_CONF=./nginx/app.conf`.
+  `SERVER_NAME` не совпадает с доменом из `certbot certonly` (путь
+  `/etc/letsencrypt/live/$SERVER_NAME/` не найден). Временно верните
+  `NGINX_TEMPLATE=./nginx/http.conf.template` и `docker compose up -d --force-recreate nginx`.
 - **Let's Encrypt не проходит проверку** — DNS A-запись ещё не указывает на VPS, либо
   закрыт порт 80 (ufw). Проверьте `dig +short домен` и `curl http://домен/.well-known/acme-challenge/test`.
 - **`Permission denied` при записи backup** — каталог `BACKUP_PATH` на хосте не принадлежит

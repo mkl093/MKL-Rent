@@ -104,10 +104,15 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      # Домен для TLS-шаблона; envsubst подставляет только эту переменную.
+      SERVER_NAME: ${SERVER_NAME:-localhost}
+      NGINX_ENVSUBST_FILTER: SERVER_NAME
     volumes:
-      # HTTP-конфиг по умолчанию; после выпуска сертификата переключите на
-      # ./nginx/app-ssl.conf через переменную NGINX_CONF в .env (см. DEPLOY.md).
-      - ${NGINX_CONF:-./nginx/app.conf}:/etc/nginx/conf.d/default.conf:ro
+      # HTTP-шаблон по умолчанию; после выпуска сертификата переключите на
+      # ./nginx/tls.conf.template через NGINX_TEMPLATE в .env (см. DEPLOY.md).
+      # entrypoint nginx прогоняет шаблон через envsubst → /etc/nginx/conf.d/default.conf.
+      - ${NGINX_TEMPLATE:-./nginx/http.conf.template}:/etc/nginx/templates/default.conf.template:ro
       - certbot-conf:/etc/letsencrypt:ro
       - certbot-www:/var/www/certbot:ro
     # Периодический reload — подхватить обновлённый сертификат после certbot renew.

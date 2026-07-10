@@ -1,7 +1,8 @@
 # HTTP-конфиг (по умолчанию). Работает без домена и до выпуска TLS-сертификата.
 # Отдаёт ACME-challenge для certbot. После выпуска сертификата переключитесь на
-# ./nginx/app-ssl.conf (переменная NGINX_CONF в .env) — см. DEPLOY.md.
+# ./nginx/tls.conf.template (переменная NGINX_TEMPLATE в .env) — см. DEPLOY.md.
 #
+# Envsubst-шаблон nginx: переменных окружения тут нет, файл отдаётся как есть.
 # Security-заголовки (X-Content-Type-Options, X-Frame-Options, Referrer-Policy)
 # выставляет само приложение (app/main.py) — здесь не дублируем (ТЗ §41.2).
 server {
