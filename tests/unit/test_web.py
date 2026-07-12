@@ -18,6 +18,11 @@ def test_login_page_ok(client):
     assert "Войти" in resp.text
 
 
+def test_footer_present(client):
+    """Подвал «Разработано MKL Labs» показывается на всех страницах."""
+    assert "Разработано MKL Labs" in client.get("/login").text
+
+
 def test_protected_redirects_to_login(client):
     resp = client.get("/", follow_redirects=False)
     assert resp.status_code == 303
