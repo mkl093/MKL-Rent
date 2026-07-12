@@ -231,6 +231,42 @@ def test_filter_empty_params_ok(auth_client):
     assert resp.status_code == 200
 
 
+def test_filter_by_subcategory(auth_client, db_session):
+    """Фильтр «Подкатегория» показывает только модели выбранной подкатегории."""
+    from decimal import Decimal
+
+    from app.inventory.enums import AccountingType
+    from app.inventory.schemas import EquipmentModelCreate
+    from app.inventory.services import categories as cat_service
+    from app.inventory.services import equipment as eq_service
+
+    cat = cat_service.create_category(db_session, "Свет")
+    wash = cat_service.create_subcategory(db_session, cat, "Заливной")
+    beam = cat_service.create_subcategory(db_session, cat, "Лучевой")
+    for name, sub in (("LED PAR", wash), ("Beam 230", beam)):
+        eq_service.create_model(
+            db_session,
+            EquipmentModelCreate(
+                category_id=cat.id,
+                subcategory_id=sub.id,
+                name=name,
+                accounting_type=AccountingType.QUANTITY,
+                total_quantity=2,
+                base_price_eur=Decimal("0"),
+            ),
+        )
+
+    # Список подкатегорий присутствует в форме фильтра.
+    page = auth_client.get("/inventory").text
+    assert 'name="subcategory_id"' in page
+    assert "Свет / Заливной" in page
+
+    # Фильтр по подкатегории «Заливной» оставляет только LED PAR.
+    filtered = auth_client.get("/inventory", params={"subcategory_id": wash.id}).text
+    assert "LED PAR" in filtered
+    assert "Beam 230" not in filtered
+
+
 def test_unit_view_and_tree(auth_client, db_session):
     """Карточка единиц для количественной модели и режим дерева (пункты 1, 3)."""
     from decimal import Decimal

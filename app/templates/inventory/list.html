@@ -36,12 +36,24 @@
       <label class="form-label" for="q">Поиск (название, производитель)</label>
       <input class="form-control" id="q" name="q" value="{{ q }}">
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-2">
       <label class="form-label" for="category_id">Категория</label>
-      <select class="form-select" id="category_id" name="category_id">
+      <select class="form-select" id="category_id" name="category_id" onchange="filterSubcats()">
         <option value="">Все</option>
         {% for c in categories %}
           <option value="{{ c.id }}" {% if filters.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label" for="subcategory_id">Подкатегория</label>
+      <select class="form-select" id="subcategory_id" name="subcategory_id">
+        <option value="" data-cat="">Все</option>
+        {% for c in categories %}
+          {% for s in c.subcategories %}
+          <option value="{{ s.id }}" data-cat="{{ c.id }}"
+                  {% if filters.subcategory_id == s.id %}selected{% endif %}>{{ c.name }} / {{ s.name }}</option>
+          {% endfor %}
         {% endfor %}
       </select>
     </div>
@@ -211,4 +223,22 @@
 {% else %}
 <p class="text-secondary">Моделей не найдено. <a href="/inventory/models/new">Добавьте первую</a>.</p>
 {% endif %}
+
+<script>
+// Подкатегория зависит от выбранной категории: показываем только её подкатегории.
+function filterSubcats() {
+  var cat = document.getElementById('category_id').value;
+  var sub = document.getElementById('subcategory_id');
+  var reset = false;
+  Array.prototype.forEach.call(sub.options, function (opt) {
+    var oc = opt.getAttribute('data-cat');
+    var show = !oc || !cat || oc === cat;
+    opt.hidden = !show;
+    opt.disabled = !show;
+    if (opt.selected && !show) reset = true;
+  });
+  if (reset) sub.value = '';
+}
+filterSubcats();
+</script>
 {% endblock %}
