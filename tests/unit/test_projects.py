@@ -28,6 +28,30 @@ def _model(db_session, qty=5):
     )
 
 
+def test_deficits_skips_kit_reservation_without_warning(db_session):
+    """Бронь комплекта (model_id пуст) не должна вызывать SAWarning о NULL-PK."""
+    import warnings
+
+    from sqlalchemy.exc import SAWarning
+
+    from app.inventory.schemas import KitInput
+    from app.inventory.services import kits as kit_service
+
+    project = service.create_project(
+        db_session,
+        ProjectInput(
+            name="С комплектом", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5)
+        ),
+    )
+    kit = kit_service.create_kit(db_session, KitInput(name="Кейс"))
+    db_session.add(ProjectReservation(project_id=project.id, kit_id=kit.id, quantity=1))
+    db_session.commit()
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", SAWarning)
+        assert service.project_deficits(db_session, project) == []
+
+
 def test_create_assigns_number_and_draft(db_session):
     p = service.create_project(db_session, ProjectInput(name="Концерт"))
     assert p.number.startswith("PRJ-")

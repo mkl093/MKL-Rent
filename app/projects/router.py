@@ -182,6 +182,10 @@ def project_detail(
     rows = []
     if project.start_date and project.end_date:
         for res in project.reservations:
+            # Бронь может быть на комплект (model_id пуст) — такие строки пропускаем,
+            # db.get(..., None) иначе даёт SAWarning о NULL-идентичности.
+            if res.model_id is None:
+                continue
             model = db.get(EquipmentModel, res.model_id)
             if model is None:
                 continue

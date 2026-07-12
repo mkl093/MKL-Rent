@@ -181,6 +181,9 @@ def project_deficits(db: Session, project: Project) -> list[DeficitLine]:
         return []
     lines: list[DeficitLine] = []
     for res in project.reservations:
+        # Бронь комплекта (model_id пуст) в дефицит по моделям не входит.
+        if res.model_id is None:
+            continue
         model = db.get(EquipmentModel, res.model_id)
         if model is None:
             continue
