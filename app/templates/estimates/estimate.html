@@ -97,7 +97,7 @@
 <div class="row g-3">
   <div class="col-12 col-lg-6">
     {% if editable %}
-    <div class="card mb-3"><div class="card-header">Произвольная строка (ТЗ §16.5)</div>
+    <div class="card mb-3"><div class="card-header">Произвольная строка</div>
       <div class="card-body">
         <form method="post" action="/projects/{{ project.id }}/estimate/custom" class="row g-2">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

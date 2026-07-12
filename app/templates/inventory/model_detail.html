@@ -107,7 +107,7 @@
 
 {% if not model.is_serial %}
 <div class="card mt-4">
-  <div class="card-header"><strong>Быстрое изменение остатка и история (ТЗ §10)</strong></div>
+  <div class="card-header"><strong>Быстрое изменение остатка и история</strong></div>
   <div class="card-body">
     <p class="small text-secondary">Укажите число активных единиц: недостающие создадутся, лишние (без штрих-кода) удалятся. Активно сейчас: {{ active }}.</p>
     <form method="post" action="/inventory/models/{{ model.id }}/quantity" class="row g-2 mb-3">

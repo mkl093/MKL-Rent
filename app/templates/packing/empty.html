@@ -6,7 +6,7 @@
 </div>
 <div class="card card-body">
   <p class="text-secondary">Packing-лист ещё не создан. Он формируется из текущей сметы:
-    складские позиции копируются, одинаковые модели объединяются (ТЗ §17.1).</p>
+    складские позиции копируются, одинаковые модели объединяются.</p>
   {% if editable %}
   <form method="post" action="/projects/{{ project.id }}/packing/create" class="m-0">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
