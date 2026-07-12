@@ -85,6 +85,34 @@ def test_render_estimate_html(db_session, project):
     assert fp  # непустой отпечаток
 
 
+def test_estimate_html_shows_logo_and_company_ids(db_session, project, tmp_path, monkeypatch):
+    """Смета показывает логотип, VAT ID и налоговый номер компании раздельно."""
+    from app.settings.service import get_company_settings
+
+    # Кладём логотип во временное хранилище и прописываем его в настройках.
+    monkeypatch.setattr("app.documents.builder.get_settings", lambda: _FakeStorage(tmp_path))
+    logo_dir = tmp_path / "logo"
+    logo_dir.mkdir()
+    (logo_dir / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    company = get_company_settings(db_session)
+    company.logo_path = "logo/logo.png"
+    company.vat_id = "DE123456789"
+    company.tax_number = "12/345/67890"
+    db_session.commit()
+
+    html, _ = builder.render_html(db_session, project, DocumentType.ESTIMATE, "ru")
+    assert 'class="logo"' in html
+    assert "DE123456789" in html
+    assert "Налоговый номер" in html
+    assert "12/345/67890" in html
+
+
+class _FakeStorage:
+    def __init__(self, path):
+        self.storage_path = str(path)
+
+
 def test_estimate_available_packing_not(db_session, project):
     statuses = {(s.doc_type, s.language.value): s for s in builder.status(db_session, project)}
     est_ru = statuses[(DocumentType.ESTIMATE, "ru")]

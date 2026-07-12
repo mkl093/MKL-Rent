@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from app.auth.models import User
@@ -13,6 +13,7 @@ from app.dependencies import redirect, render, require_login, verify_csrf
 from app.settings.schemas import CompanySettingsUpdate
 from app.settings.service import update_company_settings
 from app.templating import flash
+from app.utils.images import ImageError, delete_photo, save_logo
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -34,7 +35,7 @@ def settings_page(
 
 
 @router.post("", dependencies=[Depends(verify_csrf)])
-def settings_save(
+async def settings_save(
     request: Request,
     company_name: str = Form(""),
     address: str | None = Form(None),
@@ -47,6 +48,8 @@ def settings_save(
     pdf_footer: str | None = Form(None),
     default_vat: str = Form("0"),
     timezone: str = Form("Europe/Berlin"),
+    logo: UploadFile | None = File(None),
+    remove_logo: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
@@ -68,6 +71,23 @@ def settings_save(
         default_vat=vat,
         timezone=timezone.strip() or "Europe/Berlin",
     )
-    update_company_settings(db, data)
+    settings = update_company_settings(db, data)
+
+    # Логотип компании (для сметы/packing и веба) — отдельно от текстовых полей.
+    if remove_logo:
+        delete_photo(settings.logo_path)
+        settings.logo_path = None
+        db.commit()
+    elif logo is not None and logo.filename:
+        raw = await logo.read()
+        try:
+            rel = save_logo(raw)
+        except ImageError as exc:
+            flash(request, f"Логотип не загружен: {exc}", "warning")
+        else:
+            delete_photo(settings.logo_path)
+            settings.logo_path = rel
+            db.commit()
+
     flash(request, "Настройки сохранены.", "success")
     return redirect("/settings")
