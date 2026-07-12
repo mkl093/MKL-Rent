@@ -352,6 +352,25 @@ def _render_weasyprint(html: str) -> bytes:
     return HTML(string=html).write_pdf()
 
 
+def _x2p_link_callback(uri: str, rel: str) -> str:
+    """Разрешить URI ресурса в локальный путь для xhtml2pdf.
+
+    xhtml2pdf на Windows не умеет забирать данные из ``file:///C:/...`` URI
+    (логотип в шапке документа), поэтому переводим такой URI в путь ФС.
+    """
+    import os
+    from urllib.parse import unquote, urlparse
+
+    parsed = urlparse(uri)
+    if parsed.scheme == "file":
+        path = unquote(parsed.path)
+        # file:///C:/... → C:/... (на Windows убираем ведущий слэш перед буквой диска)
+        if os.name == "nt" and path.startswith("/") and path[2:3] == ":":
+            path = path[1:]
+        return path
+    return uri
+
+
 def _render_xhtml2pdf(html: str) -> bytes:
     import io
 
@@ -359,7 +378,7 @@ def _render_xhtml2pdf(html: str) -> bytes:
 
     _register_xhtml2pdf_fonts()
     buffer = io.BytesIO()
-    result = pisa.CreatePDF(html, dest=buffer, encoding="utf-8")
+    result = pisa.CreatePDF(html, dest=buffer, encoding="utf-8", link_callback=_x2p_link_callback)
     if result.err:
         raise PdfUnavailable("Не удалось собрать PDF через xhtml2pdf")
     return buffer.getvalue()

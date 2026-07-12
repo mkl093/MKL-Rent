@@ -163,6 +163,39 @@ def test_generate_real_pdf_xhtml2pdf(db_session, project, tmp_path, monkeypatch)
     assert len(data) > 5000  # кириллический шрифт встроен в документ
 
 
+def test_generate_pdf_embeds_logo_xhtml2pdf(db_session, project, tmp_path, monkeypatch):
+    """Логотип компании попадает в PDF при локальной сборке через xhtml2pdf.
+
+    Regression: xhtml2pdf на Windows не забирал изображение из file://-URI —
+    добавлен link_callback, преобразующий URI в путь ФС.
+    """
+    import io
+
+    from PIL import Image
+
+    from app.settings.service import get_company_settings
+
+    monkeypatch.setattr("app.documents.builder.get_settings", lambda: _FakeStorage(tmp_path))
+    monkeypatch.setattr(builder, "resolve_engine", lambda: "xhtml2pdf")
+    monkeypatch.setattr(builder, "_storage_dir", lambda pid: tmp_path)
+
+    logo_dir = tmp_path / "logo"
+    logo_dir.mkdir()
+    buf = io.BytesIO()
+    Image.new("RGBA", (40, 20), (10, 20, 30, 255)).save(buf, format="PNG")
+    (logo_dir / "logo.png").write_bytes(buf.getvalue())
+
+    company = get_company_settings(db_session)
+    company.logo_path = "logo/logo.png"
+    db_session.commit()
+
+    builder.generate(db_session, project, DocumentType.ESTIMATE, "ru")
+    data = (tmp_path / "estimate_ru.pdf").read_bytes()
+    assert data[:5] == b"%PDF-"
+    # Растровое изображение в PDF хранится как XObject.
+    assert b"/XObject" in data
+
+
 def test_resolve_engine_override(monkeypatch):
     from app.documents.builder import resolve_engine
 
