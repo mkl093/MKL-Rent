@@ -61,6 +61,8 @@ LABELS = {
         "total": "Сумма",
         "discount": "Скидка",
         "vat": "VAT",
+        "vat_id": "VAT ID",
+        "tax_number": "Налоговый номер",
         "grand_total": "Итого",
         "category": "Категория",
         "plan": "План",
@@ -98,6 +100,8 @@ LABELS = {
         "total": "Total",
         "discount": "Discount",
         "vat": "VAT",
+        "vat_id": "VAT ID",
+        "tax_number": "Tax number",
         "grand_total": "Grand total",
         "category": "Category",
         "plan": "Plan",
@@ -159,7 +163,13 @@ def _estimate_render(
 
     fingerprint = json.dumps(
         {
-            "company": [company.company_name, company.address, company.vat_id, company.pdf_footer],
+            "company": [
+                company.company_name,
+                company.address,
+                company.vat_id,
+                company.tax_number,
+                company.pdf_footer,
+            ],
             "project": [
                 project.number,
                 project.name,

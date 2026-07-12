@@ -33,16 +33,20 @@
         <label class="form-label" for="address">Адрес</label>
         <textarea class="form-control" id="address" name="address" rows="2">{{ company.address or '' }}</textarea>
       </div>
-      <div class="col-12 col-md-6">
-        <label class="form-label" for="vat_id">VAT ID / налоговый номер</label>
+      <div class="col-12 col-md-4">
+        <label class="form-label" for="vat_id">VAT ID</label>
         <input class="form-control" id="vat_id" name="vat_id" value="{{ company.vat_id or '' }}">
       </div>
-      <div class="col-6 col-md-3">
-        <label class="form-label" for="default_vat">VAT по умолчанию, %</label>
+      <div class="col-12 col-md-4">
+        <label class="form-label" for="tax_number">Налоговый номер</label>
+        <input class="form-control" id="tax_number" name="tax_number" value="{{ company.tax_number or '' }}">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label" for="default_vat">Ставка VAT, %</label>
         <input class="form-control" id="default_vat" name="default_vat" inputmode="decimal"
                value="{{ company.default_vat }}">
       </div>
-      <div class="col-6 col-md-3">
+      <div class="col-6 col-md-2">
         <label class="form-label" for="timezone">Часовой пояс</label>
         <input class="form-control" id="timezone" name="timezone" value="{{ company.timezone }}">
       </div>

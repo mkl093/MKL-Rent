@@ -20,3 +20,19 @@ def test_update_settings(db_session):
     settings = get_company_settings(db_session)
     assert settings.company_name == "MKL Rental"
     assert settings.default_vat == Decimal("19")
+
+
+def test_vat_id_and_tax_number_are_separate(db_session):
+    """Ставка VAT, VAT ID и налоговый номер — независимые поля."""
+    update_company_settings(
+        db_session,
+        CompanySettingsUpdate(
+            default_vat=Decimal("19"),
+            vat_id="DE123456789",
+            tax_number="12/345/67890",
+        ),
+    )
+    settings = get_company_settings(db_session)
+    assert settings.default_vat == Decimal("19")
+    assert settings.vat_id == "DE123456789"
+    assert settings.tax_number == "12/345/67890"

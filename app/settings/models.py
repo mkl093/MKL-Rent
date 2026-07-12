@@ -24,7 +24,9 @@ class CompanySettings(Base, TimestampMixin):
     phone: Mapped[str | None] = mapped_column(String(100), nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     website: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # VAT ID (номер плательщика НДС) и налоговый номер компании — раздельные поля.
     vat_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    tax_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     bank_details: Mapped[str | None] = mapped_column(Text, nullable=True)
     pdf_footer: Mapped[str | None] = mapped_column(Text, nullable=True)
 

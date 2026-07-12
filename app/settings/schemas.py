@@ -14,6 +14,7 @@ class CompanySettingsUpdate(BaseModel):
     email: str | None = Field(default=None, max_length=255)
     website: str | None = Field(default=None, max_length=255)
     vat_id: str | None = Field(default=None, max_length=100)
+    tax_number: str | None = Field(default=None, max_length=100)
     bank_details: str | None = Field(default=None)
     pdf_footer: str | None = Field(default=None)
     default_vat: Decimal = Field(default=Decimal("0"), ge=0, le=100)

@@ -36,7 +36,8 @@
       {% if company.phone %}<div>{{ company.phone }}</div>{% endif %}
       {% if company.email %}<div>{{ company.email }}</div>{% endif %}
       {% if company.website %}<div>{{ company.website }}</div>{% endif %}
-      {% if company.vat_id %}<div>VAT ID: {{ company.vat_id }}</div>{% endif %}
+      {% if company.vat_id %}<div>{{ L.vat_id }}: {{ company.vat_id }}</div>{% endif %}
+      {% if company.tax_number %}<div>{{ L.tax_number }}: {{ company.tax_number }}</div>{% endif %}
     </td>
     <td class="num" style="width:30%">{% if logo_uri %}<img class="logo" src="{{ logo_uri }}" alt="">{% endif %}</td>
   </tr></table>
