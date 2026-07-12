@@ -62,6 +62,12 @@ def create_subcategory(
     return sub
 
 
+def rename_subcategory(db: Session, sub: Subcategory, name: str) -> Subcategory:
+    sub.name = name.strip()
+    db.commit()
+    return sub
+
+
 def delete_subcategory(db: Session, sub: Subcategory) -> None:
     count = db.scalar(
         select(func.count())

@@ -221,6 +221,14 @@ def test_delete_category_blocked_when_used(db_session, category):
         cat_service.delete_category(db_session, category)
 
 
+def test_rename_category_and_subcategory(db_session, category):
+    cat_service.rename_category(db_session, category, "  Свет  ")
+    assert category.name == "Свет"
+    sub = cat_service.create_subcategory(db_session, category, "Прожекторы")
+    cat_service.rename_subcategory(db_session, sub, "  Заливной свет ")
+    assert sub.name == "Заливной свет"
+
+
 # --- Список и фильтры (ТЗ §25) ------------------------------------------
 
 

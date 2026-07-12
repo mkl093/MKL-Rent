@@ -560,6 +560,21 @@ def category_create(
     return redirect("/inventory/categories")
 
 
+@router.post("/categories/{category_id}/rename", dependencies=[Depends(verify_csrf)])
+def category_rename(
+    request: Request,
+    category_id: int,
+    name: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    category = db.get(cat_service.Category, category_id)
+    if category and _str(name):
+        cat_service.rename_category(db, category, name)
+        flash(request, "Категория переименована.", "success")
+    return redirect("/inventory/categories")
+
+
 @router.post("/categories/{category_id}/subcategories", dependencies=[Depends(verify_csrf)])
 def subcategory_create(
     request: Request,
@@ -589,6 +604,21 @@ def category_delete(
             flash(request, "Категория удалена.", "success")
         except cat_service.InUse as exc:
             flash(request, str(exc), "danger")
+    return redirect("/inventory/categories")
+
+
+@router.post("/subcategories/{subcategory_id}/rename", dependencies=[Depends(verify_csrf)])
+def subcategory_rename(
+    request: Request,
+    subcategory_id: int,
+    name: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    sub = db.get(cat_service.Subcategory, subcategory_id)
+    if sub and _str(name):
+        cat_service.rename_subcategory(db, sub, name)
+        flash(request, "Подкатегория переименована.", "success")
     return redirect("/inventory/categories")
 
 

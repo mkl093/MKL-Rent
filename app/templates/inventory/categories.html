@@ -15,8 +15,12 @@
 
 {% for c in categories %}
 <div class="card mb-3">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <strong>{{ c.name }}</strong>
+  <div class="card-header d-flex justify-content-between align-items-center gap-2">
+    <form method="post" action="/inventory/categories/{{ c.id }}/rename" class="row g-2 flex-grow-1 m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="col"><input class="form-control form-control-sm fw-semibold" name="name" value="{{ c.name }}" required aria-label="Название категории"></div>
+      <div class="col-auto"><button class="btn btn-sm btn-outline-primary">Переименовать</button></div>
+    </form>
     <form method="post" action="/inventory/categories/{{ c.id }}/delete" class="m-0"
           onsubmit="return confirm('Удалить категорию «{{ c.name }}»?')">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -25,8 +29,12 @@
   </div>
   <ul class="list-group list-group-flush">
     {% for s in c.subcategories %}
-    <li class="list-group-item d-flex justify-content-between align-items-center">
-      {{ s.name }}
+    <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+      <form method="post" action="/inventory/subcategories/{{ s.id }}/rename" class="row g-2 flex-grow-1 m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="col"><input class="form-control form-control-sm" name="name" value="{{ s.name }}" required aria-label="Название подкатегории"></div>
+        <div class="col-auto"><button class="btn btn-sm btn-outline-primary">Переименовать</button></div>
+      </form>
       <form method="post" action="/inventory/subcategories/{{ s.id }}/delete" class="m-0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="btn btn-sm btn-link text-danger p-0">удалить</button>
