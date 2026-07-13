@@ -30,20 +30,34 @@ def test_format_date():
     d = date(2026, 6, 30)
     assert format_date(d, "ru") == "30.06.2026"
     assert format_date(d, "en") == "30 June 2026"
+    assert format_date(d, "de") == "30. Juni 2026"
+    assert format_date(date(2026, 3, 1), "de") == "1. März 2026"
 
 
 def test_format_money():
     assert format_money(Decimal("1250"), "ru") == "1 250,00 €"
     assert format_money(Decimal("1250"), "en") == "€1,250.00"
+    assert format_money(Decimal("1250"), "de") == "1.250,00 €"
     assert format_money(Decimal("1234567.5"), "ru") == "1 234 567,50 €"
     assert format_money(Decimal("1234567.5"), "en") == "€1,234,567.50"
+    assert format_money(Decimal("1234567.5"), "de") == "1.234.567,50 €"
 
 
 def test_format_weight_volume():
     assert format_weight(Decimal("125.4"), "ru") == "125,4 кг"
     assert format_weight(Decimal("125.4"), "en") == "125.4 kg"
+    assert format_weight(Decimal("125.4"), "de") == "125,4 kg"
     assert format_volume(Decimal("0.18"), "ru") == "0,180 м³"
     assert format_volume(Decimal("0.18"), "en") == "0.180 m³"
+    assert format_volume(Decimal("0.18"), "de") == "0,180 m³"
+
+
+def test_format_percent_de():
+    from app.documents.l10n import format_percent
+
+    assert format_percent(Decimal("19"), "de") == "19 %"
+    assert format_percent(Decimal("19"), "ru") == "19%"
+    assert format_percent(Decimal("19"), "en") == "19%"
 
 
 # --- Рендеринг и устаревание --------------------------------------------
@@ -161,6 +175,26 @@ def test_generate_real_pdf_xhtml2pdf(db_session, project, tmp_path, monkeypatch)
     data = (tmp_path / "estimate_ru.pdf").read_bytes()
     assert data[:5] == b"%PDF-"
     assert len(data) > 5000  # кириллический шрифт встроен в документ
+
+
+def test_render_estimate_html_de(db_session, project):
+    html, fp = builder.render_html(db_session, project, DocumentType.ESTIMATE, "de")
+    assert "Angebot" in html  # немецкая подпись «Смета»
+    assert "Mietzeitraum" in html
+    assert "1. Juli 2026" in html  # дата аренды по-немецки
+    assert "200,00 €" in html  # 100 × 2 × 1
+    assert fp
+
+
+def test_generate_real_pdf_de_xhtml2pdf(db_session, project, tmp_path, monkeypatch):
+    """Сквозная генерация DE-сметы через xhtml2pdf: латиница/€/³ рендерятся."""
+    monkeypatch.setattr(builder, "resolve_engine", lambda: "xhtml2pdf")
+    monkeypatch.setattr(builder, "_storage_dir", lambda pid: tmp_path)
+
+    builder.generate(db_session, project, DocumentType.ESTIMATE, "de")
+    data = (tmp_path / "estimate_de.pdf").read_bytes()
+    assert data[:5] == b"%PDF-"
+    assert len(data) > 5000
 
 
 def test_generate_pdf_embeds_logo_xhtml2pdf(db_session, project, tmp_path, monkeypatch):

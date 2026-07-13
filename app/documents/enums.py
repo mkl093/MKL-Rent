@@ -17,7 +17,8 @@ class DocumentType(enum.StrEnum):
 class Language(enum.StrEnum):
     RU = "ru"
     EN = "en"
+    DE = "de"
 
     @property
     def label(self) -> str:
-        return {"ru": "Русский", "en": "English"}[self.value]
+        return {"ru": "Русский", "en": "English", "de": "Deutsch"}[self.value]

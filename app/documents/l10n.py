@@ -2,6 +2,7 @@
 
 RU: 30.06.2026 · 125,4 кг · 1 250,00 €
 EN: 30 June 2026 · 125.4 kg · €1,250.00
+DE: 30. Juni 2026 · 125,4 kg · 1.250,00 €
 """
 
 from __future__ import annotations
@@ -24,12 +25,29 @@ EN_MONTHS = {
     12: "December",
 }
 
+DE_MONTHS = {
+    1: "Januar",
+    2: "Februar",
+    3: "März",
+    4: "April",
+    5: "Mai",
+    6: "Juni",
+    7: "Juli",
+    8: "August",
+    9: "September",
+    10: "Oktober",
+    11: "November",
+    12: "Dezember",
+}
+
 
 def format_date(value: date | None, lang: str) -> str:
     if value is None:
         return "—"
     if lang == "ru":
         return value.strftime("%d.%m.%Y")
+    if lang == "de":
+        return f"{value.day}. {DE_MONTHS[value.month]} {value.year}"
     return f"{value.day} {EN_MONTHS[value.month]} {value.year}"
 
 
@@ -51,6 +69,8 @@ def format_money(value: Decimal, lang: str) -> str:
     neg, int_part, frac = _split(value, 2)
     if lang == "ru":
         body = f"{_group(int_part, ' ')},{frac} €"
+    elif lang == "de":
+        body = f"{_group(int_part, '.')},{frac} €"
     else:
         body = f"€{_group(int_part, ',')}.{frac}"
     return f"-{body}" if neg else body
@@ -58,7 +78,7 @@ def format_money(value: Decimal, lang: str) -> str:
 
 def _decimal_str(value: Decimal, decimals: int, lang: str) -> str:
     neg, int_part, frac = _split(value, decimals)
-    dot = "," if lang == "ru" else "."
+    dot = "," if lang in ("ru", "de") else "."
     body = f"{int_part}{dot}{frac}" if decimals else int_part
     return f"-{body}" if neg else body
 
@@ -75,6 +95,7 @@ def format_volume(value: Decimal, lang: str) -> str:
 
 def format_percent(value: Decimal, lang: str) -> str:
     # Целое если без дробной части, иначе один знак.
+    sep = " " if lang == "de" else ""  # немецкая типографика: «19 %»
     if value == value.to_integral_value():
-        return f"{int(value)}%"
-    return f"{_decimal_str(value, 1, lang)}%"
+        return f"{int(value)}{sep}%"
+    return f"{_decimal_str(value, 1, lang)}{sep}%"
