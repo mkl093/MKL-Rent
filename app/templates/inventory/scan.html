@@ -23,6 +23,7 @@
 {% endif %}
 
 <script src="/static/vendor/html5-qrcode.min.js"></script>
+<script src="/static/js/barcode-scan.js"></script>
 <script>
 (function () {
   const form = document.getElementById("searchForm");
@@ -34,9 +35,9 @@
   camBtn.addEventListener("click", async () => {
     if (!camOn) {
       hint.classList.remove("d-none");
-      scanner = new Html5Qrcode("reader");
+      scanner = window.MklScan.newScanner("reader");
       try {
-        await scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (text) => {
+        await scanner.start({ facingMode: "environment" }, window.MklScan.startConfig(), (text) => {
           if (submitted) return;
           submitted = true;
           input.value = (text || "").trim();

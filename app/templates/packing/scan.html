@@ -46,6 +46,7 @@
 {% endif %}
 
 <script src="/static/vendor/html5-qrcode.min.js"></script>
+<script src="/static/js/barcode-scan.js"></script>
 <script>
 (function () {
   const base = "{{ base }}";
@@ -143,9 +144,9 @@
   const camBtn = document.getElementById("camToggle");
   camBtn.addEventListener("click", async () => {
     if (!camOn) {
-      scanner = new Html5Qrcode("reader");
+      scanner = window.MklScan.newScanner("reader");
       try {
-        await scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 },
+        await scanner.start({ facingMode: "environment" }, window.MklScan.startConfig(),
           (text) => submitScan(text), () => {});
         camOn = true; camBtn.textContent = "Выключить камеру";
       } catch (e) {
