@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ page_title or "rental-inventory" }}{% endblock %}{% if company and company.company_name %} · {{ company.company_name }}{% endif %}</title>
-  <link rel="stylesheet" href="/static/vendor/bootstrap.min.css">
-  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="{{ static_url('vendor/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ static_url('css/app.css') }}">
 </head>
 <body class="bg-body-tertiary">
 {% if current_user %}
@@ -54,7 +54,7 @@
 
 <footer class="text-center text-body-secondary small py-3">Разработано MKL Labs</footer>
 
-<script src="/static/vendor/bootstrap.bundle.min.js"></script>
-<script src="/static/vendor/htmx.min.js"></script>
+<script src="{{ static_url('vendor/bootstrap.bundle.min.js') }}"></script>
+<script src="{{ static_url('vendor/htmx.min.js') }}"></script>
 </body>
 </html>

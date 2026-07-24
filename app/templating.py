@@ -10,9 +10,28 @@ from fastapi.templating import Jinja2Templates
 from app.utils.timezone import format_datetime
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+STATIC_DIR = Path(__file__).parent / "static"
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 templates.env.globals["format_datetime"] = format_datetime
+
+
+def static_url(path: str) -> str:
+    """URL статики с cache-busting-версией по mtime файла.
+
+    Браузеры (особенно iOS Safari) кешируют JS/CSS без Cache-Control и могут
+    отдавать устаревшую версию. Суффикс ?v=<mtime> меняет URL при каждом
+    изменении файла и заставляет забрать свежую копию.
+    """
+    rel = path.lstrip("/")
+    try:
+        version = int((STATIC_DIR / rel).stat().st_mtime)
+    except OSError:
+        return f"/static/{rel}"
+    return f"/static/{rel}?v={version}"
+
+
+templates.env.globals["static_url"] = static_url
 
 
 # --- CSRF ---------------------------------------------------------------

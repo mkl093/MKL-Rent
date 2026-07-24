@@ -56,9 +56,22 @@
     return new Html5Qrcode(readerId, cfg);
   }
 
-  // Конфиг start(): широкая зона + скорость. extra перекрывает поля при нужде.
+  // Конфиг start(): широкая зона, скорость и запрос высокого разрешения камеры.
+  // Плотный Code 128 без достаточного разрешения кадра ZXing не декодирует —
+  // videoConstraints с высоким ideal-разрешением и непрерывным автофокусом сильно
+  // повышает распознавание, особенно на iOS Safari (где нет BarcodeDetector).
+  // videoConstraints во втором конфиге переопределяет выбор камеры первым аргументом.
   function startConfig(extra) {
-    var base = { fps: 10, qrbox: qrbox };
+    var base = {
+      fps: 10,
+      qrbox: qrbox,
+      videoConstraints: {
+        facingMode: "environment",
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        advanced: [{ focusMode: "continuous" }],
+      },
+    };
     if (extra) {
       for (var k in extra) {
         if (Object.prototype.hasOwnProperty.call(extra, k)) base[k] = extra[k];
