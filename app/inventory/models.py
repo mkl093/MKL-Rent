@@ -120,6 +120,12 @@ class EquipmentModel(Base, TimestampMixin):
     items: Mapped[list[EquipmentItem]] = relationship(
         back_populates="model", cascade="all, delete-orphan"
     )
+    # Комплектация модели — набор аксессуаров с количеством (справочник аксессуаров).
+    accessories: Mapped[list[EquipmentModelAccessory]] = relationship(
+        back_populates="model",
+        cascade="all, delete-orphan",
+        order_by="EquipmentModelAccessory.id",
+    )
 
     @property
     def is_serial(self) -> bool:
@@ -244,6 +250,57 @@ class EquipmentStatusHistory(Base):
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     item: Mapped[EquipmentItem] = relationship(back_populates="status_history")
+
+
+class AccessoryCategory(Base, TimestampMixin):
+    """Категория справочника аксессуаров (напр. «Питание», «Управление», «Такелаж»)."""
+
+    __tablename__ = "accessory_categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    accessories: Mapped[list[Accessory]] = relationship(
+        back_populates="category",
+        cascade="all, delete-orphan",
+        order_by="Accessory.sort_order, Accessory.name",
+    )
+
+
+class Accessory(Base, TimestampMixin):
+    """Аксессуар справочника — позиция комплектации (шнур, клемп, трос и т.п.)."""
+
+    __tablename__ = "accessories"
+    __table_args__ = (UniqueConstraint("category_id", "name", name="uq_accessory_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    category_id: Mapped[int] = mapped_column(
+        ForeignKey("accessory_categories.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    category: Mapped[AccessoryCategory] = relationship(back_populates="accessories")
+
+
+class EquipmentModelAccessory(Base):
+    """Связь модель↔аксессуар с количеством в комплектации (одна на пару)."""
+
+    __tablename__ = "equipment_model_accessories"
+    __table_args__ = (UniqueConstraint("model_id", "accessory_id", name="uq_model_accessory"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    model_id: Mapped[int] = mapped_column(
+        ForeignKey("equipment_models.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    accessory_id: Mapped[int] = mapped_column(
+        ForeignKey("accessories.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    model: Mapped[EquipmentModel] = relationship(back_populates="accessories")
+    accessory: Mapped[Accessory] = relationship()
 
 
 class QuantityAdjustment(Base):

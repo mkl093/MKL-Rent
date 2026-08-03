@@ -56,6 +56,12 @@
         <dt class="col-5 col-sm-3">Упаковка</dt>
         <dd class="col-7 col-sm-9">{{ model.packing.name_for(model.name) }} · вместимость {{ model.packing.capacity }} · пустая {{ model.packing.empty_weight_kg }} кг</dd>
         {% endif %}
+        {% if model.accessories %}
+        <dt class="col-5 col-sm-3">Комплектация</dt>
+        <dd class="col-7 col-sm-9">
+          {% for ma in model.accessories %}<div>{{ ma.accessory.category.name }} · {{ ma.accessory.name }} — {{ ma.quantity }} шт.</div>{% endfor %}
+        </dd>
+        {% endif %}
         {% if model.description %}<dt class="col-5 col-sm-3">Описание</dt><dd class="col-7 col-sm-9">{{ model.description }}</dd>{% endif %}
         {% if model.note %}<dt class="col-5 col-sm-3">Примечание</dt><dd class="col-7 col-sm-9">{{ model.note }}</dd>{% endif %}
       </dl>

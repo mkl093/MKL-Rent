@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 m-0">Аксессуары</h1>
+  <a href="/inventory" class="btn btn-outline-secondary">К складу</a>
+</div>
+
+<p class="text-secondary">Справочник комплектации: шнуры питания, пульты, клемпы, страховочные тросы и т.п. Аксессуары назначаются моделям в окне редактирования и суммируются в packing-листе.</p>
+
+<form method="post" action="/inventory/accessories" class="card card-body mb-4">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="row g-2">
+    <div class="col"><input class="form-control" name="name" placeholder="Новая категория аксессуаров" required></div>
+    <div class="col-auto"><button class="btn btn-primary">Добавить категорию</button></div>
+  </div>
+</form>
+
+{% for c in categories %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center gap-2">
+    <form method="post" action="/inventory/accessories/categories/{{ c.id }}/rename" class="row g-2 flex-grow-1 m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="col"><input class="form-control form-control-sm fw-semibold" name="name" value="{{ c.name }}" required aria-label="Название категории"></div>
+      <div class="col-auto"><button class="btn btn-sm btn-outline-primary">Переименовать</button></div>
+    </form>
+    <form method="post" action="/inventory/accessories/categories/{{ c.id }}/delete" class="m-0"
+          onsubmit="return confirm('Удалить категорию «{{ c.name }}»?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-sm btn-outline-danger">Удалить</button>
+    </form>
+  </div>
+  <ul class="list-group list-group-flush">
+    {% for a in c.accessories %}
+    <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+      <form method="post" action="/inventory/accessories/items/{{ a.id }}/rename" class="row g-2 flex-grow-1 m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="col"><input class="form-control form-control-sm" name="name" value="{{ a.name }}" required aria-label="Название аксессуара"></div>
+        <div class="col-auto"><button class="btn btn-sm btn-outline-primary">Переименовать</button></div>
+      </form>
+      <form method="post" action="/inventory/accessories/items/{{ a.id }}/delete" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn btn-sm btn-link text-danger p-0">удалить</button>
+      </form>
+    </li>
+    {% else %}
+    <li class="list-group-item text-secondary small">Аксессуаров нет</li>
+    {% endfor %}
+    <li class="list-group-item">
+      <form method="post" action="/inventory/accessories/categories/{{ c.id }}/items" class="row g-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="col"><input class="form-control form-control-sm" name="name" placeholder="Новый аксессуар" required></div>
+        <div class="col-auto"><button class="btn btn-sm btn-outline-primary">Добавить</button></div>
+      </form>
+    </li>
+  </ul>
+</div>
+{% else %}
+<p class="text-secondary">Категорий аксессуаров пока нет.</p>
+{% endfor %}
+{% endblock %}

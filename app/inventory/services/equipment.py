@@ -10,12 +10,15 @@ from sqlalchemy.orm import Session, selectinload
 from app.database import utcnow
 from app.inventory.enums import AccountingType, ItemStatus
 from app.inventory.models import (
+    Accessory,
     EquipmentItem,
     EquipmentModel,
+    EquipmentModelAccessory,
     PackingRule,
     QuantityAdjustment,
 )
 from app.inventory.schemas import (
+    AccessoryQty,
     EquipmentModelCreate,
     EquipmentModelUpdate,
     PackingRuleInput,
@@ -34,6 +37,29 @@ class ModelFilters:
     has_packing: bool | None = None
     archived: bool = False  # по умолчанию показываем активные
     sort: str = "category"  # category | name | manufacturer
+
+
+def _apply_accessories(model: EquipmentModel, items: list[AccessoryQty]) -> None:
+    """Синхронизировать комплектацию модели с набором (accessory_id, quantity).
+
+    Сверка «на месте» (обновить количество / удалить отсутствующие / добавить новые),
+    чтобы не нарушать уникальность (model_id, accessory_id) порядком flush.
+    Валидность accessory_id обеспечивает вызывающая сторона (роутер фильтрует
+    по существующим аксессуарам справочника)."""
+    desired: dict[int, int] = {}
+    for it in items:
+        desired.setdefault(it.accessory_id, it.quantity)  # дедуп: первое количество
+    existing = {ma.accessory_id: ma for ma in model.accessories}
+    for accessory_id, ma in list(existing.items()):
+        if accessory_id not in desired:
+            model.accessories.remove(ma)
+    for accessory_id, quantity in desired.items():
+        if accessory_id in existing:
+            existing[accessory_id].quantity = quantity
+        else:
+            model.accessories.append(
+                EquipmentModelAccessory(accessory_id=accessory_id, quantity=quantity)
+            )
 
 
 def _apply_packing(model: EquipmentModel, data: PackingRuleInput | None) -> None:
@@ -75,6 +101,7 @@ def create_model(db: Session, data: EquipmentModelCreate) -> EquipmentModel:
         power_nominal_w=data.power_nominal_w,
     )
     _apply_packing(model, data.packing)
+    _apply_accessories(model, data.accessories)
     db.add(model)
     db.commit()
     db.refresh(model)
@@ -108,6 +135,7 @@ def update_model(db: Session, model: EquipmentModel, data: EquipmentModelUpdate)
     # Остаток (число единиц) меняется отдельной операцией с историей (ТЗ §10),
     # поэтому total_quantity при редактировании модели не трогаем.
     _apply_packing(model, data.packing)
+    _apply_accessories(model, data.accessories)
     db.commit()
     db.refresh(model)
     return model
@@ -120,6 +148,9 @@ def get_model(db: Session, model_id: int) -> EquipmentModel | None:
             selectinload(EquipmentModel.category),
             selectinload(EquipmentModel.subcategory),
             selectinload(EquipmentModel.packing),
+            selectinload(EquipmentModel.accessories).selectinload(
+                EquipmentModelAccessory.accessory
+            ).selectinload(Accessory.category),
         )
         .where(EquipmentModel.id == model_id)
     )

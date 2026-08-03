@@ -30,6 +30,13 @@ class PowerMixin(BaseModel):
         return self
 
 
+class AccessoryQty(BaseModel):
+    """Позиция комплектации модели: аксессуар и его количество."""
+
+    accessory_id: int
+    quantity: int = Field(default=1, ge=1)
+
+
 class PackingRuleInput(BaseModel):
     packing_type: PackingType
     empty_weight_kg: Decimal = Field(default=Decimal("0"), ge=0)
@@ -58,6 +65,7 @@ class EquipmentModelCreate(PowerMixin):
     note: str | None = None
 
     packing: PackingRuleInput | None = None
+    accessories: list[AccessoryQty] = Field(default_factory=list)
 
 
 class EquipmentModelUpdate(PowerMixin):
@@ -80,6 +88,7 @@ class EquipmentModelUpdate(PowerMixin):
     note: str | None = None
 
     packing: PackingRuleInput | None = None
+    accessories: list[AccessoryQty] = Field(default_factory=list)
 
 
 class EquipmentItemInput(BaseModel):

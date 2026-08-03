@@ -6,11 +6,13 @@ import pytest
 
 from app.inventory.enums import AccountingType, ItemStatus, PackingType
 from app.inventory.schemas import (
+    AccessoryQty,
     EquipmentItemInput,
     EquipmentModelCreate,
     EquipmentModelUpdate,
     PackingRuleInput,
 )
+from app.inventory.services import accessories as acc_service
 from app.inventory.services import categories as cat_service
 from app.inventory.services import equipment as eq_service
 from app.inventory.services import items as item_service
@@ -136,6 +138,69 @@ def test_create_item_sets_active_and_history(db_session, category):
     )
     assert item.status == ItemStatus.ACTIVE
     assert len(item.status_history) == 1
+
+
+# --- Аксессуары / комплектация -----------------------------------------
+
+
+def test_accessory_catalog_crud(db_session):
+    cat = acc_service.create_category(db_session, "Питание")
+    a = acc_service.create_accessory(db_session, cat, "Кабель PowerCon")
+    assert a.category_id == cat.id
+    cats = acc_service.list_accessory_categories(db_session)
+    assert cats[0].accessories[0].name == "Кабель PowerCon"
+
+
+def test_model_accessories_assigned_and_replaced(db_session, category):
+    cat = acc_service.create_category(db_session, "Такелаж")
+    clamp = acc_service.create_accessory(db_session, cat, "Клемп 50 мм")
+    cable = acc_service.create_accessory(db_session, cat, "Страховочный трос")
+    model = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=category.id,
+            name="Прожектор",
+            accounting_type=AccountingType.SERIAL,
+            accessories=[
+                AccessoryQty(accessory_id=clamp.id, quantity=2),
+                AccessoryQty(accessory_id=cable.id, quantity=1),
+            ],
+        ),
+    )
+    assert {(ma.accessory_id, ma.quantity) for ma in model.accessories} == {
+        (clamp.id, 2),
+        (cable.id, 1),
+    }
+    # Обновление заменяет комплектацию целиком (replace-all).
+    eq_service.update_model(
+        db_session,
+        model,
+        EquipmentModelUpdate(
+            category_id=category.id,
+            name="Прожектор",
+            accessories=[AccessoryQty(accessory_id=clamp.id, quantity=4)],
+        ),
+    )
+    model = eq_service.get_model(db_session, model.id)
+    assert [(ma.accessory_id, ma.quantity) for ma in model.accessories] == [(clamp.id, 4)]
+
+
+def test_accessory_delete_blocked_when_used(db_session, category):
+    cat = acc_service.create_category(db_session, "Управление")
+    panel = acc_service.create_accessory(db_session, cat, "Пульт DMX")
+    eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=category.id,
+            name="Диммер",
+            accounting_type=AccountingType.QUANTITY,
+            accessories=[AccessoryQty(accessory_id=panel.id, quantity=1)],
+        ),
+    )
+    with pytest.raises(acc_service.InUse):
+        acc_service.delete_accessory(db_session, panel)
+    with pytest.raises(acc_service.InUse):
+        acc_service.delete_category(db_session, cat)
 
 
 def test_barcode_sequence_padded():

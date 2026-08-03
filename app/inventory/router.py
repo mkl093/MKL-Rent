@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.events import EventType
@@ -14,13 +15,16 @@ from app.auth.models import User
 from app.database import get_db
 from app.dependencies import redirect, render, require_login, verify_csrf
 from app.inventory.enums import AccountingType, ItemStatus, KitWeightMode, PackingType
+from app.inventory.models import Accessory
 from app.inventory.schemas import (
+    AccessoryQty,
     EquipmentItemInput,
     EquipmentModelCreate,
     EquipmentModelUpdate,
     KitInput,
     PackingRuleInput,
 )
+from app.inventory.services import accessories as acc_service
 from app.inventory.services import categories as cat_service
 from app.inventory.services import equipment as eq_service
 from app.inventory.services import items as item_service
@@ -91,6 +95,28 @@ def _today() -> date:
     from app.utils.timezone import to_local
 
     return to_local(utcnow()).date()
+
+
+def _accessories_from_form(form, db: Session) -> list[AccessoryQty]:
+    """Комплектация из формы модели: ключи вида ``acc_qty_<accessory_id>`` = количество.
+
+    Отбрасываются нулевые количества и несуществующие аксессуары справочника.
+    """
+    raw: list[tuple[int, int]] = []
+    for key in form:
+        if not key.startswith("acc_qty_"):
+            continue
+        try:
+            accessory_id = int(key[len("acc_qty_") :])
+        except ValueError:
+            continue
+        qty = _int(form.get(key), 0)
+        if qty >= 1:
+            raw.append((accessory_id, qty))
+    if not raw:
+        return []
+    valid = acc_service.existing_ids(db, [aid for aid, _ in raw])
+    return [AccessoryQty(accessory_id=aid, quantity=qty) for aid, qty in raw if aid in valid]
 
 
 def _power_from_form(
@@ -652,6 +678,122 @@ def subcategory_delete(
     return redirect("/inventory/categories")
 
 
+# --- Справочник аксессуаров (комплектация моделей) ----------------------
+
+
+@router.get("/accessories")
+def accessories_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    return render(
+        request,
+        "inventory/accessories.html",
+        {"page_title": "Аксессуары", "categories": acc_service.list_accessory_categories(db)},
+        db=db,
+        user=user,
+    )
+
+
+@router.post("/accessories", dependencies=[Depends(verify_csrf)])
+def accessory_category_create(
+    request: Request,
+    name: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    if _str(name):
+        acc_service.create_category(db, name)
+        flash(request, "Категория аксессуаров добавлена.", "success")
+    return redirect("/inventory/accessories")
+
+
+@router.post("/accessories/categories/{category_id}/rename", dependencies=[Depends(verify_csrf)])
+def accessory_category_rename(
+    request: Request,
+    category_id: int,
+    name: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    from app.inventory.models import AccessoryCategory
+
+    category = db.get(AccessoryCategory, category_id)
+    if category and _str(name):
+        acc_service.rename_category(db, category, name)
+        flash(request, "Категория переименована.", "success")
+    return redirect("/inventory/accessories")
+
+
+@router.post("/accessories/categories/{category_id}/delete", dependencies=[Depends(verify_csrf)])
+def accessory_category_delete(
+    request: Request,
+    category_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    from app.inventory.models import AccessoryCategory
+
+    category = db.get(AccessoryCategory, category_id)
+    if category:
+        try:
+            acc_service.delete_category(db, category)
+            flash(request, "Категория удалена.", "success")
+        except cat_service.InUse as exc:
+            flash(request, str(exc), "danger")
+    return redirect("/inventory/accessories")
+
+
+@router.post("/accessories/categories/{category_id}/items", dependencies=[Depends(verify_csrf)])
+def accessory_create(
+    request: Request,
+    category_id: int,
+    name: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    from app.inventory.models import AccessoryCategory
+
+    category = db.get(AccessoryCategory, category_id)
+    if category and _str(name):
+        acc_service.create_accessory(db, category, name)
+        flash(request, "Аксессуар добавлен.", "success")
+    return redirect("/inventory/accessories")
+
+
+@router.post("/accessories/items/{accessory_id}/rename", dependencies=[Depends(verify_csrf)])
+def accessory_rename(
+    request: Request,
+    accessory_id: int,
+    name: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    accessory = db.get(Accessory, accessory_id)
+    if accessory and _str(name):
+        acc_service.rename_accessory(db, accessory, name)
+        flash(request, "Аксессуар переименован.", "success")
+    return redirect("/inventory/accessories")
+
+
+@router.post("/accessories/items/{accessory_id}/delete", dependencies=[Depends(verify_csrf)])
+def accessory_delete(
+    request: Request,
+    accessory_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    accessory = db.get(Accessory, accessory_id)
+    if accessory:
+        try:
+            acc_service.delete_accessory(db, accessory)
+            flash(request, "Аксессуар удалён.", "success")
+        except cat_service.InUse as exc:
+            flash(request, str(exc), "danger")
+    return redirect("/inventory/accessories")
+
+
 # --- Модели оборудования (ТЗ §7) ----------------------------------------
 
 
@@ -668,6 +810,7 @@ def model_new(
             "page_title": "Новая модель",
             "model": None,
             "categories": cat_service.list_categories(db),
+            "accessory_categories": acc_service.list_accessory_categories(db),
             "AccountingType": AccountingType,
             "PackingType": PackingType,
         },
@@ -709,6 +852,7 @@ async def model_create(
     user: User = Depends(require_login),
 ):
     power = _power_from_form(has_power, power_peak_w, power_nominal_w)
+    accessories = _accessories_from_form(await request.form(), db)
     data = EquipmentModelCreate(
         category_id=category_id,
         name=name,
@@ -728,6 +872,7 @@ async def model_create(
         packing=_packing_from_form(
             has_packing, packing_type, empty_weight_kg, p_length, p_width, p_height, capacity
         ),
+        accessories=accessories,
         **power,
     )
     model = eq_service.create_model(db, data)
@@ -789,6 +934,7 @@ def model_edit(
             "page_title": f"Редактирование: {model.name}",
             "model": model,
             "categories": cat_service.list_categories(db),
+            "accessory_categories": acc_service.list_accessory_categories(db),
             "AccountingType": AccountingType,
             "PackingType": PackingType,
         },
@@ -833,6 +979,7 @@ async def model_update(
     if model is None:
         return redirect("/inventory")
     power = _power_from_form(has_power, power_peak_w, power_nominal_w)
+    accessories = _accessories_from_form(await request.form(), db)
     data = EquipmentModelUpdate(
         category_id=category_id,
         name=name,
@@ -851,6 +998,7 @@ async def model_update(
         packing=_packing_from_form(
             has_packing, packing_type, empty_weight_kg, p_length, p_width, p_height, capacity
         ),
+        accessories=accessories,
         **power,
     )
     eq_service.update_model(db, model, data)
