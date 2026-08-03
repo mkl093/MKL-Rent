@@ -559,24 +559,38 @@ class AccessoryGroup:
 def accessory_totals(db: Session, packing: PackingList) -> list[AccessoryGroup]:
     """Живой подсчёт аксессуаров комплектации по packing-листу.
 
-    Для каждой строки-модели: количество аксессуара × факт строки. Суммируется по
-    всему листу и группируется по категориям справочника. Комплекты и дополнительные
-    позиции не разворачиваются (структура «Комплект» — отдельно)."""
+    Для строки-модели: количество аксессуара × факт строки. Для строки-комплекта —
+    аксессуары моделей каждой единицы содержимого × факт. Суммируется по всему листу
+    и группируется по категориям справочника. Дополнительные позиции — без аксессуаров.
+    """
     agg: dict[int, int] = {}
     meta: dict[int, tuple[str, str, int]] = {}  # accessory_id -> (категория, имя, sort)
+
+    def _add(model: EquipmentModel | None, mult: int) -> None:
+        if model is None or mult <= 0:
+            return
+        for ma in model.accessories:
+            acc = ma.accessory
+            agg[acc.id] = agg.get(acc.id, 0) + mult * ma.quantity
+            meta[acc.id] = (acc.category.name, acc.name, acc.sort_order)
+
     for line in packing.lines:
-        if line.is_custom or line.kit_id is not None or line.model_id is None:
+        if line.is_custom:
             continue
         fact = line.fact_quantity
         if fact <= 0:
             continue
-        model = db.get(EquipmentModel, line.model_id)
-        if model is None:
+        if line.kit_id is not None:
+            kit = kit_service.get_kit(db, line.kit_id)
+            if kit is None:
+                continue
+            # Аксессуары моделей единиц внутри комплекта (структура «Комплект»).
+            for item in kit.items:
+                _add(item.model, fact)
             continue
-        for ma in model.accessories:
-            acc = ma.accessory
-            agg[acc.id] = agg.get(acc.id, 0) + fact * ma.quantity
-            meta[acc.id] = (acc.category.name, acc.name, acc.sort_order)
+        if line.model_id is None:
+            continue
+        _add(db.get(EquipmentModel, line.model_id), fact)
 
     by_cat: dict[str, list[tuple[str, int, int]]] = {}
     for accessory_id, qty in agg.items():

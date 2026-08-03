@@ -8,8 +8,10 @@ import pytest
 from app.estimates import service as est_service
 from app.inventory.enums import AccountingType, ItemStatus, PackingType
 from app.inventory.schemas import (
+    AccessoryQty,
     EquipmentItemInput,
     EquipmentModelCreate,
+    KitInput,
     PackingRuleInput,
 )
 from app.inventory.services import categories as cat_service
@@ -118,6 +120,36 @@ def test_accessory_totals_live(env):
     cats = [g.category_name for g in groups]
     assert cats == ["Питание", "Такелаж"]  # категории по алфавиту
     assert next(g for g in groups if g.category_name == "Питание").total == 20
+
+
+def test_accessory_totals_includes_kit_contents(env):
+    db, project, _, serial_model = env
+    from app.inventory.services import accessories as acc_service
+    from app.inventory.services import kits as kit_service
+
+    power = acc_service.create_category(db, "Питание")
+    cable = acc_service.create_accessory(db, power, "PowerCon")
+    lamp = eq_service.create_model(
+        db,
+        EquipmentModelCreate(
+            category_id=serial_model.category_id,
+            name="Прожектор",
+            accounting_type=AccountingType.SERIAL,
+            accessories=[AccessoryQty(accessory_id=cable.id, quantity=2)],
+        ),
+    )
+    i1 = item_service.create_item(db, lamp, EquipmentItemInput(barcode="L1"), user_id=None)
+    i2 = item_service.create_item(db, lamp, EquipmentItemInput(barcode="L2"), user_id=None)
+    kit = kit_service.create_kit(db, KitInput(name="Кейс"))
+    kit_service.add_items(db, kit, [i1.id, i2.id])
+
+    packing = service.create_from_estimate(db, project)
+    service.add_kit(db, packing, kit)
+
+    groups = service.accessory_totals(db, packing)
+    flat = {name: qty for g in groups for name, qty in g.items}
+    # 2 единицы в комплекте × 2 шт аксессуара на модель = 4
+    assert flat.get("PowerCon") == 4
 
 
 def test_cannot_create_twice(env):
