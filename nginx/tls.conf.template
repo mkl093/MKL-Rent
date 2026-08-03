@@ -33,6 +33,11 @@ server {
     server_tokens off;
     client_max_body_size 12m;
 
+    # Docker DNS: динамический резолвинг апстрима web (см. http.conf.template) —
+    # чтобы после пересоздания web nginx не отдавал 502 из-за устаревшего IP.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $upstream http://web:8000;
+
     ssl_certificate     /etc/letsencrypt/live/${SERVER_NAME}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${SERVER_NAME}/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -48,12 +53,12 @@ server {
     }
 
     location /static/ {
-        proxy_pass http://web:8000;
+        proxy_pass $upstream;
         proxy_set_header Host $host;
     }
 
     location / {
-        proxy_pass http://web:8000;
+        proxy_pass $upstream;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
