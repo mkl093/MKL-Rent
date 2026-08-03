@@ -205,6 +205,21 @@
       </table>
     </div></div>
 
+    {% if accessories %}
+    <div class="card mb-3"><div class="card-header">Аксессуары (комплектация)</div><div class="card-body p-0">
+      <table class="table table-sm mb-0 align-middle">
+        <tbody>
+          {% for g in accessories %}
+          <tr class="table-light"><td class="fw-semibold" colspan="2">{{ g.category_name }}</td></tr>
+          {% for name, qty in g.items %}
+          <tr><td>{{ name }}</td><td class="text-end" style="width:6rem">{{ qty }} шт.</td></tr>
+          {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+    {% endif %}
+
     {% if editable %}
     <div class="card"><div class="card-header">Изменить статус комплектации</div><div class="card-body">
       <form method="post" action="{{ base }}/status">

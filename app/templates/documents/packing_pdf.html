@@ -116,6 +116,20 @@
     </tbody>
   </table>
 
+  {% if accessories %}
+  <table class="items" style="width:auto; margin-top:10px">
+    <thead><tr><th>{{ L.accessory }}</th><th class="num">{{ L.qty }}</th></tr></thead>
+    <tbody>
+      {% for g in accessories %}
+      <tr class="cat"><td colspan="2">{{ g.category_name }}</td></tr>
+      {% for name, qty in g.items %}
+      <tr><td>{{ name }}</td><td class="num">{{ qty }}</td></tr>
+      {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
   <div class="totals">
     {{ L.total_weight }}: {{ fmt_weight(totals.total_weight) }} ·
     {{ L.total_volume }}: {{ fmt_volume(totals.total_volume) }} ·

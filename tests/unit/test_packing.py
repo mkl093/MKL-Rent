@@ -96,6 +96,30 @@ def test_create_from_estimate(env):
     assert serial_line.fact_quantity == 0  # экземпляры назначаются позже
 
 
+def test_accessory_totals_live(env):
+    db, project, qty_model, serial_model = env
+    from app.inventory.models import EquipmentModelAccessory
+    from app.inventory.services import accessories as acc_service
+
+    power = acc_service.create_category(db, "Питание")
+    cable = acc_service.create_accessory(db, power, "PowerCon")
+    rig = acc_service.create_category(db, "Такелаж")
+    clamp = acc_service.create_accessory(db, rig, "Клемп")
+    # qty_model: факт = план = 10 (см. фикстуру env)
+    qty_model.accessories.append(EquipmentModelAccessory(accessory_id=cable.id, quantity=2))
+    qty_model.accessories.append(EquipmentModelAccessory(accessory_id=clamp.id, quantity=1))
+    db.commit()
+
+    packing = service.create_from_estimate(db, project)
+    groups = service.accessory_totals(db, packing)
+    # Группировка по категориям + суммирование факт × кол-во в комплектации.
+    flat = {name: qty for g in groups for name, qty in g.items}
+    assert flat == {"PowerCon": 20, "Клемп": 10}
+    cats = [g.category_name for g in groups]
+    assert cats == ["Питание", "Такелаж"]  # категории по алфавиту
+    assert next(g for g in groups if g.category_name == "Питание").total == 20
+
+
 def test_cannot_create_twice(env):
     db, project, *_ = env
     service.create_from_estimate(db, project)

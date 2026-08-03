@@ -24,7 +24,7 @@ from app.documents.models import GeneratedDocument
 from app.estimates.service import get_or_create_estimate, grouped_lines
 from app.estimates.service import totals as estimate_totals
 from app.packing.calc import compute_category_breakdown, compute_line, compute_totals
-from app.packing.service import get_packing
+from app.packing.service import accessory_totals, get_packing
 from app.projects.models import Project
 from app.settings.service import get_company_settings
 
@@ -87,6 +87,8 @@ LABELS = {
         "total_power_peak": "Энергопотребление пиковое",
         "total_power_nominal": "Энергопотребление номинальное",
         "breakdown": "Итоги по категориям",
+        "accessories": "Аксессуары (комплектация)",
+        "accessory": "Аксессуар",
     },
     "en": {
         "estimate": "Estimate",
@@ -131,6 +133,8 @@ LABELS = {
         "total_power_peak": "Total peak power",
         "total_power_nominal": "Total nominal power",
         "breakdown": "Totals by category",
+        "accessories": "Accessories (kit)",
+        "accessory": "Accessory",
     },
     "de": {
         "estimate": "Angebot",
@@ -175,6 +179,8 @@ LABELS = {
         "total_power_peak": "Gesamt-Spitzenleistung",
         "total_power_nominal": "Gesamt-Nennleistung",
         "breakdown": "Summen nach Kategorie",
+        "accessories": "Zubehör (Bestückung)",
+        "accessory": "Zubehör",
     },
 }
 
@@ -288,6 +294,7 @@ def _packing_render(
     rows = [(ln, compute_line(ln)) for ln in ordered]
     totals = compute_totals(packing.lines)
     breakdown = compute_category_breakdown(packing.lines)
+    accessories = accessory_totals(db, packing)
 
     # Перечень комплектации для строк-комплектов (структура «Комплект»).
     from app.inventory.services import kits as kit_service
@@ -311,6 +318,7 @@ def _packing_render(
                 str(project.returned_date),
             ],
             "packing": [packing.number, packing.status.value, packing.shortage_comment],
+            "accessories": [[g.category_name, g.items] for g in accessories],
             "lines": [
                 [
                     ln.name,
@@ -343,6 +351,7 @@ def _packing_render(
         rows=rows,
         totals=totals,
         breakdown=breakdown,
+        accessories=accessories,
         kit_content=kit_content,
         generated_at=utcnow(),
         logo_uri=_logo_uri(company),

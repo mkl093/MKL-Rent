@@ -547,5 +547,54 @@ def category_breakdown(db: Session, packing: PackingList) -> list[CategoryTotal]
     return compute_category_breakdown(packing.lines)
 
 
+@dataclass
+class AccessoryGroup:
+    """Аксессуары одной категории с суммарными количествами (для packing-листа)."""
+
+    category_name: str
+    items: list[tuple[str, int]]  # (название аксессуара, суммарное количество)
+    total: int
+
+
+def accessory_totals(db: Session, packing: PackingList) -> list[AccessoryGroup]:
+    """Живой подсчёт аксессуаров комплектации по packing-листу.
+
+    Для каждой строки-модели: количество аксессуара × факт строки. Суммируется по
+    всему листу и группируется по категориям справочника. Комплекты и дополнительные
+    позиции не разворачиваются (структура «Комплект» — отдельно)."""
+    agg: dict[int, int] = {}
+    meta: dict[int, tuple[str, str, int]] = {}  # accessory_id -> (категория, имя, sort)
+    for line in packing.lines:
+        if line.is_custom or line.kit_id is not None or line.model_id is None:
+            continue
+        fact = line.fact_quantity
+        if fact <= 0:
+            continue
+        model = db.get(EquipmentModel, line.model_id)
+        if model is None:
+            continue
+        for ma in model.accessories:
+            acc = ma.accessory
+            agg[acc.id] = agg.get(acc.id, 0) + fact * ma.quantity
+            meta[acc.id] = (acc.category.name, acc.name, acc.sort_order)
+
+    by_cat: dict[str, list[tuple[str, int, int]]] = {}
+    for accessory_id, qty in agg.items():
+        category_name, name, sort = meta[accessory_id]
+        by_cat.setdefault(category_name, []).append((name, qty, sort))
+
+    groups: list[AccessoryGroup] = []
+    for category_name in sorted(by_cat):
+        items = sorted(by_cat[category_name], key=lambda t: (t[2], t[0]))
+        groups.append(
+            AccessoryGroup(
+                category_name=category_name,
+                items=[(name, qty) for name, qty, _ in items],
+                total=sum(qty for _, qty, _ in items),
+            )
+        )
+    return groups
+
+
 def project_has_packing(db: Session, project_id: int) -> bool:
     return db.scalar(select(PackingList.id).where(PackingList.project_id == project_id)) is not None
