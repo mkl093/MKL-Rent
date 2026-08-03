@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
@@ -84,6 +86,85 @@ def create_item(
         raise DuplicateBarcode("Штрих-код уже используется") from exc
     db.refresh(item)
     return item
+
+
+def barcode_sequence(start: str, count: int) -> list[str]:
+    """Последовательные штрих-коды по стартовому образцу.
+
+    Числовой суффикс инкрементируется с сохранением ширины (ведущие нули):
+    ``NVPRO_001`` при count=10 → ``NVPRO_001`` … ``NVPRO_010``.
+    Если в конце образца нет цифр — к нему добавляется числовой суффикс 1..count.
+    Ширина растёт естественно при переполнении (``099`` → ``100``).
+    """
+    start = start.strip()
+    match = re.search(r"(\d+)$", start)
+    if match:
+        prefix = start[: match.start()]
+        first = int(match.group(1))
+        width = len(match.group(1))
+    else:
+        prefix = start
+        first = 1
+        width = len(str(count))
+    return [f"{prefix}{str(first + i).zfill(width)}" for i in range(count)]
+
+
+def create_items_bulk(
+    db: Session,
+    model: EquipmentModel,
+    count: int,
+    start_barcode: str | None,
+    user_id: int | None,
+    comment: str | None = None,
+) -> list[EquipmentItem]:
+    """Массово создать N единиц. При заданном стартовом штрих-коде — с генерацией
+    последовательных штрих-кодов; иначе — без штрих-кодов (ТЗ §8.2, §21.1, §38)."""
+    count = max(1, count)
+    start = (start_barcode or "").strip()
+    barcodes: list[str | None]
+    if start:
+        barcodes = list(barcode_sequence(start, count))
+        taken = set(
+            db.execute(
+                select(EquipmentItem.barcode).where(EquipmentItem.barcode.in_(barcodes))
+            )
+            .scalars()
+            .all()
+        )
+        if taken:
+            raise DuplicateBarcode(
+                "Штрих-коды уже используются: " + ", ".join(sorted(taken))
+            )
+    else:
+        barcodes = [None] * count
+
+    items: list[EquipmentItem] = []
+    for bc in barcodes:
+        item = EquipmentItem(
+            model_id=model.id,
+            barcode=bc,
+            status=ItemStatus.ACTIVE,
+            comment=(comment or None),
+        )
+        item.status_history.append(
+            EquipmentStatusHistory(
+                changed_at=utcnow(),
+                user_id=user_id,
+                old_status=None,
+                new_status=ItemStatus.ACTIVE,
+                comment="Создание единицы",
+            )
+        )
+        db.add(item)
+        items.append(item)
+    try:
+        db.commit()
+    except IntegrityError as exc:  # гонка на уникальном индексе (ТЗ §38)
+        db.rollback()
+        raise DuplicateBarcode("Штрих-код уже используется") from exc
+    for item in items:
+        db.refresh(item)
+    return items
 
 
 def create_units(db: Session, model: EquipmentModel, count: int) -> int:

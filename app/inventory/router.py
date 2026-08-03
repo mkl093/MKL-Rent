@@ -977,24 +977,34 @@ def item_create(
     serial_number: str | None = Form(None),
     inventory_number: str | None = Form(None),
     comment: str | None = Form(None),
+    quantity: str = Form("1"),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
     model = eq_service.get_model(db, model_id)
     if model:
+        qty = max(1, _int(quantity, 1))
         try:
-            item_service.create_item(
-                db,
-                model,
-                EquipmentItemInput(
-                    barcode=_str(barcode),
-                    serial_number=_str(serial_number),
-                    inventory_number=_str(inventory_number),
-                    comment=_str(comment),
-                ),
-                user.id,
-            )
-            flash(request, "Единица добавлена.", "success")
+            if qty == 1:
+                item_service.create_item(
+                    db,
+                    model,
+                    EquipmentItemInput(
+                        barcode=_str(barcode),
+                        serial_number=_str(serial_number),
+                        inventory_number=_str(inventory_number),
+                        comment=_str(comment),
+                    ),
+                    user.id,
+                )
+                flash(request, "Единица добавлена.", "success")
+            else:
+                # Массовое добавление с генерацией последовательных штрих-кодов
+                # от стартового образца (напр. NVPRO_001 → NVPRO_010).
+                created = item_service.create_items_bulk(
+                    db, model, qty, _str(barcode), user.id, comment=_str(comment)
+                )
+                flash(request, f"Добавлено единиц: {len(created)}.", "success")
         except item_service.InventoryError as exc:
             flash(request, str(exc), "danger")
     return redirect(f"/inventory/models/{model_id}")

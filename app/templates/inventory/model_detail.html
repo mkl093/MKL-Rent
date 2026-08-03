@@ -72,20 +72,32 @@
     </span>
   </div>
   <div class="card-body">
-    <form method="post" action="/inventory/models/{{ model.id }}/items" class="row g-2 mb-2">
+    <form method="post" action="/inventory/models/{{ model.id }}/items" class="row g-2 mb-1">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="col-12 col-md-3">
+        <label class="form-label small mb-0">Штрих-код / стартовый</label>
         <div class="input-group">
-          <input class="form-control" id="add-barcode" name="barcode" placeholder="Штрих-код (необязательно)">
+          <input class="form-control" id="add-barcode" name="barcode" placeholder="напр. NVPRO_001">
           <button class="btn btn-outline-secondary" type="button"
                   data-scan-target="add-barcode" data-scan-reader="add-barcode-reader"
                   data-label="📷" title="Сканировать камерой">📷</button>
         </div>
       </div>
-      <div class="col-6 col-md-3"><input class="form-control" name="serial_number" placeholder="Серийный №"></div>
-      <div class="col-6 col-md-3"><input class="form-control" name="inventory_number" placeholder="Инв. №"></div>
-      <div class="col-12 col-md-3"><button class="btn btn-primary w-100">Добавить единицу</button></div>
+      <div class="col-6 col-md-1">
+        <label class="form-label small mb-0">Кол-во</label>
+        <input class="form-control" name="quantity" inputmode="numeric" value="1">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-0">Серийный №</label>
+        <input class="form-control" name="serial_number" placeholder="Серийный №">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-0">Инв. №</label>
+        <input class="form-control" name="inventory_number" placeholder="Инв. №">
+      </div>
+      <div class="col-6 col-md-4 d-flex align-items-end"><button class="btn btn-primary w-100">Добавить единицу</button></div>
     </form>
+    <div class="form-text mb-2">При количестве больше 1 штрих-коды генерируются последовательно от стартового (напр. <code>NVPRO_001</code> → <code>NVPRO_010</code>). Серийный и инвентарный № применяются только при добавлении одной единицы.</div>
     <div id="add-barcode-reader" class="mb-3" style="display:none;max-width:360px"></div>
     {% if items %}
     <div class="table-responsive">

@@ -138,6 +138,43 @@ def test_create_item_sets_active_and_history(db_session, category):
     assert len(item.status_history) == 1
 
 
+def test_barcode_sequence_padded():
+    assert item_service.barcode_sequence("NVPRO_001", 10) == [
+        f"NVPRO_{i:03d}" for i in range(1, 11)
+    ]
+
+
+def test_barcode_sequence_width_overflow():
+    # 099 → 100: ширина растёт естественно при переполнении
+    assert item_service.barcode_sequence("A099", 3) == ["A099", "A100", "A101"]
+
+
+def test_barcode_sequence_no_trailing_digits():
+    assert item_service.barcode_sequence("CAM", 3) == ["CAM1", "CAM2", "CAM3"]
+
+
+def test_create_items_bulk_sequential(db_session, category):
+    model = _serial_model(db_session, category)
+    created = item_service.create_items_bulk(db_session, model, 10, "NVPRO_001", user_id=None)
+    codes = sorted(it.barcode for it in created)
+    assert codes == [f"NVPRO_{i:03d}" for i in range(1, 11)]
+    assert all(it.status == ItemStatus.ACTIVE for it in created)
+
+
+def test_create_items_bulk_detects_existing(db_session, category):
+    model = _serial_model(db_session, category)
+    item_service.create_item(db_session, model, EquipmentItemInput(barcode="NVPRO_003"), user_id=None)
+    with pytest.raises(item_service.DuplicateBarcode):
+        item_service.create_items_bulk(db_session, model, 5, "NVPRO_001", user_id=None)
+
+
+def test_create_items_bulk_without_barcode(db_session, category):
+    model = _serial_model(db_session, category)
+    created = item_service.create_items_bulk(db_session, model, 4, None, user_id=None)
+    assert len(created) == 4
+    assert all(it.barcode is None for it in created)
+
+
 def test_duplicate_barcode_rejected(db_session, category):
     model = _serial_model(db_session, category)
     item_service.create_item(db_session, model, EquipmentItemInput(barcode="DUP"), user_id=None)
