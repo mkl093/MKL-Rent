@@ -92,6 +92,11 @@ class PackingLine(Base):
     width_mm: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     height_mm: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
+    # Снимок энергопотребления модели (Вт). Учитывается в итогах packing-листа.
+    has_power: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    power_peak_w: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    power_nominal_w: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
     # Снимки правила упаковки (ТЗ §12, §18).
     has_packing: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     pack_capacity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)

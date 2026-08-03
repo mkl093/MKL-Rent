@@ -88,9 +88,39 @@
   <div class="shortage">{{ L.shortage }}: {{ packing.shortage_comment }}</div>
   {% endif %}
 
+  <table class="items" style="width:auto; margin-top:10px">
+    <thead><tr>
+      <th>{{ L.category }}</th>
+      <th class="num">{{ L.weight }}</th>
+      <th class="num">{{ L.volume }}</th>
+      <th class="num">{{ L.power_peak }}</th>
+      <th class="num">{{ L.power_nominal }}</th>
+    </tr></thead>
+    <tbody>
+      {% for b in breakdown %}
+      <tr>
+        <td>{{ b.category_name }}</td>
+        <td class="num">{{ fmt_weight(b.total_weight) }}</td>
+        <td class="num">{{ fmt_volume(b.total_volume) }}</td>
+        <td class="num">{{ fmt_power(b.power_peak_w) }}</td>
+        <td class="num">{{ fmt_power(b.power_nominal_w) }}</td>
+      </tr>
+      {% endfor %}
+      <tr class="cat">
+        <td>{{ L.grand_total }}</td>
+        <td class="num">{{ fmt_weight(totals.total_weight) }}</td>
+        <td class="num">{{ fmt_volume(totals.total_volume) }}</td>
+        <td class="num">{{ fmt_power(totals.total_power_peak_w) }}</td>
+        <td class="num">{{ fmt_power(totals.total_power_nominal_w) }}</td>
+      </tr>
+    </tbody>
+  </table>
+
   <div class="totals">
     {{ L.total_weight }}: {{ fmt_weight(totals.total_weight) }} ·
-    {{ L.total_volume }}: {{ fmt_volume(totals.total_volume) }}
+    {{ L.total_volume }}: {{ fmt_volume(totals.total_volume) }} ·
+    {{ L.total_power_peak }}: {{ fmt_power(totals.total_power_peak_w) }} ·
+    {{ L.total_power_nominal }}: {{ fmt_power(totals.total_power_nominal_w) }}
   </div>
   {% if company.pdf_footer %}<div class="footer">{{ company.pdf_footer }}</div>{% endif %}
 </body>

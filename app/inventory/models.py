@@ -98,7 +98,13 @@ class EquipmentModel(Base, TimestampMixin):
         ForeignKey("subcategories.id"), nullable=True, index=True
     )
     manufacturer: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    country_of_origin: Mapped[str | None] = mapped_column(String(255), nullable=True)
     internal_sku: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # Энергопотребление (опционально). При has_power оба значения обязательны.
+    has_power: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    power_peak_w: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    power_nominal_w: Mapped[int | None] = mapped_column(Integer, nullable=True)
     photo_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)

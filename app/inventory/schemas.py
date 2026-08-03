@@ -4,9 +4,30 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.inventory.enums import AccountingType, KitWeightMode, PackingType
+
+
+class PowerMixin(BaseModel):
+    """Общая логика энергопотребления модели.
+
+    При has_power оба значения (пиковое и номинальное) обязательны; иначе — обнуляются.
+    """
+
+    has_power: bool = False
+    power_peak_w: int | None = Field(default=None, ge=0)
+    power_nominal_w: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _check_power(self):
+        if self.has_power:
+            if self.power_peak_w is None or self.power_nominal_w is None:
+                raise ValueError("Укажите пиковое и номинальное энергопотребление")
+        else:
+            self.power_peak_w = None
+            self.power_nominal_w = None
+        return self
 
 
 class PackingRuleInput(BaseModel):
@@ -18,7 +39,7 @@ class PackingRuleInput(BaseModel):
     capacity: int = Field(default=1, ge=1)
 
 
-class EquipmentModelCreate(BaseModel):
+class EquipmentModelCreate(PowerMixin):
     category_id: int
     name: str = Field(min_length=1, max_length=255)
     accounting_type: AccountingType
@@ -31,6 +52,7 @@ class EquipmentModelCreate(BaseModel):
 
     subcategory_id: int | None = None
     manufacturer: str | None = Field(default=None, max_length=255)
+    country_of_origin: str | None = Field(default=None, max_length=255)
     internal_sku: str | None = Field(default=None, max_length=100)
     description: str | None = None
     note: str | None = None
@@ -38,7 +60,7 @@ class EquipmentModelCreate(BaseModel):
     packing: PackingRuleInput | None = None
 
 
-class EquipmentModelUpdate(BaseModel):
+class EquipmentModelUpdate(PowerMixin):
     """Обновление модели. Тип учёта не входит — он неизменяем (ТЗ §7.3)."""
 
     category_id: int
@@ -52,6 +74,7 @@ class EquipmentModelUpdate(BaseModel):
 
     subcategory_id: int | None = None
     manufacturer: str | None = Field(default=None, max_length=255)
+    country_of_origin: str | None = Field(default=None, max_length=255)
     internal_sku: str | None = Field(default=None, max_length=100)
     description: str | None = None
     note: str | None = None

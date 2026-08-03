@@ -129,6 +129,7 @@ def packing_page(
             "available": available,
             "kit_content": kit_content,
             "totals": service.totals(db, packing),
+            "breakdown": service.category_breakdown(db, packing),
             "discrepancies": service.discrepancies(db, project, packing),
             "undercomplete": service.is_undercomplete(packing),
             "editable": editable,

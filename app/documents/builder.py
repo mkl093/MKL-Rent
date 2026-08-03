@@ -23,7 +23,7 @@ from app.documents.enums import DocumentType, Language
 from app.documents.models import GeneratedDocument
 from app.estimates.service import get_or_create_estimate, grouped_lines
 from app.estimates.service import totals as estimate_totals
-from app.packing.calc import compute_line, compute_totals
+from app.packing.calc import compute_category_breakdown, compute_line, compute_totals
 from app.packing.service import get_packing
 from app.projects.models import Project
 from app.settings.service import get_company_settings
@@ -82,6 +82,11 @@ LABELS = {
         "shortage": "Причина недокомплекта",
         "total_weight": "Общий вес",
         "total_volume": "Общий объём",
+        "power_peak": "Энергопотр. пик.",
+        "power_nominal": "Энергопотр. ном.",
+        "total_power_peak": "Энергопотребление пиковое",
+        "total_power_nominal": "Энергопотребление номинальное",
+        "breakdown": "Итоги по категориям",
     },
     "en": {
         "estimate": "Estimate",
@@ -121,6 +126,11 @@ LABELS = {
         "shortage": "Shortage reason",
         "total_weight": "Total weight",
         "total_volume": "Total volume",
+        "power_peak": "Peak power",
+        "power_nominal": "Nom. power",
+        "total_power_peak": "Total peak power",
+        "total_power_nominal": "Total nominal power",
+        "breakdown": "Totals by category",
     },
     "de": {
         "estimate": "Angebot",
@@ -160,6 +170,11 @@ LABELS = {
         "shortage": "Fehlmengengrund",
         "total_weight": "Gesamtgewicht",
         "total_volume": "Gesamtvolumen",
+        "power_peak": "Spitzenleist.",
+        "power_nominal": "Nennleist.",
+        "total_power_peak": "Gesamt-Spitzenleistung",
+        "total_power_nominal": "Gesamt-Nennleistung",
+        "breakdown": "Summen nach Kategorie",
     },
 }
 
@@ -181,6 +196,7 @@ def _l10n_helpers(lang: str) -> dict:
         "fmt_money": lambda v: l10n.format_money(v, lang),
         "fmt_weight": lambda v: l10n.format_weight(v, lang),
         "fmt_volume": lambda v: l10n.format_volume(v, lang),
+        "fmt_power": lambda v: l10n.format_power(v, lang),
         "fmt_percent": lambda v: l10n.format_percent(v, lang),
         "L": LABELS[lang],
         "lang": lang,
@@ -271,6 +287,7 @@ def _packing_render(
     )
     rows = [(ln, compute_line(ln)) for ln in ordered]
     totals = compute_totals(packing.lines)
+    breakdown = compute_category_breakdown(packing.lines)
 
     # Перечень комплектации для строк-комплектов (структура «Комплект»).
     from app.inventory.services import kits as kit_service
@@ -304,6 +321,9 @@ def _packing_render(
                     ln.length_mm,
                     ln.width_mm,
                     ln.height_mm,
+                    ln.has_power,
+                    ln.power_peak_w,
+                    ln.power_nominal_w,
                     sorted(si.barcode for si in ln.serial_items),
                     [
                         [g.model_name, [it.barcode or it.serial_number or "" for it in g.items]]
@@ -322,6 +342,7 @@ def _packing_render(
         packing=packing,
         rows=rows,
         totals=totals,
+        breakdown=breakdown,
         kit_content=kit_content,
         generated_at=utcnow(),
         logo_uri=_logo_uri(company),

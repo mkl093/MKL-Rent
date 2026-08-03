@@ -93,6 +93,19 @@ def _today() -> date:
     return to_local(utcnow()).date()
 
 
+def _power_from_form(
+    has_power: str | None, power_peak_w: str | None, power_nominal_w: str | None
+) -> dict:
+    """Поля энергопотребления из формы. При выключенной опции значения обнуляются."""
+    if not has_power:
+        return {"has_power": False, "power_peak_w": None, "power_nominal_w": None}
+    return {
+        "has_power": True,
+        "power_peak_w": _int(power_peak_w),
+        "power_nominal_w": _int(power_nominal_w),
+    }
+
+
 def _packing_from_form(
     has_packing: str | None,
     packing_type: str | None,
@@ -677,9 +690,13 @@ async def model_create(
     total_quantity: str = Form("0"),
     subcategory_id: str | None = Form(None),
     manufacturer: str | None = Form(None),
+    country_of_origin: str | None = Form(None),
     internal_sku: str | None = Form(None),
     description: str | None = Form(None),
     note: str | None = Form(None),
+    has_power: str | None = Form(None),
+    power_peak_w: str | None = Form(None),
+    power_nominal_w: str | None = Form(None),
     has_packing: str | None = Form(None),
     packing_type: str | None = Form(None),
     empty_weight_kg: str | None = Form(None),
@@ -691,6 +708,7 @@ async def model_create(
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
+    power = _power_from_form(has_power, power_peak_w, power_nominal_w)
     data = EquipmentModelCreate(
         category_id=category_id,
         name=name,
@@ -703,12 +721,14 @@ async def model_create(
         total_quantity=_int(total_quantity),
         subcategory_id=_opt_id(subcategory_id),
         manufacturer=_str(manufacturer),
+        country_of_origin=_str(country_of_origin),
         internal_sku=_str(internal_sku),
         description=_str(description),
         note=_str(note),
         packing=_packing_from_form(
             has_packing, packing_type, empty_weight_kg, p_length, p_width, p_height, capacity
         ),
+        **power,
     )
     model = eq_service.create_model(db, data)
     await _maybe_save_photo(request, db, model, photo)
@@ -791,9 +811,13 @@ async def model_update(
     total_quantity: str = Form("0"),
     subcategory_id: str | None = Form(None),
     manufacturer: str | None = Form(None),
+    country_of_origin: str | None = Form(None),
     internal_sku: str | None = Form(None),
     description: str | None = Form(None),
     note: str | None = Form(None),
+    has_power: str | None = Form(None),
+    power_peak_w: str | None = Form(None),
+    power_nominal_w: str | None = Form(None),
     has_packing: str | None = Form(None),
     packing_type: str | None = Form(None),
     empty_weight_kg: str | None = Form(None),
@@ -808,6 +832,7 @@ async def model_update(
     model = eq_service.get_model(db, model_id)
     if model is None:
         return redirect("/inventory")
+    power = _power_from_form(has_power, power_peak_w, power_nominal_w)
     data = EquipmentModelUpdate(
         category_id=category_id,
         name=name,
@@ -819,12 +844,14 @@ async def model_update(
         total_quantity=_int(total_quantity),
         subcategory_id=_opt_id(subcategory_id),
         manufacturer=_str(manufacturer),
+        country_of_origin=_str(country_of_origin),
         internal_sku=_str(internal_sku),
         description=_str(description),
         note=_str(note),
         packing=_packing_from_form(
             has_packing, packing_type, empty_weight_kg, p_length, p_width, p_height, capacity
         ),
+        **power,
     )
     eq_service.update_model(db, model, data)
     await _maybe_save_photo(request, db, model, photo)

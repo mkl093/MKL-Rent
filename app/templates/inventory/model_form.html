@@ -78,6 +78,10 @@
       <input class="form-control" id="manufacturer" name="manufacturer" value="{{ model.manufacturer or '' if editing else '' }}">
     </div>
     <div class="col-6 col-md-3">
+      <label class="form-label" for="country_of_origin">Страна-производитель</label>
+      <input class="form-control" id="country_of_origin" name="country_of_origin" value="{{ model.country_of_origin or '' if editing else '' }}">
+    </div>
+    <div class="col-6 col-md-3">
       <label class="form-label" for="internal_sku">Внутренний артикул</label>
       <input class="form-control" id="internal_sku" name="internal_sku" value="{{ model.internal_sku or '' if editing else '' }}">
     </div>
@@ -95,6 +99,25 @@
       <label class="form-label" for="photo">Фото (JPG/PNG/WebP, до 10 МБ)</label>
       <input class="form-control" id="photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp">
       {% if editing and model.photo_path %}<div class="form-text">Текущее фото будет заменено при загрузке нового.</div>{% endif %}
+    </div>
+  </div>
+
+  <hr>
+  <div class="form-check mb-2">
+    <input class="form-check-input" type="checkbox" id="has_power" name="has_power" value="1"
+           {% if editing and model.has_power %}checked{% endif %} onchange="togglePower()">
+    <label class="form-check-label" for="has_power">Есть энергопотребление</label>
+  </div>
+  <div id="power-fields" class="row g-3 mb-2">
+    <div class="col-6 col-md-3">
+      <label class="form-label" for="power_peak_w">Электропотребление пиковое, Вт *</label>
+      <input class="form-control" id="power_peak_w" name="power_peak_w" inputmode="numeric"
+             value="{{ model.power_peak_w if editing and model.power_peak_w is not none else '' }}">
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label" for="power_nominal_w">Электропотребление номинальное, Вт *</label>
+      <input class="form-control" id="power_nominal_w" name="power_nominal_w" inputmode="numeric"
+             value="{{ model.power_nominal_w if editing and model.power_nominal_w is not none else '' }}">
     </div>
   </div>
 
@@ -166,12 +189,18 @@
     document.getElementById('packing-fields').style.display =
       document.getElementById('has_packing').checked ? '' : 'none';
   }
+  function togglePower() {
+    const on = document.getElementById('has_power').checked;
+    document.getElementById('power-fields').style.display = on ? '' : 'none';
+    document.getElementById('power_peak_w').required = on;
+    document.getElementById('power_nominal_w').required = on;
+  }
   function toggleQty() {
     const el = document.getElementById('accounting_type');
     const isQty = !el || el.value === 'quantity';
     document.getElementById('qty-wrap').style.display = isQty ? '' : 'none';
   }
   document.getElementById('category_id').addEventListener('change', fillSubcats);
-  fillSubcats(); togglePacking(); toggleQty();
+  fillSubcats(); togglePacking(); togglePower(); toggleQty();
 </script>
 {% endblock %}

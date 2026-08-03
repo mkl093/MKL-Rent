@@ -93,6 +93,12 @@ def format_volume(value: Decimal, lang: str) -> str:
     return f"{_decimal_str(value, 3, lang)} {unit}"
 
 
+def format_power(value: int, lang: str) -> str:
+    unit = "Вт" if lang == "ru" else "W"
+    sep = "." if lang == "de" else (" " if lang == "ru" else ",")
+    return f"{_group(str(int(value)), sep)} {unit}"
+
+
 def format_percent(value: Decimal, lang: str) -> str:
     # Целое если без дробной части, иначе один знак.
     sep = " " if lang == "de" else ""  # немецкая типографика: «19 %»

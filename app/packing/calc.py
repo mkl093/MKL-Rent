@@ -49,6 +49,8 @@ class LineCalc:
     equipment_volume: Decimal  # объём оборудования без упаковки
     package_volume: Decimal  # внешний объём кейсов/рэков
     total_volume: Decimal
+    power_peak_w: int  # суммарное пиковое энергопотребление строки (факт × единица)
+    power_nominal_w: int  # суммарное номинальное энергопотребление строки
 
     @property
     def missing(self) -> int:
@@ -81,6 +83,9 @@ def compute_line(line: PackingLine) -> LineCalc:
     equip_volume = Decimal(unpacked) * unit_vol
     package_volume = Decimal(pkgs) * pack_unit_vol
 
+    peak_w = fact * line.power_peak_w if line.has_power else 0
+    nominal_w = fact * line.power_nominal_w if line.has_power else 0
+
     return LineCalc(
         planned=line.planned_quantity,
         fact=fact,
@@ -93,6 +98,8 @@ def compute_line(line: PackingLine) -> LineCalc:
         equipment_volume=volume(equip_volume),
         package_volume=volume(package_volume),
         total_volume=volume(equip_volume + package_volume),
+        power_peak_w=peak_w,
+        power_nominal_w=nominal_w,
     )
 
 
@@ -100,14 +107,71 @@ def compute_line(line: PackingLine) -> LineCalc:
 class PackingTotals:
     total_weight: Decimal
     total_volume: Decimal
+    total_power_peak_w: int
+    total_power_nominal_w: int
 
 
 def compute_totals(lines: list[PackingLine]) -> PackingTotals:
-    """Итоговые вес и объём проекта (ТЗ §19, §20)."""
+    """Итоговые вес, объём и энергопотребление проекта (ТЗ §19, §20)."""
     tw = Decimal("0")
     tv = Decimal("0")
+    peak = 0
+    nominal = 0
     for line in lines:
         c = compute_line(line)
         tw += c.total_weight
         tv += c.total_volume
-    return PackingTotals(total_weight=weight(tw), total_volume=volume(tv))
+        peak += c.power_peak_w
+        nominal += c.power_nominal_w
+    return PackingTotals(
+        total_weight=weight(tw),
+        total_volume=volume(tv),
+        total_power_peak_w=peak,
+        total_power_nominal_w=nominal,
+    )
+
+
+@dataclass
+class CategoryTotal:
+    """Итоги по одной категории packing-листа (разбивка по категориям)."""
+
+    category_name: str
+    total_weight: Decimal
+    total_volume: Decimal
+    power_peak_w: int
+    power_nominal_w: int
+
+
+def compute_category_breakdown(lines: list[PackingLine]) -> list[CategoryTotal]:
+    """Разбивка веса, объёма и энергопотребления по категориям.
+
+    Дополнительные позиции (без категории) собираются в группу «Дополнительно».
+    Порядок групп — по первому появлению строки, как при выводе документа.
+    """
+    order: list[str] = []
+    acc: dict[str, dict] = {}
+    for line in lines:
+        key = "Дополнительно" if line.is_custom else (line.category_name or "Без категории")
+        if key not in acc:
+            order.append(key)
+            acc[key] = {
+                "weight": Decimal("0"),
+                "volume": Decimal("0"),
+                "peak": 0,
+                "nominal": 0,
+            }
+        c = compute_line(line)
+        acc[key]["weight"] += c.total_weight
+        acc[key]["volume"] += c.total_volume
+        acc[key]["peak"] += c.power_peak_w
+        acc[key]["nominal"] += c.power_nominal_w
+    return [
+        CategoryTotal(
+            category_name=key,
+            total_weight=weight(acc[key]["weight"]),
+            total_volume=volume(acc[key]["volume"]),
+            power_peak_w=acc[key]["peak"],
+            power_nominal_w=acc[key]["nominal"],
+        )
+        for key in order
+    ]

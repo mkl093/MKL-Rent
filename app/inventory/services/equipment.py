@@ -66,9 +66,13 @@ def create_model(db: Session, data: EquipmentModelCreate) -> EquipmentModel:
         else 0,
         subcategory_id=data.subcategory_id,
         manufacturer=(data.manufacturer or None),
+        country_of_origin=(data.country_of_origin or None),
         internal_sku=(data.internal_sku or None),
         description=(data.description or None),
         note=(data.note or None),
+        has_power=data.has_power,
+        power_peak_w=data.power_peak_w,
+        power_nominal_w=data.power_nominal_w,
     )
     _apply_packing(model, data.packing)
     db.add(model)
@@ -94,9 +98,13 @@ def update_model(db: Session, model: EquipmentModel, data: EquipmentModelUpdate)
     model.base_price_eur = data.base_price_eur
     model.subcategory_id = data.subcategory_id
     model.manufacturer = data.manufacturer or None
+    model.country_of_origin = data.country_of_origin or None
     model.internal_sku = data.internal_sku or None
     model.description = data.description or None
     model.note = data.note or None
+    model.has_power = data.has_power
+    model.power_peak_w = data.power_peak_w
+    model.power_nominal_w = data.power_nominal_w
     # Остаток (число единиц) меняется отдельной операцией с историей (ТЗ §10),
     # поэтому total_quantity при редактировании модели не трогаем.
     _apply_packing(model, data.packing)

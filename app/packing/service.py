@@ -15,7 +15,12 @@ from app.inventory.models import EquipmentItem, EquipmentModel, Kit
 from app.inventory.services import kits as kit_service
 from app.numbering.models import DocType
 from app.numbering.service import next_number
-from app.packing.calc import PackingTotals, compute_totals
+from app.packing.calc import (
+    CategoryTotal,
+    PackingTotals,
+    compute_category_breakdown,
+    compute_totals,
+)
 from app.packing.enums import PackingStatus
 from app.packing.models import PackingLine, PackingList, PackingSerialItem
 from app.packing.schemas import CustomPackingLine
@@ -118,6 +123,9 @@ def _new_line_from_model(model: EquipmentModel, planned: int, sort_order: int) -
         length_mm=model.length_mm,
         width_mm=model.width_mm,
         height_mm=model.height_mm,
+        has_power=model.has_power,
+        power_peak_w=model.power_peak_w or 0,
+        power_nominal_w=model.power_nominal_w or 0,
         has_packing=pk is not None,
         pack_capacity=pk.capacity if pk else 1,
         pack_empty_weight_kg=pk.empty_weight_kg if pk else 0,
@@ -532,6 +540,11 @@ def set_status(
 
 def totals(db: Session, packing: PackingList) -> PackingTotals:
     return compute_totals(packing.lines)
+
+
+def category_breakdown(db: Session, packing: PackingList) -> list[CategoryTotal]:
+    """Разбивка веса/объёма/энергопотребления по категориям (для packing-листа)."""
+    return compute_category_breakdown(packing.lines)
 
 
 def project_has_packing(db: Session, project_id: int) -> bool:

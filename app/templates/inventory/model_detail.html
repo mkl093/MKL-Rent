@@ -43,7 +43,12 @@
         <dt class="col-5 col-sm-3">Тип учёта</dt><dd class="col-7 col-sm-9">{{ model.accounting_type.label }}</dd>
         <dt class="col-5 col-sm-3">Остаток (свободно)</dt><dd class="col-7 col-sm-9">{{ stock }}{% if in_kits %} <span class="text-secondary">· в комплектах: {{ in_kits }}</span>{% endif %}</dd>
         <dt class="col-5 col-sm-3">Производитель</dt><dd class="col-7 col-sm-9">{{ model.manufacturer or "—" }}</dd>
+        <dt class="col-5 col-sm-3">Страна-производитель</dt><dd class="col-7 col-sm-9">{{ model.country_of_origin or "—" }}</dd>
         <dt class="col-5 col-sm-3">Артикул</dt><dd class="col-7 col-sm-9">{{ model.internal_sku or "—" }}</dd>
+        {% if model.has_power %}
+        <dt class="col-5 col-sm-3">Энергопотребление</dt>
+        <dd class="col-7 col-sm-9">пиковое {{ model.power_peak_w }} Вт · номинальное {{ model.power_nominal_w }} Вт</dd>
+        {% endif %}
         <dt class="col-5 col-sm-3">Цена аренды</dt><dd class="col-7 col-sm-9">{{ "%.2f"|format(model.base_price_eur) }} €</dd>
         <dt class="col-5 col-sm-3">Вес единицы</dt><dd class="col-7 col-sm-9">{{ model.weight_kg }} кг</dd>
         <dt class="col-5 col-sm-3">Габариты</dt><dd class="col-7 col-sm-9">{{ model.length_mm }}×{{ model.width_mm }}×{{ model.height_mm }} мм</dd>

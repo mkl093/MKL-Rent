@@ -174,6 +174,35 @@
     <div class="card mb-3"><div class="card-header">Итоги</div><div class="card-body">
       <div class="d-flex justify-content-between"><span>Общий вес</span><b>{{ "%.1f"|format(totals.total_weight) }} кг</b></div>
       <div class="d-flex justify-content-between"><span>Общий объём</span><b>{{ "%.3f"|format(totals.total_volume) }} м³</b></div>
+      <div class="d-flex justify-content-between"><span>Энергопотребление пиковое</span><b>{{ totals.total_power_peak_w }} Вт</b></div>
+      <div class="d-flex justify-content-between"><span>Энергопотребление номинальное</span><b>{{ totals.total_power_nominal_w }} Вт</b></div>
+    </div></div>
+
+    <div class="card mb-3"><div class="card-header">Итоги по категориям</div><div class="card-body p-0">
+      <table class="table table-sm mb-0 align-middle">
+        <thead><tr>
+          <th>Категория</th><th class="text-end">Вес, кг</th><th class="text-end">Объём, м³</th>
+          <th class="text-end">Пик, Вт</th><th class="text-end">Ном., Вт</th>
+        </tr></thead>
+        <tbody>
+          {% for b in breakdown %}
+          <tr>
+            <td>{{ b.category_name }}</td>
+            <td class="text-end">{{ "%.1f"|format(b.total_weight) }}</td>
+            <td class="text-end">{{ "%.3f"|format(b.total_volume) }}</td>
+            <td class="text-end">{{ b.power_peak_w }}</td>
+            <td class="text-end">{{ b.power_nominal_w }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot><tr class="fw-semibold border-top">
+          <td>Итого</td>
+          <td class="text-end">{{ "%.1f"|format(totals.total_weight) }}</td>
+          <td class="text-end">{{ "%.3f"|format(totals.total_volume) }}</td>
+          <td class="text-end">{{ totals.total_power_peak_w }}</td>
+          <td class="text-end">{{ totals.total_power_nominal_w }}</td>
+        </tr></tfoot>
+      </table>
     </div></div>
 
     {% if editable %}
