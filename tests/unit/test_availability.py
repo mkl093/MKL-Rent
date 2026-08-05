@@ -142,3 +142,31 @@ def test_defect_item_is_unavailable(db_session):
     assert a.total == 3
     assert a.unavailable_by_status == 1
     assert a.available == 2
+
+
+def test_defect_item_usable_despite_defect_counts_as_available(db_session):
+    """Дефектная единица, отмеченная «использовать несмотря на дефект», доступна."""
+    cat = cat_service.create_category(db_session, "Свет")
+    m = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id, name="Прожектор", accounting_type=AccountingType.SERIAL
+        ),
+    )
+    for bc in ("E1", "E2", "E3"):
+        item_service.create_item(db_session, m, EquipmentItemInput(barcode=bc), user_id=None)
+    items = item_service.list_items(db_session, m.id)
+    item_service.change_status(
+        db_session, items[0], ItemStatus.DEFECT, user_id=None, comment="косметическая царапина"
+    )
+    item_service.set_usable_despite_defect(db_session, items[0], True)
+
+    a = compute_availability(db_session, m, date(2026, 7, 1), date(2026, 7, 5), required=3)
+    assert a.total == 3
+    assert a.unavailable_by_status == 0
+    assert a.available == 3
+
+    # Смена статуса сбрасывает флаг — новый дефект по умолчанию недоступен.
+    item_service.change_status(db_session, items[0], ItemStatus.ACTIVE, user_id=None)
+    item_service.change_status(db_session, items[0], ItemStatus.DEFECT, user_id=None)
+    assert items[0].usable_despite_defect is False

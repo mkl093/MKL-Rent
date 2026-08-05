@@ -65,6 +65,16 @@ def test_scan_blocked(env):
     assert service.scan(db, packing, "A1").result == SerialResult.BLOCKED
 
 
+def test_scan_defect_usable_despite_defect_not_blocked(env):
+    """Дефектная единица с отметкой «использовать несмотря на дефект» сканируется."""
+    db, packing, model = env
+    item = item_service.find_by_barcode(db, "A1")
+    item_service.change_status(db, item, ItemStatus.DEFECT, user_id=None)
+    assert service.scan(db, packing, "A1").result == SerialResult.BLOCKED
+    item_service.set_usable_despite_defect(db, item, True)
+    assert service.scan(db, packing, "A1").result == SerialResult.OK
+
+
 def test_scan_wrong_model_not_in_packing(env):
     db, packing, model = env
     other = eq_service.create_model(

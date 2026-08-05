@@ -96,6 +96,7 @@ def create_model(db: Session, data: EquipmentModelCreate) -> EquipmentModel:
         internal_sku=(data.internal_sku or None),
         description=(data.description or None),
         note=(data.note or None),
+        storage_location=(data.storage_location or None),
         has_power=data.has_power,
         power_peak_w=data.power_peak_w,
         power_nominal_w=data.power_nominal_w,
@@ -129,6 +130,7 @@ def update_model(db: Session, model: EquipmentModel, data: EquipmentModelUpdate)
     model.internal_sku = data.internal_sku or None
     model.description = data.description or None
     model.note = data.note or None
+    model.storage_location = data.storage_location or None
     model.has_power = data.has_power
     model.power_peak_w = data.power_peak_w
     model.power_nominal_w = data.power_nominal_w

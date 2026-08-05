@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.estimates.service import get_estimate
-from app.inventory.enums import AccountingType, ItemStatus
+from app.inventory.enums import AccountingType
 from app.inventory.models import EquipmentItem, EquipmentModel, Kit
 from app.inventory.services import kits as kit_service
 from app.numbering.models import DocType
@@ -339,7 +339,7 @@ def add_serial_item(
         return SerialResult.NOT_FOUND
     if item.model_id != line.model_id:
         return SerialResult.WRONG_MODEL
-    if item.status != ItemStatus.ACTIVE:
+    if not item.is_usable:
         return SerialResult.BLOCKED
     if any(si.item_id == item.id for si in line.serial_items):
         return SerialResult.DUPLICATE
@@ -403,7 +403,7 @@ def scan(
     if line is None:
         return ScanOutcome(SerialResult.WRONG_MODEL, barcode, model_name=item.model.name)
 
-    if item.status != ItemStatus.ACTIVE:
+    if not item.is_usable:
         return ScanOutcome(
             SerialResult.BLOCKED,
             barcode,

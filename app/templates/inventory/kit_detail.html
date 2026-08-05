@@ -41,6 +41,11 @@
              value="{{ kit.weight_value if kit.weight_value is not none else '' }}"
              placeholder="для «+ упаковки» и «фиксированного»">
     </div>
+    <div class="col-12 col-md-9">
+      <label class="form-label small mb-0">Расположение на складе</label>
+      <input class="form-control" name="storage_location" value="{{ kit.storage_location or '' }}"
+             placeholder="напр. Стеллаж А3, полка 2">
+    </div>
     <div class="col-4 col-md-3"><button class="btn btn-outline-primary w-100">Сохранить</button></div>
     <div class="col-12">
       <span class="small text-secondary">
@@ -69,7 +74,7 @@
             <tr>
               <td>{% if it.barcode %}<code>{{ it.barcode }}</code>{% else %}<span class="text-secondary">без штрих-кода</span>{% endif %}</td>
               <td>{{ it.serial_number or "" }}</td>
-              <td><span class="badge text-bg-{{ it.status.badge }}">{{ it.status.label }}</span></td>
+              <td><span class="badge text-bg-{{ it.status.badge }}">{{ it.status.label }}</span>{% if it.status == ItemStatus.DEFECT and it.usable_despite_defect %} <span class="badge text-bg-success" title="Используется несмотря на дефект">используется</span>{% endif %}</td>
               <td class="text-end">
                 <form method="post" action="/inventory/kits/{{ kit.id }}/items/{{ it.id }}/remove" class="m-0 d-inline">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

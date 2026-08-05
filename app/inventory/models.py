@@ -100,6 +100,9 @@ class EquipmentModel(Base, TimestampMixin):
     manufacturer: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     country_of_origin: Mapped[str | None] = mapped_column(String(255), nullable=True)
     internal_sku: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Расположение на складе — свободный текст, задаётся вручную. В packing-лист
+    # и смету не выводится (справочная информация только для склада).
+    storage_location: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Энергопотребление (опционально). При has_power оба значения обязательны.
     has_power: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -182,6 +185,9 @@ class Kit(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     photo_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Расположение на складе — свободный текст, задаётся вручную. В packing-лист
+    # и смету не выводится (справочная информация только для склада).
+    storage_location: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Настройка веса для packing (необязательная). weight_value интерпретируется
     # по weight_mode: содержимое / содержимое+упаковка / фиксированный общий вес.
@@ -217,6 +223,11 @@ class EquipmentItem(Base, TimestampMixin):
     inventory_number: Mapped[str | None] = mapped_column(String(255), nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Разрешение использовать экземпляр со статусом «Есть дефект» несмотря на
+    # дефект (напр. косметический, не влияющий на работу). Значимо только при
+    # status == DEFECT; при уходе со статуса сбрасывается (см. change_status).
+    usable_despite_defect: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     # Комплект, в который помещена единица (структура «Комплект»). Пока задан —
     # единица исключена из свободного стока модели (см. availability/stock).
     kit_id: Mapped[int | None] = mapped_column(
@@ -230,6 +241,14 @@ class EquipmentItem(Base, TimestampMixin):
         cascade="all, delete-orphan",
         order_by="EquipmentStatusHistory.changed_at.desc()",
     )
+
+    @property
+    def is_usable(self) -> bool:
+        """Можно ли использовать единицу (аренда/паковка): активна, либо дефект
+        отмечен как допустимый к использованию (usable_despite_defect)."""
+        if self.status == ItemStatus.ACTIVE:
+            return True
+        return self.status == ItemStatus.DEFECT and self.usable_despite_defect
 
 
 class EquipmentStatusHistory(Base):

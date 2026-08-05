@@ -64,12 +64,12 @@ class ItemStatus(enum.StrEnum):
 
     @property
     def is_available(self) -> bool:
-        """Доступна ли единица к аренде (не в ремонте/с дефектом/списана)."""
+        """Доступна ли единица к аренде по одному статусу (без учёта исключений).
+
+        Для DEFECT единица может быть отмечена доступной несмотря на дефект —
+        см. EquipmentItem.is_usable, который учитывает это исключение.
+        """
         return self == ItemStatus.ACTIVE
-
-
-# Статусы, делающие единицу недоступной по состоянию (ТЗ §9, §15).
-UNAVAILABLE_STATUSES = [ItemStatus.REPAIR, ItemStatus.DEFECT, ItemStatus.RETIRED]
 
 
 class KitWeightMode(enum.StrEnum):

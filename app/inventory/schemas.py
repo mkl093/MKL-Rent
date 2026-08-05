@@ -63,6 +63,7 @@ class EquipmentModelCreate(PowerMixin):
     internal_sku: str | None = Field(default=None, max_length=100)
     description: str | None = None
     note: str | None = None
+    storage_location: str | None = Field(default=None, max_length=255)
 
     packing: PackingRuleInput | None = None
     accessories: list[AccessoryQty] = Field(default_factory=list)
@@ -86,6 +87,7 @@ class EquipmentModelUpdate(PowerMixin):
     internal_sku: str | None = Field(default=None, max_length=100)
     description: str | None = None
     note: str | None = None
+    storage_location: str | None = Field(default=None, max_length=255)
 
     packing: PackingRuleInput | None = None
     accessories: list[AccessoryQty] = Field(default_factory=list)
@@ -105,3 +107,4 @@ class KitInput(BaseModel):
     description: str | None = None
     weight_mode: KitWeightMode = KitWeightMode.CONTENT
     weight_value: Decimal | None = Field(default=None, ge=0)
+    storage_location: str | None = Field(default=None, max_length=255)

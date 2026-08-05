@@ -12,7 +12,7 @@ from datetime import date, timedelta
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.inventory.enums import UNAVAILABLE_STATUSES
+from app.inventory.enums import ItemStatus
 from app.inventory.models import EquipmentItem, EquipmentModel
 from app.projects.enums import ProjectStatus
 from app.projects.models import Project, ProjectReservation
@@ -79,6 +79,18 @@ def _total_stock(db: Session, model: EquipmentModel) -> int:
     )
 
 
+def _unavailable_clause():
+    """Единица недоступна по статусу: в ремонте/списана, либо с дефектом без
+    отметки «использовать несмотря на дефект» (см. EquipmentItem.is_usable)."""
+    return or_(
+        EquipmentItem.status.in_([ItemStatus.REPAIR, ItemStatus.RETIRED]),
+        and_(
+            EquipmentItem.status == ItemStatus.DEFECT,
+            EquipmentItem.usable_despite_defect.is_(False),
+        ),
+    )
+
+
 def _unavailable_by_status(db: Session, model: EquipmentModel) -> int:
     """Свободные единицы, недоступные по статусу (в ремонте/с дефектом/списаны)."""
     return (
@@ -88,7 +100,7 @@ def _unavailable_by_status(db: Session, model: EquipmentModel) -> int:
             .where(
                 EquipmentItem.model_id == model.id,
                 EquipmentItem.kit_id.is_(None),
-                EquipmentItem.status.in_(UNAVAILABLE_STATUSES),
+                _unavailable_clause(),
             )
         )
         or 0
@@ -301,7 +313,7 @@ def _count_by_model(db: Session, model_ids: list[int], *, only_unavailable: bool
         .group_by(EquipmentItem.model_id)
     )
     if only_unavailable:
-        stmt = stmt.where(EquipmentItem.status.in_(UNAVAILABLE_STATUSES))
+        stmt = stmt.where(_unavailable_clause())
     return {mid: cnt for mid, cnt in db.execute(stmt).all()}
 
 

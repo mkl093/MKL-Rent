@@ -94,6 +94,13 @@
       <label class="form-label" for="note">Примечание</label>
       <textarea class="form-control" id="note" name="note" rows="2">{{ model.note or '' if editing else '' }}</textarea>
     </div>
+    <div class="col-12 col-md-6">
+      <label class="form-label" for="storage_location">Расположение на складе</label>
+      <input class="form-control" id="storage_location" name="storage_location"
+             placeholder="напр. Стеллаж А3, полка 2"
+             value="{{ model.storage_location or '' if editing else '' }}">
+      <div class="form-text">Только для внутреннего учёта — в packing-лист и смету не выводится.</div>
+    </div>
 
     <div class="col-12">
       <label class="form-label" for="photo">Фото (JPG/PNG/WebP, до 10 МБ)</label>
@@ -109,12 +116,12 @@
     <label class="form-check-label" for="has_power">Есть энергопотребление</label>
   </div>
   <div id="power-fields" class="row g-3 mb-2">
-    <div class="col-6 col-md-3">
+    <div class="col-12 col-md-6">
       <label class="form-label" for="power_peak_w">Электропотребление пиковое, Вт *</label>
       <input class="form-control" id="power_peak_w" name="power_peak_w" inputmode="numeric"
              value="{{ model.power_peak_w if editing and model.power_peak_w is not none else '' }}">
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-12 col-md-6">
       <label class="form-label" for="power_nominal_w">Электропотребление номинальное, Вт *</label>
       <input class="form-control" id="power_nominal_w" name="power_nominal_w" inputmode="numeric"
              value="{{ model.power_nominal_w if editing and model.power_nominal_w is not none else '' }}">

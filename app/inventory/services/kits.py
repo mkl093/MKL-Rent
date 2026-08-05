@@ -56,6 +56,7 @@ def create_kit(db: Session, data: KitInput) -> Kit:
         description=(data.description or None),
         weight_mode=data.weight_mode,
         weight_value=_weight_value_for(data),
+        storage_location=(data.storage_location or None),
     )
     db.add(kit)
     db.commit()
@@ -68,6 +69,7 @@ def update_kit(db: Session, kit: Kit, data: KitInput) -> Kit:
     kit.description = data.description or None
     kit.weight_mode = data.weight_mode
     kit.weight_value = _weight_value_for(data)
+    kit.storage_location = data.storage_location or None
     db.commit()
     db.refresh(kit)
     return kit

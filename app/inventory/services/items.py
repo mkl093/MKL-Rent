@@ -210,6 +210,10 @@ def change_status(
         return item
     old = item.status
     item.status = new_status
+    # Разрешение «использовать несмотря на дефект» значимо только при DEFECT —
+    # при любой смене статуса сбрасываем, чтобы новый дефект по умолчанию
+    # считался недоступным, пока его явно не отметят как допустимый.
+    item.usable_despite_defect = False
     item.status_history.append(
         EquipmentStatusHistory(
             changed_at=utcnow(),
@@ -219,6 +223,20 @@ def change_status(
             comment=(comment or None),
         )
     )
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+def set_usable_despite_defect(db: Session, item: EquipmentItem, value: bool) -> EquipmentItem:
+    """Пометить дефектный экземпляр как пригодный к использованию несмотря на дефект.
+
+    Значимо только при статусе «Есть дефект» — вне его игнорируется, т.к.
+    флаг не влияет на доступность при других статусах (см. EquipmentItem.is_usable).
+    """
+    if item.status != ItemStatus.DEFECT:
+        return item
+    item.usable_despite_defect = value
     db.commit()
     db.refresh(item)
     return item

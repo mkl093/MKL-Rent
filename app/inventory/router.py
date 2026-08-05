@@ -65,7 +65,11 @@ def _opt_id(value: str | None) -> int | None:
 
 
 def _kit_input(
-    name: str, description: str | None, weight_mode: str | None, weight_value: str | None
+    name: str,
+    description: str | None,
+    weight_mode: str | None,
+    weight_value: str | None,
+    storage_location: str | None = None,
 ) -> KitInput:
     """Собрать данные комплекта из формы (вес — необязателен)."""
     try:
@@ -78,6 +82,7 @@ def _kit_input(
         description=_str(description),
         weight_mode=mode,
         weight_value=_dec(raw) if raw else None,
+        storage_location=_str(storage_location),
     )
 
 
@@ -396,13 +401,16 @@ def kit_create(
     description: str | None = Form(None),
     weight_mode: str | None = Form(None),
     weight_value: str | None = Form(None),
+    storage_location: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
     if not _str(name):
         flash(request, "Укажите название комплекта.", "danger")
         return redirect("/inventory/kits")
-    kit = kit_service.create_kit(db, _kit_input(name, description, weight_mode, weight_value))
+    kit = kit_service.create_kit(
+        db, _kit_input(name, description, weight_mode, weight_value, storage_location)
+    )
     audit_log(
         db,
         user,
@@ -451,12 +459,15 @@ def kit_update(
     description: str | None = Form(None),
     weight_mode: str | None = Form(None),
     weight_value: str | None = Form(None),
+    storage_location: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
     kit = kit_service.get_kit(db, kit_id)
     if kit and _str(name):
-        kit_service.update_kit(db, kit, _kit_input(name, description, weight_mode, weight_value))
+        kit_service.update_kit(
+            db, kit, _kit_input(name, description, weight_mode, weight_value, storage_location)
+        )
         flash(request, "Комплект сохранён.", "success")
     return redirect(f"/inventory/kits/{kit_id}")
 
@@ -837,6 +848,7 @@ async def model_create(
     internal_sku: str | None = Form(None),
     description: str | None = Form(None),
     note: str | None = Form(None),
+    storage_location: str | None = Form(None),
     has_power: str | None = Form(None),
     power_peak_w: str | None = Form(None),
     power_nominal_w: str | None = Form(None),
@@ -869,6 +881,7 @@ async def model_create(
         internal_sku=_str(internal_sku),
         description=_str(description),
         note=_str(note),
+        storage_location=_str(storage_location),
         packing=_packing_from_form(
             has_packing, packing_type, empty_weight_kg, p_length, p_width, p_height, capacity
         ),
@@ -961,6 +974,7 @@ async def model_update(
     internal_sku: str | None = Form(None),
     description: str | None = Form(None),
     note: str | None = Form(None),
+    storage_location: str | None = Form(None),
     has_power: str | None = Form(None),
     power_peak_w: str | None = Form(None),
     power_nominal_w: str | None = Form(None),
@@ -995,6 +1009,7 @@ async def model_update(
         internal_sku=_str(internal_sku),
         description=_str(description),
         note=_str(note),
+        storage_location=_str(storage_location),
         packing=_packing_from_form(
             has_packing, packing_type, empty_weight_kg, p_length, p_width, p_height, capacity
         ),
@@ -1232,6 +1247,32 @@ def item_status(
             new_value=item.status.label,
         )
         flash(request, "Статус изменён.", "success")
+    return redirect(f"/inventory/items/{item_id}")
+
+
+@router.post("/items/{item_id}/usable-despite-defect", dependencies=[Depends(verify_csrf)])
+def item_usable_despite_defect(
+    request: Request,
+    item_id: int,
+    usable: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    """Отметить дефектный экземпляр как пригодный к использованию несмотря на дефект."""
+    item = item_service.get_item(db, item_id)
+    if item and item.status == ItemStatus.DEFECT:
+        value = bool(usable)
+        item_service.set_usable_despite_defect(db, item, value)
+        audit_log(
+            db,
+            user,
+            EventType.INVENTORY_ITEM_STATUS,
+            f"Экземпляр {item.barcode}: "
+            + ("отмечен доступным несмотря на дефект" if value else "снята отметка использования при дефекте"),
+            object_type="equipment_item",
+            object_id=item.id,
+        )
+        flash(request, "Сохранено.", "success")
     return redirect(f"/inventory/items/{item_id}")
 
 
