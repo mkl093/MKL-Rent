@@ -6,7 +6,7 @@
 отмечена как пригодная к использованию несмотря на дефект и тогда числится
 доступной (см. app/inventory/models.py::EquipmentItem.is_usable).
 
-Revision ID: 0016_storage_location_defect_usable
+Revision ID: 0016_location_defect_usable
 Revises: 0015_accessories
 Create Date: 2026-08-05
 """
@@ -17,7 +17,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0016_storage_location_defect_usable"
+revision: str = "0016_location_defect_usable"
 down_revision: str | None = "0015_accessories"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
