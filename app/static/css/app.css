@@ -11,3 +11,41 @@ body {
     padding-bottom: 0.6rem;
   }
 }
+
+/* Сканер штрих-кода (app/static/js/barcode-scan.js).
+ * video без явной высоты — рендерится с нативным aspect-ratio потока,
+ * без искажений и без object-fit: подмена ширины/высоты при повороте
+ * устройства не создаёт временного расхождения. */
+.mkl-scan-container {
+  position: relative;
+  max-width: 480px;
+}
+.mkl-scan-container--compact {
+  max-width: 360px;
+}
+.mkl-scan-video {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: #000;
+  border-radius: 4px;
+}
+.mkl-scan-guide {
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  top: 35%;
+  height: 30%;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+.mkl-scan-torch {
+  margin-top: 0.5rem;
+  margin-right: 0.5rem;
+}
+.mkl-scan-zoom {
+  display: block;
+  margin-top: 0.5rem;
+}

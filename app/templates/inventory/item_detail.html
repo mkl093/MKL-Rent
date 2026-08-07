@@ -46,7 +46,7 @@
                     data-scan-target="edit-barcode" data-scan-reader="edit-barcode-reader"
                     data-label="📷" title="Сканировать камерой">📷</button>
           </div>
-          <div id="edit-barcode-reader" class="mt-2" style="display:none;max-width:360px"></div></div>
+          <div id="edit-barcode-reader" class="mkl-scan-container mkl-scan-container--compact mt-2" style="display:none"></div></div>
         <div class="col-6"><label class="form-label small">Серийный №</label>
           <input class="form-control" name="serial_number" value="{{ item.serial_number or '' }}"></div>
         <div class="col-6"><label class="form-label small">Инвентарный №</label>
@@ -87,7 +87,9 @@
     </div>
   </div>
 </div>
+{% endblock %}
 
-<script src="{{ static_url('vendor/html5-qrcode.min.js') }}"></script>
+{% block scripts %}
+<script src="{{ static_url('vendor/zxing.min.js') }}"></script>
 <script src="{{ static_url('js/barcode-scan.js') }}"></script>
 {% endblock %}

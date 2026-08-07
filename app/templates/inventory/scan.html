@@ -13,44 +13,90 @@
     </div>
     <div class="col-auto"><button class="btn btn-primary btn-lg" type="submit">Найти</button></div>
     <div class="col-auto"><button class="btn btn-outline-secondary btn-lg" type="button" id="camToggle">Камера</button></div>
+    <div class="col-auto">
+      <button class="btn btn-outline-secondary btn-lg" type="button" id="photoBtn">Снять фото</button>
+      <input type="file" accept="image/*" capture="environment" id="photoInput" class="d-none">
+    </div>
   </div>
-  <div id="reader" class="mt-2" style="max-width:480px"></div>
-  <div id="camHint" class="form-text d-none">Наведите камеру на штрих-код. Камера доступна только по HTTPS или на localhost.</div>
+  <div id="reader" class="mkl-scan-container mt-2"></div>
+  <div id="camHint" class="form-text d-none">Наведите камеру на штрих-код, держите телефон на расстоянии ~15-20 см — вплотную камера не сфокусируется.</div>
+  <div class="form-text">Если камера в браузере не фокусируется — «Снять фото» передаёт кадр штатному приложению камеры (с зумом и автофокусом).</div>
 </form>
 
 {% if not_found %}
   <div class="alert alert-warning">Экземпляр со штрих-кодом <code>{{ barcode }}</code> не найден.</div>
 {% endif %}
+{% endblock %}
 
-<script src="{{ static_url('vendor/html5-qrcode.min.js') }}"></script>
+{% block scripts %}
+<script src="{{ static_url('vendor/zxing.min.js') }}"></script>
 <script src="{{ static_url('js/barcode-scan.js') }}"></script>
 <script>
 (function () {
   const form = document.getElementById("searchForm");
   const input = document.getElementById("barcode");
+  const reader = document.getElementById("reader");
   const camBtn = document.getElementById("camToggle");
   const hint = document.getElementById("camHint");
   let scanner = null, camOn = false, submitted = false;
 
+  function resetUi() {
+    scanner = null; camOn = false;
+    camBtn.textContent = "Камера";
+    hint.classList.add("d-none");
+  }
+
   camBtn.addEventListener("click", async () => {
     if (!camOn) {
       hint.classList.remove("d-none");
-      scanner = window.MklScan.newScanner("reader");
+      hint.textContent = "Наведите камеру на штрих-код, держите телефон на расстоянии ~15-20 см — вплотную камера не сфокусируется.";
       try {
-        await scanner.start({ facingMode: "environment" }, window.MklScan.startConfig(), (text) => {
-          if (submitted) return;
-          submitted = true;
-          input.value = (text || "").trim();
-          scanner.stop().catch(() => {}).finally(() => form.submit());
-        }, () => {});
+        scanner = await window.MklScan.start(reader, {
+          formats: ["code_128", "code_39", "code_93", "codabar", "itf", "ean_13", "ean_8", "upc_a", "upc_e"],
+          onDecode: (text) => {
+            if (submitted) return;
+            submitted = true;
+            input.value = text;
+            scanner.stop();
+            form.submit();
+          },
+          onEnded: resetUi,
+        });
         camOn = true; camBtn.textContent = "Выключить камеру";
       } catch (e) {
-        hint.textContent = "Камера недоступна. Нужен HTTPS (см. python -m scripts.make_cert) или ввод вручную.";
+        resetUi();
+        hint.textContent = (e && e.message) || "Камера недоступна. Нужен HTTPS (см. python -m scripts.make_cert) или ввод вручную.";
       }
     } else {
-      try { await scanner.stop(); } catch (e) {}
-      camOn = false; camBtn.textContent = "Камера";
-      hint.classList.add("d-none");
+      if (scanner) scanner.stop();
+      resetUi();
+    }
+  });
+
+  const photoBtn = document.getElementById("photoBtn");
+  const photoInput = document.getElementById("photoInput");
+  photoBtn.addEventListener("click", () => photoInput.click());
+  photoInput.addEventListener("change", async () => {
+    const file = photoInput.files[0];
+    photoInput.value = "";
+    if (!file || submitted) return;
+    photoBtn.disabled = true;
+    photoBtn.textContent = "Распознаём…";
+    try {
+      const text = await window.MklScan.decodeFile(file, [
+        "code_128", "code_39", "code_93", "codabar", "itf", "ean_13", "ean_8", "upc_a", "upc_e",
+      ]);
+      if (text) {
+        submitted = true;
+        input.value = text;
+        form.submit();
+      } else {
+        hint.classList.remove("d-none");
+        hint.textContent = "Не удалось распознать штрих-код на фото. Попробуйте снова или введите вручную.";
+      }
+    } finally {
+      photoBtn.disabled = false;
+      photoBtn.textContent = "Снять фото";
     }
   });
 })();

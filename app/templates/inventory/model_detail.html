@@ -105,7 +105,7 @@
       <div class="col-6 col-md-4 d-flex align-items-end"><button class="btn btn-primary w-100">Добавить единицу</button></div>
     </form>
     <div class="form-text mb-2">При количестве больше 1 штрих-коды генерируются последовательно от стартового (напр. <code>NVPRO_001</code> → <code>NVPRO_010</code>). Серийный и инвентарный № применяются только при добавлении одной единицы.</div>
-    <div id="add-barcode-reader" class="mb-3" style="display:none;max-width:360px"></div>
+    <div id="add-barcode-reader" class="mkl-scan-container mkl-scan-container--compact mb-3" style="display:none"></div>
     {% if items %}
     <div class="table-responsive">
       <table class="table table-sm table-hover align-middle">
@@ -170,7 +170,9 @@
   </div>
 </div>
 {% endif %}
+{% endblock %}
 
-<script src="{{ static_url('vendor/html5-qrcode.min.js') }}"></script>
+{% block scripts %}
+<script src="{{ static_url('vendor/zxing.min.js') }}"></script>
 <script src="{{ static_url('js/barcode-scan.js') }}"></script>
 {% endblock %}

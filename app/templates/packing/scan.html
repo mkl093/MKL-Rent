@@ -23,7 +23,7 @@
 {# Крупное визуальное подтверждение (ТЗ §22) #}
 <div id="banner" class="alert alert-secondary text-center py-4 mb-2" role="status" aria-live="assertive">
   <div class="fs-4 fw-bold" id="bannerTitle">Готов к сканированию</div>
-  <div id="bannerSub" class="small text-secondary">Наведите камеру или введите штрих-код сканером</div>
+  <div id="bannerSub" class="small text-secondary">Наведите камеру (держите телефон на расстоянии ~15-20 см от кода) или введите штрих-код сканером</div>
 </div>
 
 {% if editable %}
@@ -36,16 +36,20 @@
   </div>
 </form>
 
-<div class="d-flex gap-2 mb-2">
+<div class="d-flex gap-2 mb-2 flex-wrap">
   <button class="btn btn-outline-secondary" id="camToggle" type="button">Включить камеру</button>
+  <button class="btn btn-outline-secondary" id="photoBtn" type="button">Снять фото</button>
+  <input type="file" accept="image/*" capture="environment" id="photoInput" class="d-none">
   <button class="btn btn-outline-danger" id="undoBtn" type="button">Отменить последнее</button>
 </div>
-<div id="reader" class="mb-3" style="max-width:480px"></div>
+<div id="reader" class="mkl-scan-container mb-3"></div>
 {% else %}
 <div class="alert alert-info">Проект в архиве — сканирование недоступно.</div>
 {% endif %}
+{% endblock %}
 
-<script src="{{ static_url('vendor/html5-qrcode.min.js') }}"></script>
+{% block scripts %}
+<script src="{{ static_url('vendor/zxing.min.js') }}"></script>
 <script src="{{ static_url('js/barcode-scan.js') }}"></script>
 <script>
 (function () {
@@ -89,12 +93,15 @@
     bSub.textContent = sub || "";
   }
 
+  // Антидребезг остаётся здесь (не только в MklScan): submitScan — общая точка
+  // входа и для камеры, и для USB/BT-сканера-клавиатуры (ТЗ §21.3), а
+  // антидребезг в barcode-scan.js защищает только путь камеры.
   let lastCode = "", lastTime = 0;
   async function submitScan(code) {
     code = (code || "").trim();
     if (!code) return;
     const now = Date.now();
-    if (code === lastCode && now - lastTime < 1500) return; // антидребезг камеры
+    if (code === lastCode && now - lastTime < 1500) return;
     lastCode = code; lastTime = now;
 
     const body = new URLSearchParams();
@@ -139,22 +146,53 @@
     input.focus();
   });
 
-  // Камера (html5-qrcode) — поддержка iOS Safari / Android Chrome (ТЗ §21.3, §24)
+  // Камера — поддержка iOS Safari / Android Chrome (ТЗ §21.3, §24)
+  const reader = document.getElementById("reader");
   let scanner = null, camOn = false;
   const camBtn = document.getElementById("camToggle");
+
+  function resetCamUi() {
+    scanner = null; camOn = false;
+    camBtn.textContent = "Включить камеру";
+  }
+
   camBtn.addEventListener("click", async () => {
     if (!camOn) {
-      scanner = window.MklScan.newScanner("reader");
       try {
-        await scanner.start({ facingMode: "environment" }, window.MklScan.startConfig(),
-          (text) => submitScan(text), () => {});
+        scanner = await window.MklScan.start(reader, {
+          formats: ["code_128", "code_39", "code_93", "codabar", "itf", "ean_13", "ean_8", "upc_a", "upc_e"],
+          onDecode: (text) => submitScan(text),
+          onEnded: resetCamUi,
+        });
         camOn = true; camBtn.textContent = "Выключить камеру";
       } catch (e) {
-        show("err", "Камера недоступна", "Проверьте доступ (нужен HTTPS)");
+        resetCamUi();
+        show("err", "Камера недоступна", (e && e.message) || "Проверьте доступ (нужен HTTPS)");
       }
     } else {
-      try { await scanner.stop(); } catch (e) {}
-      camOn = false; camBtn.textContent = "Включить камеру";
+      if (scanner) scanner.stop();
+      resetCamUi();
+    }
+  });
+
+  const photoBtn = document.getElementById("photoBtn");
+  const photoInput = document.getElementById("photoInput");
+  photoBtn.addEventListener("click", () => photoInput.click());
+  photoInput.addEventListener("change", async () => {
+    const file = photoInput.files[0];
+    photoInput.value = "";
+    if (!file) return;
+    photoBtn.disabled = true;
+    photoBtn.textContent = "Распознаём…";
+    try {
+      const text = await window.MklScan.decodeFile(file, [
+        "code_128", "code_39", "code_93", "codabar", "itf", "ean_13", "ean_8", "upc_a", "upc_e",
+      ]);
+      if (text) submitScan(text);
+      else show("err", "Не распознано", "Попробуйте снова или введите штрих-код вручную");
+    } finally {
+      photoBtn.disabled = false;
+      photoBtn.textContent = "Снять фото";
     }
   });
 
