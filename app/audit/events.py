@@ -26,6 +26,7 @@ class EventType(enum.StrEnum):
     KIT_MANAGE = "kit_manage"
     DOCUMENT_GENERATE = "document_generate"
     USER_MANAGE = "user_manage"
+    AUTH_LOGIN_BLOCKED = "auth_login_blocked"
 
     @property
     def label(self) -> str:
@@ -50,4 +51,5 @@ class EventType(enum.StrEnum):
             "kit_manage": "Комплект",
             "document_generate": "Генерация PDF",
             "user_manage": "Управление пользователями",
+            "auth_login_blocked": "Блокировка входа по IP",
         }[self.value]

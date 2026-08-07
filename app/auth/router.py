@@ -35,8 +35,13 @@ def login_submit(
     db: Session = Depends(get_db),
 ):
     try:
-        user = service.authenticate(db, username.strip(), password)
-    except service.AccountLocked:
+        user = service.authenticate(
+            db,
+            username.strip(),
+            password,
+            ip_address=request.client.host if request.client else None,
+        )
+    except (service.AccountLocked, service.IpRateLimited):
         flash(request, "Слишком много попыток входа. Повторите позже.", "danger")
         return render(
             request, "auth/login.html", {"page_title": "Вход", "username": username}, db=db

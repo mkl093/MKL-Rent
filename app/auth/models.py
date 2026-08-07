@@ -32,3 +32,18 @@ class User(Base, TimestampMixin):
     @property
     def can_login(self) -> bool:
         return self.is_active and not self.is_blocked
+
+
+class IpLoginLock(Base):
+    """Ограничение попыток входа по IP-адресу (ТЗ §41.2), независимо от аккаунта.
+
+    Защищает от перебора паролей по разным логинам с одного IP — блокировка
+    отдельного аккаунта (см. User) на это не влияет.
+    """
+
+    __tablename__ = "ip_login_locks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ip_address: Mapped[str] = mapped_column(String(45), unique=True, index=True, nullable=False)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
