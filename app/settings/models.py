@@ -35,3 +35,7 @@ class CompanySettings(Base, TimestampMixin):
         Numeric(5, 2), default=Decimal("0"), nullable=False
     )
     timezone: Mapped[str] = mapped_column(String(64), default=DEFAULT_TIMEZONE, nullable=False)
+
+    # Рабочее время компании (ТЗ §54) — подсветка рабочих/нерабочих часов в календаре.
+    work_day_start: Mapped[str] = mapped_column(String(5), default="08:00", nullable=False)
+    work_day_end: Mapped[str] = mapped_column(String(5), default="18:00", nullable=False)

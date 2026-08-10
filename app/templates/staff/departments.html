@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 m-0">Отделы</h1>
+  <a href="/staff" class="btn btn-outline-secondary">К персоналу</a>
+</div>
+
+<form method="post" action="/staff/departments" class="card card-body mb-4">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="row g-2 align-items-end">
+    <div class="col"><label class="form-label small mb-0">Название</label>
+      <input class="form-control" name="name" placeholder="Новый отдел" required></div>
+    <div class="col-auto" style="width:7rem"><label class="form-label small mb-0">Порядок</label>
+      <input class="form-control" name="sort_order" type="number" value="0"></div>
+    <div class="col-auto"><button class="btn btn-primary">Добавить</button></div>
+  </div>
+</form>
+
+{% if departments %}
+<ul class="list-group">
+  {% for d in departments %}
+  <li class="list-group-item">
+    <form method="post" action="/staff/departments/{{ d.id }}" class="row g-2 align-items-end m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="col"><input class="form-control form-control-sm" name="name" value="{{ d.name }}" required aria-label="Название отдела"></div>
+      <div class="col-auto" style="width:6rem"><input class="form-control form-control-sm" name="sort_order" type="number" value="{{ d.sort_order }}" aria-label="Порядок"></div>
+      <div class="col-auto"><button class="btn btn-sm btn-outline-primary">Сохранить</button></div>
+    </form>
+    <form method="post" action="/staff/departments/{{ d.id }}/delete" class="m-0 mt-1"
+          onsubmit="return confirm('Удалить отдел «{{ d.name }}»?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-sm btn-link text-danger p-0">удалить</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="text-secondary">Отделов пока нет.</p>
+{% endif %}
+{% endblock %}

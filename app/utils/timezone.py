@@ -36,3 +36,19 @@ def to_local(value: datetime, tz: ZoneInfo | None = None) -> datetime:
 def format_datetime(value: datetime, fmt: str = "%d.%m.%Y %H:%M") -> str:
     """Отформатировать время в локальном часовом поясе."""
     return to_local(value).strftime(fmt)
+
+
+def to_utc(value: datetime, tz: ZoneInfo | None = None) -> datetime:
+    """Преобразовать локальное время (naive или aware) в UTC для хранения."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=tz or get_app_timezone())
+    return value.astimezone(UTC)
+
+
+def parse_local_datetime(value: str) -> datetime:
+    """Разобрать значение <input type="datetime-local"> (локальное время) в UTC.
+
+    Формат — ISO без часового пояса, напр. "2026-08-12T14:00".
+    """
+    naive = datetime.fromisoformat(value)
+    return to_utc(naive)

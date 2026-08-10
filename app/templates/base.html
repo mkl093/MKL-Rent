@@ -22,6 +22,8 @@
           <li class="nav-item"><a class="nav-link {% if path == '/' %}active{% endif %}" href="/">Главная</a></li>
           <li class="nav-item"><a class="nav-link {% if path.startswith('/projects') %}active{% endif %}" href="/projects">Проекты</a></li>
           <li class="nav-item"><a class="nav-link {% if path.startswith('/inventory') %}active{% endif %}" href="/inventory">Склад</a></li>
+          <li class="nav-item"><a class="nav-link {% if path.startswith('/staff') %}active{% endif %}" href="/staff">Персонал</a></li>
+          <li class="nav-item"><a class="nav-link {% if path.startswith('/calendar') %}active{% endif %}" href="/calendar">Календарь</a></li>
           <li class="nav-item"><a class="nav-link {% if path.startswith('/settings') %}active{% endif %}" href="/settings">Настройки</a></li>
         </ul>
         <div class="d-flex align-items-center gap-2">

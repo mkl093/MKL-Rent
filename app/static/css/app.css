@@ -49,3 +49,67 @@ body {
   display: block;
   margin-top: 0.5rem;
 }
+
+/* Календарь занятости персонала (app/static/js/staff-calendar.js, ТЗ §54). */
+#sc-timeline {
+  border: 1px solid var(--bs-border-color);
+  border-radius: 4px;
+}
+.sc-swatch {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 3px;
+  vertical-align: -0.15rem;
+  margin-right: 0.15rem;
+}
+.sc-employee-name {
+  font-weight: 600;
+}
+.sc-employee-meta {
+  font-size: 0.78rem;
+  color: var(--bs-secondary-color);
+}
+.sc-item {
+  border-radius: 4px;
+  font-size: 0.8rem;
+  line-height: 1.15;
+  padding: 1px 3px;
+}
+.sc-item-title {
+  font-weight: 600;
+}
+.sc-item-line {
+  opacity: 0.85;
+}
+
+/* Тип занятости — цвет + иконка (не только цвет, ТЗ §54 «Визуальное оформление»).
+ * Селектор .vis-item.sc-type-* нужен для специфичности: vis-timeline.min.css
+ * подключается после app.css (см. staff/calendar.html), и при равной
+ * специфичности выигрывало бы правило .vis-item из библиотеки. */
+.vis-item.sc-type-project, .sc-swatch.sc-type-project { background: #0d6efd; border-color: #0d6efd; color: #fff; }
+.vis-item.sc-type-busy, .sc-swatch.sc-type-busy { background: #6c757d; border-color: #6c757d; color: #fff; }
+.vis-item.sc-type-vacation, .sc-swatch.sc-type-vacation { background: #20c997; border-color: #20c997; color: #06281d; }
+.vis-item.sc-type-sick, .sc-swatch.sc-type-sick { background: #fd7e14; border-color: #fd7e14; color: #2b1400; }
+.vis-item.sc-type-unavailable, .sc-swatch.sc-type-unavailable { background: #dc3545; border-color: #dc3545; color: #fff; }
+.vis-item.sc-type-other, .sc-swatch.sc-type-other { background: #6610f2; border-color: #6610f2; color: #fff; }
+
+.vis-item.sc-status-cancelled, .sc-swatch.sc-status-cancelled {
+  background: repeating-linear-gradient(45deg, #adb5bd, #adb5bd 6px, #ced4da 6px, #ced4da 12px) !important;
+  border-color: #adb5bd !important;
+  color: #495057 !important;
+  text-decoration: line-through;
+  opacity: 0.75;
+}
+
+/* Выходные/нерабочие часы/сегодня — фоновые элементы vis-timeline (type: background).
+ * .vis-item.vis-background.sc-bg-* — специфичность выше, чем у правила
+ * .vis-item.vis-background из самой библиотеки (см. комментарий выше про порядок). */
+.vis-item.vis-background.sc-bg-weekend { background: rgba(0, 0, 0, 0.05); border: none; }
+.vis-item.vis-background.sc-bg-offhours { background: rgba(0, 0, 0, 0.03); border: none; }
+.vis-item.vis-background.sc-bg-today { background: rgba(13, 110, 253, 0.08); border: none; }
+@media (prefers-color-scheme: dark) {
+  .vis-item.vis-background.sc-bg-weekend { background: rgba(255, 255, 255, 0.06); }
+  .vis-item.vis-background.sc-bg-offhours { background: rgba(255, 255, 255, 0.035); }
+  .vis-item.vis-background.sc-bg-today { background: rgba(13, 110, 253, 0.16); }
+}
