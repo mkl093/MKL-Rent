@@ -114,6 +114,17 @@ def test_calendar_page_renders(auth_client):
     assert "Календарь занятости" in resp.text
 
 
+def test_view_switch_links_preserve_anchor_date(auth_client):
+    """Переключение Day/Week/Month/Grid не должно сбрасывать фокус на начало
+    периода (понедельник недели, 1-е число месяца) — должна сохраняться
+    исходная выбранная дата (баг: ссылки использовали range_start)."""
+    # 13 августа 2026 — четверг, не совпадает ни с началом недели, ни месяца.
+    resp = auth_client.get("/calendar?view=week&start=2026-08-13")
+    assert resp.status_code == 200
+    for view in ("day", "week", "month", "grid"):
+        assert f"view={view}&start=2026-08-13" in resp.text
+
+
 def test_assignments_api_only_requested_range(auth_client, employee):
     _create_assignment(auth_client, employee.id, "2026-08-01T10:00:00", "2026-08-01T18:00:00")
     _create_assignment(auth_client, employee.id, "2026-08-10T10:00:00", "2026-08-10T18:00:00")

@@ -30,7 +30,7 @@
   <div class="btn-group">
     {% for v in views %}
     <a class="btn btn-outline-secondary {% if view == v %}active{% endif %}"
-       href="/calendar?view={{ v }}&start={{ range_start.isoformat() }}">{{ view_label[v] }}</a>
+       href="/calendar?view={{ v }}&start={{ anchor.isoformat() }}">{{ view_label[v] }}</a>
     {% endfor %}
   </div>
 </div>

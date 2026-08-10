@@ -167,6 +167,7 @@ def calendar_page(
             "page_title": "Календарь занятости",
             "view": view,
             "views": VIEWS,
+            "anchor": anchor,
             "range_start": range_start,
             "range_end": range_end - timedelta(days=1),
             "prev_start": prev_start,
