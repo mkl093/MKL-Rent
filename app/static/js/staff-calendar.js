@@ -16,6 +16,7 @@
   const CSRF = root.dataset.csrf;
   const WORK_START = root.dataset.workStart || "08:00";
   const WORK_END = root.dataset.workEnd || "18:00";
+  const isGrid = root.dataset.view === "grid";
   const state = {
     view: root.dataset.view,
     availability: "all",
@@ -24,6 +25,8 @@
     items: [],
     visibleStart: new Date(root.dataset.rangeStart + "T00:00:00"),
     visibleEnd: new Date(root.dataset.rangeEnd + "T23:59:59"),
+    gridItems: [],
+    gridRange: null,
   };
 
   function pad(n) {
@@ -79,27 +82,33 @@
     return params;
   }
 
-  // --- vis-timeline ------------------------------------------------------
+  // --- vis-timeline (режимы Day/Week/Month) -------------------------------
+  //
+  // В режиме "grid" (сетка месяца) виджет не создаётся вовсе — контейнер
+  // скрыт сервером через class="d-none", а рендерит эту вьюху renderGrid().
 
   const groupsDS = new vis.DataSet([]);
   const itemsDS = new vis.DataSet([]);
-
   const container = document.getElementById("sc-timeline");
-  const timeline = new vis.Timeline(container, itemsDS, groupsDS, {
-    start: state.visibleStart,
-    end: state.visibleEnd,
-    orientation: "top",
-    stack: true,
-    zoomMin: 1000 * 60 * 60, // 1 час
-    zoomMax: 1000 * 60 * 60 * 24 * 120, // 120 дней
-    editable: { add: false, updateTime: true, updateGroup: true, remove: false },
-    margin: { item: 4 },
-    locale: "ru",
-    onMove: handleMove,
-    // Контент строится через escapeHtml() на каждом пользовательском поле —
-    // встроенный XSS-фильтр vis-timeline не нужен и вырезает наши CSS-классы.
-    xss: { disabled: true },
-  });
+  let timeline = null;
+
+  if (!isGrid) {
+    timeline = new vis.Timeline(container, itemsDS, groupsDS, {
+      start: state.visibleStart,
+      end: state.visibleEnd,
+      orientation: "top",
+      stack: true,
+      zoomMin: 1000 * 60 * 60, // 1 час
+      zoomMax: 1000 * 60 * 60 * 24 * 120, // 120 дней
+      editable: { add: false, updateTime: true, updateGroup: true, remove: false },
+      margin: { item: 4 },
+      locale: "ru",
+      onMove: handleMove,
+      // Контент строится через escapeHtml() на каждом пользовательском поле —
+      // встроенный XSS-фильтр vis-timeline не нужен и вырезает наши CSS-классы.
+      xss: { disabled: true },
+    });
+  }
 
   // --- Загрузка данных -----------------------------------------------------
 
@@ -124,7 +133,11 @@
     const { body } = await api("/calendar/api/resources?" + params.toString());
     state.employees = body || [];
     populateEmployeeSelects(state.employees);
-    applyGroups();
+    if (isGrid) {
+      renderGrid();
+    } else {
+      applyGroups();
+    }
   }
 
   async function loadAssignments() {
@@ -132,6 +145,14 @@
     const { body } = await api("/calendar/api/assignments?" + params.toString());
     state.items = body || [];
     applyItems();
+  }
+
+  function refreshAssignments() {
+    if (isGrid) {
+      loadGridAssignments();
+    } else {
+      loadAssignments();
+    }
   }
 
   function employeeLabel(e) {
@@ -300,37 +321,42 @@
   document.getElementById("sc-department").addEventListener("change", (e) => {
     state.filters.department_id = e.target.value;
     loadEmployees();
-    loadAssignments();
+    refreshAssignments();
   });
   document.getElementById("sc-position").addEventListener("change", (e) => {
     state.filters.position = e.target.value;
     loadEmployees();
-    loadAssignments();
+    refreshAssignments();
   });
   document.getElementById("sc-project").addEventListener("change", (e) => {
     state.filters.project_id = e.target.value;
-    loadAssignments();
+    refreshAssignments();
   });
   document.getElementById("sc-type").addEventListener("change", (e) => {
     state.filters.type = e.target.value;
-    loadAssignments();
+    refreshAssignments();
   });
   document.getElementById("sc-status").addEventListener("change", (e) => {
     state.filters.status = e.target.value;
-    loadAssignments();
+    refreshAssignments();
   });
   document.getElementById("sc-availability").addEventListener("change", (e) => {
     state.availability = e.target.value;
     applyGroups();
   });
+  if (isGrid) {
+    document.getElementById("sc-availability-wrap").classList.add("d-none");
+  }
 
   // --- Диапазон таймлайна: подгрузка только видимого окна -------------------
 
-  timeline.on("rangechanged", (props) => {
-    state.visibleStart = props.start;
-    state.visibleEnd = props.end;
-    loadAssignments();
-  });
+  if (!isGrid) {
+    timeline.on("rangechanged", (props) => {
+      state.visibleStart = props.start;
+      state.visibleEnd = props.end;
+      loadAssignments();
+    });
+  }
 
   // --- Drag & drop / resize -------------------------------------------------
 
@@ -382,36 +408,165 @@
     return "У сотрудника уже есть занятость в этот период:\n" + lines.join("\n");
   }
 
-  // --- Клик по блоку → редактирование ---------------------------------------
+  if (!isGrid) {
+    // --- Клик по блоку → редактирование ---------------------------------
 
-  timeline.on("click", (props) => {
-    if (props.item == null) return;
-    const item = itemsDS.get(props.item);
-    if (item) openEditModal(item._raw);
-  });
+    timeline.on("click", (props) => {
+      if (props.item == null) return;
+      const item = itemsDS.get(props.item);
+      if (item) openEditModal(item._raw);
+    });
 
-  // --- Выделение свободного места → создание -------------------------------
+    // --- Создание занятости: правая кнопка мыши ---------------------------
+    //
+    // Левая кнопка на пустом месте зарезервирована самим vis-timeline под
+    // прокрутку шкалы времени (панорамирование) — использовать её же для
+    // создания занятости означало бы конфликтовать с этим встроенным жестом.
+    // Поэтому создание — по правому клику (contextmenu): одиночный клик
+    // ставит блок на 1 час по умолчанию, клик с зажатием и протягиванием —
+    // выделяет произвольный диапазон.
 
-  let dragAnchor = null;
-  container.addEventListener("mousedown", (e) => {
-    const props = timeline.getEventProperties(e);
-    if (props.item == null && props.group != null) {
-      dragAnchor = props;
+    let rightDragAnchor = null;
+    container.addEventListener("mousedown", (e) => {
+      if (e.button !== 2) return;
+      const props = timeline.getEventProperties(e);
+      if (props.item == null && props.group != null) {
+        rightDragAnchor = props;
+      } else {
+        rightDragAnchor = null;
+      }
+    });
+    container.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      const props = timeline.getEventProperties(e);
+      if (props.item != null || props.group == null) {
+        rightDragAnchor = null;
+        return;
+      }
+      const groupId = props.group;
+      let start = props.time;
+      let end;
+      if (rightDragAnchor && rightDragAnchor.group === groupId) {
+        start = rightDragAnchor.time < props.time ? rightDragAnchor.time : props.time;
+        end = rightDragAnchor.time < props.time ? props.time : rightDragAnchor.time;
+      }
+      rightDragAnchor = null;
+      if (!end || end.getTime() - start.getTime() < 5 * 60 * 1000) {
+        // Клик без протягивания — блок по умолчанию на 1 час.
+        end = new Date(start.getTime() + 60 * 60 * 1000);
+      }
+      openCreateModal(groupId, start, end);
+    });
+  }
+
+  // --- Сетка месяца (общий вид на всех сотрудников) -------------------------
+
+  function startOfWeek(d) {
+    const copy = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const dow = (copy.getDay() + 6) % 7; // понедельник = 0
+    copy.setDate(copy.getDate() - dow);
+    return copy;
+  }
+
+  function addDays(d, n) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  }
+
+  function computeGridRange() {
+    const monthStart = new Date(root.dataset.rangeStart + "T00:00:00");
+    const monthLastDay = new Date(root.dataset.rangeEnd + "T00:00:00");
+    return { start: startOfWeek(monthStart), end: addDays(startOfWeek(monthLastDay), 7) };
+  }
+
+  async function loadGridAssignments() {
+    const range = state.gridRange || (state.gridRange = computeGridRange());
+    const params = new URLSearchParams({
+      start: toWire(range.start),
+      end: toWire(range.end),
+      department_id: state.filters.department_id,
+      position: state.filters.position,
+      project_id: state.filters.project_id,
+      types: state.filters.type,
+      statuses: state.filters.status,
+    });
+    const { body } = await api("/calendar/api/assignments?" + params.toString());
+    state.gridItems = body || [];
+    renderGrid();
+  }
+
+  function gridChip(a) {
+    const icon = a.status === "cancelled" ? "✕" : TYPE_ICON[a.type] || "";
+    const emp = state.employees.find((e) => e.id === a.employee_id);
+    const name = emp ? emp.full_name.split(" ")[0] : "#" + a.employee_id;
+    const label = a.type === "project" && a.project_number ? a.project_number : a.title || a.type_label;
+    const cls = ["sc-grid-chip", "sc-type-" + a.type];
+    if (a.status === "cancelled") cls.push("sc-status-cancelled");
+    return (
+      '<div class="' + cls.join(" ") + '" data-assignment-id="' + a.id + '" title="' +
+      escapeHtml(tooltipText(a)) + '">' + icon + " " + escapeHtml(name) + " — " + escapeHtml(label) + "</div>"
+    );
+  }
+
+  function renderGrid() {
+    const gridEl = document.getElementById("sc-grid");
+    const range = state.gridRange || computeGridRange();
+    const employeeIds = new Set(state.employees.map((e) => e.id));
+    const monthNum = new Date(root.dataset.rangeStart + "T00:00:00").getMonth();
+    const todayStr = root.dataset.today;
+    const weekdayNames = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+
+    let html = "<table class=\"sc-grid-table\"><thead><tr>" +
+      weekdayNames.map((w) => "<th>" + w + "</th>").join("") +
+      "</tr></thead><tbody>";
+
+    let day = new Date(range.start);
+    while (day < range.end) {
+      html += "<tr>";
+      for (let i = 0; i < 7; i++) {
+        const dayEnd = addDays(day, 1);
+        const dateStr = toWire(day).slice(0, 10);
+        const cls = ["sc-grid-day"];
+        if (day.getMonth() !== monthNum) cls.push("sc-grid-outside");
+        if (dateStr === todayStr) cls.push("sc-grid-today");
+        if (day.getDay() === 0 || day.getDay() === 6) cls.push("sc-grid-weekend");
+
+        const dayItems = state.gridItems.filter(
+          (a) =>
+            employeeIds.has(a.employee_id) &&
+            new Date(a.starts_at) < dayEnd &&
+            new Date(a.ends_at) > day
+        );
+
+        html +=
+          '<td class="' + cls.join(" ") + '">' +
+          '<div class="sc-grid-daynum"><span>' + day.getDate() + "</span>" +
+          '<button type="button" class="sc-grid-add" data-date="' + dateStr +
+          '" title="Добавить занятость">+</button></div>' +
+          '<div class="sc-grid-items">' + dayItems.map(gridChip).join("") + "</div></td>";
+        day = addDays(day, 1);
+      }
+      html += "</tr>";
     }
-  });
-  container.addEventListener("mouseup", (e) => {
-    if (!dragAnchor) return;
-    const props = timeline.getEventProperties(e);
-    const groupId = dragAnchor.group;
-    let start = dragAnchor.time < props.time ? dragAnchor.time : props.time;
-    let end = dragAnchor.time < props.time ? props.time : dragAnchor.time;
-    dragAnchor = null;
-    if (end.getTime() - start.getTime() < 5 * 60 * 1000) {
-      // Клик без выделения — предложить блок по умолчанию (1 час).
-      end = new Date(start.getTime() + 60 * 60 * 1000);
-    }
-    openCreateModal(groupId, start, end);
-  });
+    html += "</tbody></table>";
+    gridEl.innerHTML = html;
+  }
+
+  if (isGrid) {
+    document.getElementById("sc-grid").addEventListener("click", (e) => {
+      const addBtn = e.target.closest(".sc-grid-add");
+      if (addBtn) {
+        const day = new Date(addBtn.dataset.date + "T00:00:00");
+        const defaultEmployeeId = state.employees[0] ? state.employees[0].id : "";
+        openCreateModal(defaultEmployeeId, day, new Date(day.getTime() + 60 * 60 * 1000));
+        return;
+      }
+      const chip = e.target.closest(".sc-grid-chip");
+      if (chip) {
+        const assignment = state.gridItems.find((a) => String(a.id) === chip.dataset.assignmentId);
+        if (assignment) openEditModal(assignment);
+      }
+    });
+  }
 
   // --- Модальное окно занятости ----------------------------------------------
 
@@ -482,7 +637,7 @@
 
     if (ok) {
       modal.hide();
-      loadAssignments();
+      refreshAssignments();
       return;
     }
     if (status === 409) {
@@ -503,7 +658,7 @@
       body: formParams({}),
     });
     modal.hide();
-    loadAssignments();
+    refreshAssignments();
   });
 
   // --- Массовое назначение ----------------------------------------------------
@@ -548,7 +703,7 @@
 
     if (ok) {
       bulkModal.hide();
-      loadAssignments();
+      refreshAssignments();
       return;
     }
     if (status === 409) {
@@ -566,5 +721,5 @@
 
   // --- Инициализация -----------------------------------------------------
 
-  loadEmployees().then(loadAssignments);
+  loadEmployees().then(refreshAssignments);
 })();

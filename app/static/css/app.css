@@ -113,3 +113,75 @@ body {
   .vis-item.vis-background.sc-bg-offhours { background: rgba(255, 255, 255, 0.035); }
   .vis-item.vis-background.sc-bg-today { background: rgba(13, 110, 253, 0.16); }
 }
+
+/* Сетка месяца — общий вид на всех сотрудников (альтернатива timeline). */
+.sc-grid-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.sc-grid-table th {
+  padding: 0.35rem;
+  text-align: center;
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--bs-secondary-color);
+  border: 1px solid var(--bs-border-color);
+}
+.sc-grid-day {
+  border: 1px solid var(--bs-border-color);
+  vertical-align: top;
+  height: 7.5rem;
+  padding: 0.25rem;
+  overflow: hidden;
+}
+.sc-grid-day.sc-grid-outside {
+  background: var(--bs-tertiary-bg);
+  color: var(--bs-secondary-color);
+}
+.sc-grid-day.sc-grid-today {
+  background: rgba(13, 110, 253, 0.08);
+}
+.sc-grid-day.sc-grid-weekend:not(.sc-grid-today) {
+  background: rgba(0, 0, 0, 0.03);
+}
+.sc-grid-daynum {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+.sc-grid-add {
+  border: none;
+  background: transparent;
+  color: var(--bs-secondary-color);
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0 0.25rem;
+  cursor: pointer;
+}
+.sc-grid-add:hover {
+  color: var(--bs-primary);
+}
+.sc-grid-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 5.6rem;
+  overflow-y: auto;
+}
+.sc-grid-chip {
+  font-size: 0.72rem;
+  line-height: 1.2;
+  padding: 1px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (prefers-color-scheme: dark) {
+  .sc-grid-day.sc-grid-weekend:not(.sc-grid-today) { background: rgba(255, 255, 255, 0.05); }
+}

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-{% set view_label = {'day': 'День', 'week': 'Неделя', 'month': 'Месяц'} %}
+{% set view_label = {'day': 'День', 'week': 'Неделя', 'month': 'Месяц', 'grid': 'Сетка'} %}
 
 <div id="sc-app"
      data-view="{{ view }}"
@@ -76,7 +76,7 @@
         {% for s in assignment_statuses %}<option value="{{ s.value }}">{{ s.label }}</option>{% endfor %}
       </select>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-3" id="sc-availability-wrap">
       <label class="form-label small mb-0" for="sc-availability">Показывать</label>
       <select class="form-select form-select-sm" id="sc-availability">
         <option value="all">Все сотрудники</option>
@@ -94,8 +94,14 @@
   <span><span class="sc-swatch sc-status-cancelled"></span> ✕ отменено</span>
 </div>
 
-<div id="sc-timeline"></div>
-<p class="text-secondary small mt-2 mb-0">Подсказка: выделите мышью диапазон в строке сотрудника, чтобы создать занятость. Перетаскивайте блоки, чтобы изменить дату или сотрудника; тяните за край — чтобы изменить длительность.</p>
+<div id="sc-timeline" {% if view == 'grid' %}class="d-none"{% endif %}></div>
+<div id="sc-grid" {% if view != 'grid' %}class="d-none"{% endif %}></div>
+
+{% if view == 'grid' %}
+<p class="text-secondary small mt-2 mb-0">Подсказка: в ячейке дня показаны все сотрудники, занятые в этот день. Кликните по записи, чтобы её изменить; кнопка «+» в ячейке — чтобы добавить занятость на этот день.</p>
+{% else %}
+<p class="text-secondary small mt-2 mb-0">Подсказка: нажмите <strong>правой кнопкой мыши</strong> по свободному месту в строке сотрудника, чтобы создать занятость (можно с протягиванием, чтобы задать диапазон). Обычным перетаскиванием (левой кнопкой) можно прокручивать шкалу времени. Перетаскивайте существующие блоки левой кнопкой, чтобы изменить дату или сотрудника; тяните за край блока — чтобы изменить длительность.</p>
+{% endif %}
 
 </div><!-- /#sc-app -->
 

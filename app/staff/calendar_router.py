@@ -35,7 +35,7 @@ from app.utils.timezone import get_app_timezone, parse_local_datetime, to_local
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
 
-VIEWS = ("day", "week", "month")
+VIEWS = ("day", "week", "month", "grid")
 
 
 # --- Время на проводе --------------------------------------------------------
@@ -71,7 +71,7 @@ def _compute_range(view: str, anchor: date) -> tuple[date, date, date, date]:
             anchor - timedelta(days=1),
             anchor + timedelta(days=1),
         )
-    if view == "month":
+    if view in ("month", "grid"):
         start = anchor.replace(day=1)
         days_in_month = pycalendar.monthrange(start.year, start.month)[1]
         end = start + timedelta(days=days_in_month)
