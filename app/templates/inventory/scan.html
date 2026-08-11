@@ -19,7 +19,7 @@
     </div>
   </div>
   <div id="reader" class="mkl-scan-container mt-2"></div>
-  <div id="camHint" class="form-text d-none">Наведите камеру на штрих-код, держите телефон на расстоянии ~15-20 см — вплотную камера не сфокусируется.</div>
+  <div id="camHint" class="form-text d-none">Наведите камеру на штрих-код (или QR-дубликат, если штрих-код слишком мелкий), держите телефон на расстоянии ~15-20 см — вплотную камера не сфокусируется.</div>
   <div class="form-text">Если камера в браузере не фокусируется — «Снять фото» передаёт кадр штатному приложению камеры (с зумом и автофокусом).</div>
 </form>
 
@@ -49,10 +49,10 @@
   camBtn.addEventListener("click", async () => {
     if (!camOn) {
       hint.classList.remove("d-none");
-      hint.textContent = "Наведите камеру на штрих-код, держите телефон на расстоянии ~15-20 см — вплотную камера не сфокусируется.";
+      hint.textContent = "Наведите камеру на штрих-код (или QR-дубликат, если штрих-код слишком мелкий), держите телефон на расстоянии ~15-20 см — вплотную камера не сфокусируется.";
       try {
         scanner = await window.MklScan.start(reader, {
-          formats: ["code_128", "code_39", "code_93", "codabar", "itf", "ean_13", "ean_8", "upc_a", "upc_e"],
+          formats: ["code_128", "code_39", "code_93", "codabar", "itf", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"],
           onDecode: (text) => {
             if (submitted) return;
             submitted = true;
@@ -84,7 +84,7 @@
     photoBtn.textContent = "Распознаём…";
     try {
       const text = await window.MklScan.decodeFile(file, [
-        "code_128", "code_39", "code_93", "codabar", "itf", "ean_13", "ean_8", "upc_a", "upc_e",
+        "code_128", "code_39", "code_93", "codabar", "itf", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code",
       ]);
       if (text) {
         submitted = true;
