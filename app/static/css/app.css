@@ -4,6 +4,28 @@ body {
   min-height: 100vh;
 }
 
+/* Футер "Разработано MKL Labs" — фиксирован в правом нижнем углу окна
+ * браузера (а не после контента), pointer-events: none, чтобы никогда
+ * не перекрывать клики/тапы под собой. */
+.mkl-app-footer {
+  position: fixed;
+  right: 0.6rem;
+  bottom: 0.35rem;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  font-size: 0.72rem;
+  color: var(--bs-secondary-color);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 1;
+}
+@media (max-width: 575.98px) {
+  .mkl-app-footer {
+    right: 0.4rem;
+    bottom: 0.3rem;
+    font-size: 0.65rem;
+  }
+}
+
 /* Mobile-first: крупные тач-цели (ТЗ §24). */
 @media (max-width: 575.98px) {
   .btn {
