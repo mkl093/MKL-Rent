@@ -104,8 +104,17 @@
 
     <div class="col-12">
       <label class="form-label" for="photo">Фото (JPG/PNG/WebP, до 10 МБ)</label>
+      <div id="photo-dropzone" class="border rounded mb-2" style="max-width:320px;height:200px;cursor:pointer" tabindex="0" role="button" aria-label="Выбрать или вставить фото">
+        <img id="photo-preview-img" src="{% if editing and model.photo_path %}/media/{{ model.photo_path }}{% endif %}"
+             class="w-100 h-100" style="object-fit:cover;{% if not (editing and model.photo_path) %}display:none;{% endif %}" alt="">
+        <div id="photo-preview-empty" class="text-secondary small text-center px-2"
+             style="display:flex;align-items:center;justify-content:center;height:100%;{% if editing and model.photo_path %}display:none;{% endif %}">
+          Нажмите, чтобы выбрать файл, или вставьте изображение (Ctrl+V)
+        </div>
+      </div>
       <input class="form-control" id="photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp">
-      {% if editing and model.photo_path %}<div class="form-text">Текущее фото будет заменено при загрузке нового.</div>{% endif %}
+      {% if editing and model.photo_path %}<div class="form-text">Текущее фото будет заменено при выборе/вставке нового.</div>{% endif %}
+      <div class="form-text">Изображение можно вставить из буфера обмена (Ctrl+V) — например, скопированное из браузера.</div>
     </div>
   </div>
 
@@ -271,4 +280,8 @@
   document.getElementById('category_id').addEventListener('change', fillSubcats);
   fillSubcats(); togglePacking(); togglePower(); toggleQty();
 </script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ static_url('js/photo-upload.js') }}"></script>
 {% endblock %}

@@ -25,7 +25,7 @@
   <div class="col-12 col-md-4">
     <div class="card">
       {% if model.photo_path %}
-        <img src="/media/{{ model.photo_path }}" class="card-img-top object-fit-cover" style="max-height:240px" alt="">
+        <img src="/media/{{ model.photo_path }}" class="card-img-top object-fit-cover" style="height:240px;width:100%" alt="">
         <div class="card-body py-2">
           <form method="post" action="/inventory/models/{{ model.id }}/photo/delete" class="m-0">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
