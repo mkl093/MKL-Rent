@@ -29,10 +29,12 @@ PDF, backup/hardening). Плюс доработки: единый поедини
 ручная правка, вывод в packing/PDF; ТЗ §13.4.1), трёхцветная индикация состояний склада
 (доступно/зарезервировано/в работе) с учётом просрочки отгрузки и раскрытием перечня
 занявших проектов (ТЗ §15.1–15.2), календарь склада `/inventory/planboard` — занятость
-моделей по дням (ТЗ §15.3).
+моделей по дням (ТЗ §15.3), календарь занятости персонала `/calendar` (ТЗ §54), файловое
+хранилище мануалов модели и сертификатов испытаний единицы (ТЗ §55).
 
 Модули добавленные после базовой раскладки: estimates/, packing/, documents/ (PDF),
-audit/ (журнал §29), users/ (управление §4), backup/ (резервные копии §36).
+audit/ (журнал §29), users/ (управление §4), backup/ (резервные копии §36), staff/
+(персонал и календарь занятости §54).
 
 ## Структура проекта (модульный монолит)
 
@@ -44,12 +46,14 @@ app/
   dependencies.py    # get_current_user, require_login, verify_csrf, render, redirect
   templating.py      # Jinja2 + CSRF + flash-сообщения
   auth/              # пользователи и вход (модель User, rate-limit)
-  settings/          # настройки компании (singleton CompanySettings)
-  inventory/         # склад: models, enums, schemas, services/{categories,equipment,items}, router
+  settings/          # настройки компании (singleton CompanySettings), статистика хранилища
+  inventory/         # склад: models, enums, schemas,
+                     #   services/{categories,equipment,items,documents (§55)}, router
   projects/          # проекты: models, enums, schemas, availability (движок), service, router
   numbering/         # счётчики номеров PRJ/EST/PL (models, service.next_number)
   dashboard/         # главная: service (виджеты §5), router
-  utils/             # security (argon2), timezone, images (Pillow)
+  staff/             # персонал и календарь занятости (§54)
+  utils/             # security (argon2), timezone, images (Pillow), documents (PDF/ZIP, §55)
   templates/ static/ # static/vendor — вендоренные Bootstrap 5 + htmx
 migrations/          # Alembic (env.py берёт URL и metadata из app); versions/000N_*.py
 tests/{unit,integration}/   # unit на SQLite, integration на PostgreSQL (маркер integration)
