@@ -1438,6 +1438,11 @@ async def certificate_upload(
     item = item_service.get_item(db, item_id)
     if item is None:
         return redirect("/inventory")
+    issued = _date(issued_at)
+    expires = _date(expires_at)
+    if issued and expires and issued > expires:
+        flash(request, "Дата выдачи не может быть позже срока действия сертификата.", "warning")
+        return redirect(f"/inventory/items/{item_id}")
     if not file.filename:
         flash(request, "Файл не выбран.", "warning")
         return redirect(f"/inventory/items/{item_id}")
@@ -1451,8 +1456,8 @@ async def certificate_upload(
         db,
         item,
         title=_str(title),
-        issued_at=_date(issued_at),
-        expires_at=_date(expires_at),
+        issued_at=issued,
+        expires_at=expires,
         file_path=rel_path,
         original_filename=file.filename,
         file_size=len(raw),
@@ -1485,8 +1490,13 @@ def certificate_rename(
 ):
     cert = doc_service.get_certificate(db, item_id, certificate_id)
     if cert:
+        issued = _date(issued_at)
+        expires = _date(expires_at)
+        if issued and expires and issued > expires:
+            flash(request, "Дата выдачи не может быть позже срока действия сертификата.", "warning")
+            return redirect(f"/inventory/items/{item_id}")
         doc_service.rename_certificate(
-            db, cert, title=_str(title), issued_at=_date(issued_at), expires_at=_date(expires_at)
+            db, cert, title=_str(title), issued_at=issued, expires_at=expires
         )
         flash(request, "Сертификат обновлён.", "success")
     return redirect(f"/inventory/items/{item_id}")
