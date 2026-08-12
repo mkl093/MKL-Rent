@@ -198,16 +198,15 @@ def update_item(db: Session, item: EquipmentItem, data: EquipmentItemInput) -> E
     return item
 
 
-def change_status(
-    db: Session,
+def _apply_status(
     item: EquipmentItem,
     new_status: ItemStatus,
     user_id: int | None,
-    comment: str | None = None,
-) -> EquipmentItem:
-    """Сменить статус экземпляра с записью истории (ТЗ §9)."""
+    comment: str | None,
+) -> bool:
+    """Сменить статус экземпляра в сессии без commit. Возвращает True, если статус изменился."""
     if new_status == item.status:
-        return item
+        return False
     old = item.status
     item.status = new_status
     # Разрешение «использовать несмотря на дефект» значимо только при DEFECT —
@@ -223,9 +222,81 @@ def change_status(
             comment=(comment or None),
         )
     )
-    db.commit()
-    db.refresh(item)
+    return True
+
+
+def change_status(
+    db: Session,
+    item: EquipmentItem,
+    new_status: ItemStatus,
+    user_id: int | None,
+    comment: str | None = None,
+) -> EquipmentItem:
+    """Сменить статус экземпляра с записью истории (ТЗ §9)."""
+    if _apply_status(item, new_status, user_id, comment):
+        db.commit()
+        db.refresh(item)
     return item
+
+
+def list_items_by_ids(db: Session, model_id: int, item_ids: list[int]) -> list[EquipmentItem]:
+    """Единицы данной модели по списку id (чужие модели игнорируются)."""
+    if not item_ids:
+        return []
+    stmt = select(EquipmentItem).where(
+        EquipmentItem.model_id == model_id, EquipmentItem.id.in_(item_ids)
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
+def item_label(item: EquipmentItem) -> str:
+    return item.barcode or f"#{item.id}"
+
+
+def bulk_change_status(
+    db: Session,
+    items: list[EquipmentItem],
+    new_status: ItemStatus,
+    user_id: int | None,
+    comment: str | None = None,
+    usable_despite_defect: bool = False,
+) -> list[EquipmentItem]:
+    """Массовая смена статуса нескольких экземпляров одним коммитом (ТЗ §9).
+
+    Возвращает единицы, которые реально изменились: сменили статус либо (для
+    статуса «Есть дефект») впервые получили отметку «несмотря на дефект» — иначе
+    единицы, у которых менялся только этот флаг при уже совпадающем статусе,
+    не попали бы в отчёт и журнал (были бы ошибочно показаны как «не изменено»).
+    """
+    affected = [item for item in items if _apply_status(item, new_status, user_id, comment)]
+    if new_status == ItemStatus.DEFECT and usable_despite_defect:
+        for item in items:
+            if not item.usable_despite_defect:
+                item.usable_despite_defect = True
+                if item not in affected:
+                    affected.append(item)
+    if affected:
+        db.commit()
+        for item in items:
+            db.refresh(item)
+    return affected
+
+
+def bulk_delete_items(db: Session, items: list[EquipmentItem]) -> tuple[list[str], list[str]]:
+    """Удалить неиспользованные и не входящие в комплект единицы одним коммитом.
+
+    Возвращает (метки удалённых, метки пропущенных)."""
+    deleted: list[str] = []
+    skipped: list[str] = []
+    for item in items:
+        if item.kit_id is not None or is_item_used(db, item):
+            skipped.append(item_label(item))
+            continue
+        deleted.append(item_label(item))
+        db.delete(item)
+    if deleted:
+        db.commit()
+    return deleted, skipped
 
 
 def set_usable_despite_defect(db: Session, item: EquipmentItem, value: bool) -> EquipmentItem:

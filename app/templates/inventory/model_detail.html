@@ -107,22 +107,124 @@
     <div class="form-text mb-2">При количестве больше 1 штрих-коды генерируются последовательно от стартового (напр. <code>NVPRO_001</code> → <code>NVPRO_010</code>). Серийный и инвентарный № применяются только при добавлении одной единицы.</div>
     <div id="add-barcode-reader" class="mkl-scan-container mkl-scan-container--compact mb-3" style="display:none"></div>
     {% if items %}
-    <div class="table-responsive">
-      <table class="table table-sm table-hover align-middle">
-        <thead><tr><th>Штрих-код</th><th>Серийный №</th><th>Инв. №</th><th>Статус</th><th></th></tr></thead>
-        <tbody>
-          {% for it in items %}
-          <tr>
-            <td>{% if it.barcode %}<code>{{ it.barcode }}</code>{% else %}<span class="text-secondary">—</span>{% endif %}</td>
-            <td>{{ it.serial_number or "—" }}</td>
-            <td>{{ it.inventory_number or "—" }}</td>
-            <td><span class="badge text-bg-{{ it.status.badge }}">{{ it.status.label }}</span>{% if it.status == ItemStatus.DEFECT and it.usable_despite_defect %} <span class="badge text-bg-success" title="Используется несмотря на дефект">используется</span>{% endif %}{% if it.kit_id %} <a href="/inventory/kits/{{ it.kit_id }}" class="badge text-bg-info text-decoration-none">в комплекте</a>{% endif %}</td>
-            <td class="text-end"><a href="/inventory/items/{{ it.id }}" class="btn btn-sm btn-outline-secondary">Открыть</a></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+      <span class="text-secondary small">Выбрано: <span id="bulk-count">0</span></span>
+      <button type="button" class="btn btn-sm btn-outline-primary" id="bulk-status-btn" disabled
+              data-bs-toggle="modal" data-bs-target="#bulk-status-modal">Изменить статус</button>
+      <button type="button" class="btn btn-sm btn-outline-warning" id="bulk-retire-btn" disabled
+              data-bs-toggle="modal" data-bs-target="#bulk-retire-modal">Списать</button>
+      <button type="button" class="btn btn-sm btn-outline-danger" id="bulk-delete-btn" disabled
+              data-bs-toggle="modal" data-bs-target="#bulk-delete-modal">Удалить</button>
     </div>
+    <form id="bulk-items-form" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+          <thead>
+            <tr>
+              <th><input type="checkbox" class="form-check-input" id="bulk-select-all"></th>
+              <th>Штрих-код</th><th>Серийный №</th><th>Инв. №</th><th>Статус</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for it in items %}
+            <tr>
+              <td><input type="checkbox" class="form-check-input bulk-item" name="item_ids" value="{{ it.id }}"></td>
+              <td>{% if it.barcode %}<code>{{ it.barcode }}</code>{% else %}<span class="text-secondary">—</span>{% endif %}</td>
+              <td>{{ it.serial_number or "—" }}</td>
+              <td>{{ it.inventory_number or "—" }}</td>
+              <td><span class="badge text-bg-{{ it.status.badge }}">{{ it.status.label }}</span>{% if it.status == ItemStatus.DEFECT and it.usable_despite_defect %} <span class="badge text-bg-success" title="Используется несмотря на дефект">используется</span>{% endif %}{% if it.kit_id %} <a href="/inventory/kits/{{ it.kit_id }}" class="badge text-bg-info text-decoration-none">в комплекте</a>{% endif %}</td>
+              <td class="text-end"><a href="/inventory/items/{{ it.id }}" class="btn btn-sm btn-outline-secondary">Открыть</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Модалка: изменить статус -->
+      <div class="modal fade" id="bulk-status-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Изменить статус</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+              <p>Выбрано единиц: <strong class="bulk-count-echo">0</strong></p>
+              <div class="mb-2">
+                <label class="form-label small mb-0">Новый статус</label>
+                <select class="form-select" name="new_status" id="bulk-status-select" form="bulk-items-form">
+                  {% for st in ItemStatus %}
+                  <option value="{{ st.value }}">{{ st.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="form-check mb-2" id="bulk-usable-defect-wrap" style="display:none">
+                <input class="form-check-input" type="checkbox" id="bulk-usable-defect"
+                       name="usable_despite_defect" value="1" form="bulk-items-form">
+                <label class="form-check-label" for="bulk-usable-defect">
+                  Использовать несмотря на дефект (числится доступным к аренде)
+                </label>
+              </div>
+              <div class="mb-0">
+                <label class="form-label small mb-0">Комментарий</label>
+                <input class="form-control" name="comment" form="bulk-items-form">
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+              <button type="submit" class="btn btn-primary" form="bulk-items-form"
+                      formaction="/inventory/models/{{ model.id }}/items/bulk-status">Применить</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Модалка: списать -->
+      <div class="modal fade" id="bulk-retire-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Списать единицы</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+              <p>Выбранные единицы (<strong class="bulk-count-echo">0</strong>) получат статус «Списано».</p>
+              <div class="mb-0">
+                <label class="form-label small mb-0">Комментарий</label>
+                <input class="form-control" name="comment" form="bulk-items-form">
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+              <button type="submit" class="btn btn-warning" form="bulk-items-form"
+                      formaction="/inventory/models/{{ model.id }}/items/bulk-retire">Списать</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Модалка: удалить -->
+      <div class="modal fade" id="bulk-delete-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Удалить единицы</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+              <p>Удалить безвозвратно <strong class="bulk-count-echo">0</strong> ед.?</p>
+              <p class="small text-secondary mb-0">Единицы, состоящие в комплекте или уже использованные, будут пропущены.</p>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+              <button type="submit" class="btn btn-danger" form="bulk-items-form"
+                      formaction="/inventory/models/{{ model.id }}/items/bulk-delete">Удалить</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </form>
     {% else %}
     <p class="text-secondary m-0">Единиц пока нет.</p>
     {% endif %}
@@ -226,4 +328,5 @@
 {% block scripts %}
 <script src="{{ static_url('vendor/zxing.min.js') }}"></script>
 <script src="{{ static_url('js/barcode-scan.js') }}"></script>
+<script src="{{ static_url('js/bulk-items.js') }}"></script>
 {% endblock %}

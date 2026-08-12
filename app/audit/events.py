@@ -23,6 +23,7 @@ class EventType(enum.StrEnum):
     INVENTORY_MODEL = "inventory_model"
     INVENTORY_QTY = "inventory_qty"
     INVENTORY_ITEM_STATUS = "inventory_item_status"
+    INVENTORY_ITEM_DELETE = "inventory_item_delete"
     KIT_MANAGE = "kit_manage"
     DOCUMENT_GENERATE = "document_generate"
     USER_MANAGE = "user_manage"
@@ -52,6 +53,7 @@ class EventType(enum.StrEnum):
             "inventory_model": "Модель оборудования",
             "inventory_qty": "Изменение остатка",
             "inventory_item_status": "Статус экземпляра",
+            "inventory_item_delete": "Удаление экземпляров",
             "kit_manage": "Комплект",
             "document_generate": "Генерация PDF",
             "user_manage": "Управление пользователями",

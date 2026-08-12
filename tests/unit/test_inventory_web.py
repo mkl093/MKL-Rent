@@ -343,3 +343,194 @@ def test_edit_item_without_barcode_ok(auth_client, db_session):
 
     updated = auth_client.get(f"/inventory/items/{item_id}").text
     assert "INV-1" in updated
+
+
+_bulk_test_seq = [0]
+
+
+def _make_serial_model_with_items(auth_client, db_session, count=3):
+    """Создать посерийную модель с count единицами, вернуть (model_id, [item_id, ...])."""
+    from decimal import Decimal
+
+    from app.inventory.enums import AccountingType
+    from app.inventory.schemas import EquipmentModelCreate
+    from app.inventory.services import categories as cat_service
+    from app.inventory.services import equipment as eq_service
+    from app.inventory.services import items as item_service
+
+    _bulk_test_seq[0] += 1
+    n = _bulk_test_seq[0]
+    cat = cat_service.create_category(db_session, f"Массовые тесты {n}")
+    model = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id,
+            name=f"Bulk Test Model {n}",
+            accounting_type=AccountingType.SERIAL,
+            base_price_eur=Decimal("0"),
+        ),
+    )
+    items = item_service.create_items_bulk(db_session, model, count, None, None)
+    return model.id, [it.id for it in items]
+
+
+def test_bulk_change_status(auth_client, db_session):
+    from app.audit.models import AuditLog
+    from app.inventory.enums import ItemStatus
+    from app.inventory.services import items as item_service
+
+    model_id, item_ids = _make_serial_model_with_items(auth_client, db_session, 2)
+    token = _csrf(auth_client, f"/inventory/models/{model_id}")
+    resp = auth_client.post(
+        f"/inventory/models/{model_id}/items/bulk-status",
+        data={
+            "item_ids": [str(i) for i in item_ids],
+            "new_status": "repair",
+            "comment": "профилактика",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    for item_id in item_ids:
+        item = item_service.get_item(db_session, item_id)
+        assert item.status == ItemStatus.REPAIR
+        assert item.status_history[0].comment == "профилактика"
+
+    entries = (
+        db_session.query(AuditLog).filter(AuditLog.event_type == "inventory_item_status").all()
+    )
+    assert len(entries) == 1
+
+
+def test_bulk_retire(auth_client, db_session):
+    from app.inventory.enums import ItemStatus
+    from app.inventory.services import items as item_service
+
+    model_id, item_ids = _make_serial_model_with_items(auth_client, db_session, 2)
+    token = _csrf(auth_client, f"/inventory/models/{model_id}")
+    auth_client.post(
+        f"/inventory/models/{model_id}/items/bulk-retire",
+        data={"item_ids": [str(i) for i in item_ids], "csrf_token": token},
+        follow_redirects=False,
+    )
+    for item_id in item_ids:
+        assert item_service.get_item(db_session, item_id).status == ItemStatus.RETIRED
+
+
+def test_bulk_status_usable_despite_defect(auth_client, db_session):
+    from app.inventory.enums import ItemStatus
+    from app.inventory.services import items as item_service
+
+    model_id, item_ids = _make_serial_model_with_items(auth_client, db_session, 2)
+    # Первую единицу переводим в «дефект» заранее — статус для неё не изменится,
+    # но флаг usable_despite_defect всё равно должен примениться.
+    first = item_service.get_item(db_session, item_ids[0])
+    item_service.change_status(db_session, first, ItemStatus.DEFECT, None)
+
+    token = _csrf(auth_client, f"/inventory/models/{model_id}")
+    auth_client.post(
+        f"/inventory/models/{model_id}/items/bulk-status",
+        data={
+            "item_ids": [str(i) for i in item_ids],
+            "new_status": "defect",
+            "usable_despite_defect": "1",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+    db_session.expire_all()
+    for item_id in item_ids:
+        item = item_service.get_item(db_session, item_id)
+        assert item.status == ItemStatus.DEFECT
+        assert item.usable_despite_defect is True
+
+
+def test_bulk_status_usable_despite_defect_already_defect(auth_client, db_session):
+    """Обе единицы уже в статусе «Есть дефект» — отметка флага должна засчитаться
+    как изменение (regression: раньше выдавало «Статус изменён у 0 из N»)."""
+    from app.inventory.enums import ItemStatus
+    from app.inventory.services import items as item_service
+
+    model_id, item_ids = _make_serial_model_with_items(auth_client, db_session, 2)
+    for item_id in item_ids:
+        item = item_service.get_item(db_session, item_id)
+        item_service.change_status(db_session, item, ItemStatus.DEFECT, None)
+
+    token = _csrf(auth_client, f"/inventory/models/{model_id}")
+    resp = auth_client.post(
+        f"/inventory/models/{model_id}/items/bulk-status",
+        data={
+            "item_ids": [str(i) for i in item_ids],
+            "new_status": "defect",
+            "usable_despite_defect": "1",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+    flash_page = auth_client.get(resp.headers["location"]).text
+    assert "Статус изменён у 2 из 2." in flash_page
+
+    db_session.expire_all()
+    for item_id in item_ids:
+        item = item_service.get_item(db_session, item_id)
+        assert item.usable_despite_defect is True
+
+
+def test_bulk_delete_skips_kit_items(auth_client, db_session):
+    from app.audit.models import AuditLog
+    from app.inventory.schemas import KitInput
+    from app.inventory.services import items as item_service
+    from app.inventory.services import kits as kit_service
+
+    model_id, item_ids = _make_serial_model_with_items(auth_client, db_session, 3)
+    kit = kit_service.create_kit(db_session, KitInput(name="Тестовый комплект"))
+    kit_service.add_items(db_session, kit, [item_ids[0]])
+
+    token = _csrf(auth_client, f"/inventory/models/{model_id}")
+    resp = auth_client.post(
+        f"/inventory/models/{model_id}/items/bulk-delete",
+        data={"item_ids": [str(i) for i in item_ids], "csrf_token": token},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    flash_page = auth_client.get(resp.headers["location"]).text
+    assert "Удалено: 2" in flash_page
+    assert "Пропущено: 1" in flash_page
+
+    assert item_service.get_item(db_session, item_ids[0]) is not None
+    assert item_service.get_item(db_session, item_ids[1]) is None
+    assert item_service.get_item(db_session, item_ids[2]) is None
+
+    entries = (
+        db_session.query(AuditLog).filter(AuditLog.event_type == "inventory_item_delete").all()
+    )
+    assert len(entries) == 1
+
+
+def test_bulk_actions_empty_selection_noop(auth_client, db_session):
+    model_id, _ = _make_serial_model_with_items(auth_client, db_session, 1)
+    token = _csrf(auth_client, f"/inventory/models/{model_id}")
+    resp = auth_client.post(
+        f"/inventory/models/{model_id}/items/bulk-delete",
+        data={"csrf_token": token},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+
+def test_bulk_actions_ignore_foreign_model_items(auth_client, db_session):
+    from app.inventory.enums import ItemStatus
+    from app.inventory.services import items as item_service
+
+    model_id, item_ids = _make_serial_model_with_items(auth_client, db_session, 1)
+    other_model_id, other_item_ids = _make_serial_model_with_items(auth_client, db_session, 1)
+
+    token = _csrf(auth_client, f"/inventory/models/{model_id}")
+    auth_client.post(
+        f"/inventory/models/{model_id}/items/bulk-retire",
+        data={"item_ids": [str(other_item_ids[0])], "csrf_token": token},
+        follow_redirects=False,
+    )
+    assert item_service.get_item(db_session, other_item_ids[0]).status == ItemStatus.ACTIVE

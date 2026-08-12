@@ -1294,6 +1294,114 @@ def item_create(
     return redirect(f"/inventory/models/{model_id}")
 
 
+def _bulk_labels(labels: list[str], limit: int = 20) -> str:
+    shown = ", ".join(labels[:limit])
+    rest = len(labels) - limit
+    return shown + (f" и ещё {rest}" if rest > 0 else "")
+
+
+@router.post("/models/{model_id}/items/bulk-status", dependencies=[Depends(verify_csrf)])
+def items_bulk_status(
+    request: Request,
+    model_id: int,
+    item_ids: list[int] = Form([]),
+    new_status: str = Form(...),
+    comment: str | None = Form(None),
+    usable_despite_defect: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    items = item_service.list_items_by_ids(db, model_id, item_ids)
+    if not items:
+        flash(request, "Не выбрано ни одной единицы.", "warning")
+        return redirect(f"/inventory/models/{model_id}")
+    status = ItemStatus(new_status)
+    changed = item_service.bulk_change_status(
+        db, items, status, user.id, _str(comment), usable_despite_defect=bool(usable_despite_defect)
+    )
+    if changed:
+        audit_log(
+            db,
+            user,
+            EventType.INVENTORY_ITEM_STATUS,
+            f"Массовая смена статуса — {len(changed)} ед. "
+            f"({_bulk_labels([item_service.item_label(it) for it in changed])})",
+            object_type="equipment_model",
+            object_id=model_id,
+            new_value=status.label,
+        )
+    flash(
+        request,
+        f"Статус изменён у {len(changed)} из {len(items)}.",
+        "success" if changed else "warning",
+    )
+    return redirect(f"/inventory/models/{model_id}")
+
+
+@router.post("/models/{model_id}/items/bulk-retire", dependencies=[Depends(verify_csrf)])
+def items_bulk_retire(
+    request: Request,
+    model_id: int,
+    item_ids: list[int] = Form([]),
+    comment: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    items = item_service.list_items_by_ids(db, model_id, item_ids)
+    if not items:
+        flash(request, "Не выбрано ни одной единицы.", "warning")
+        return redirect(f"/inventory/models/{model_id}")
+    changed = item_service.bulk_change_status(db, items, ItemStatus.RETIRED, user.id, _str(comment))
+    if changed:
+        audit_log(
+            db,
+            user,
+            EventType.INVENTORY_ITEM_STATUS,
+            f"Массовое списание — {len(changed)} ед. "
+            f"({_bulk_labels([item_service.item_label(it) for it in changed])})",
+            object_type="equipment_model",
+            object_id=model_id,
+            new_value=ItemStatus.RETIRED.label,
+        )
+    flash(request, f"Списано {len(changed)} из {len(items)}.", "success" if changed else "warning")
+    return redirect(f"/inventory/models/{model_id}")
+
+
+@router.post("/models/{model_id}/items/bulk-delete", dependencies=[Depends(verify_csrf)])
+def items_bulk_delete(
+    request: Request,
+    model_id: int,
+    item_ids: list[int] = Form([]),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    items = item_service.list_items_by_ids(db, model_id, item_ids)
+    if not items:
+        flash(request, "Не выбрано ни одной единицы.", "warning")
+        return redirect(f"/inventory/models/{model_id}")
+    cert_paths_by_label = {
+        item_service.item_label(it): [c.file_path for c in it.certificates] for it in items
+    }
+    deleted, skipped = item_service.bulk_delete_items(db, items)
+    for label in deleted:
+        for path in cert_paths_by_label.get(label, []):
+            delete_document(path)
+    if deleted:
+        audit_log(
+            db,
+            user,
+            EventType.INVENTORY_ITEM_DELETE,
+            f"Массовое удаление — {len(deleted)} ед. ({_bulk_labels(deleted)})",
+            object_type="equipment_model",
+            object_id=model_id,
+        )
+    msg = f"Удалено: {len(deleted)}."
+    if skipped:
+        msg += f" Пропущено: {len(skipped)} (в комплекте/использовались: {_bulk_labels(skipped)})."
+    flash(request, msg, "success" if deleted else "warning")
+    return redirect(f"/inventory/models/{model_id}")
+
+
 @router.get("/items/{item_id}")
 def item_detail(
     request: Request,
