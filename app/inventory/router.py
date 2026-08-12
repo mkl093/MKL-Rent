@@ -8,7 +8,6 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.events import EventType
@@ -1390,7 +1389,11 @@ def item_usable_despite_defect(
             user,
             EventType.INVENTORY_ITEM_STATUS,
             f"Экземпляр {item.barcode}: "
-            + ("отмечен доступным несмотря на дефект" if value else "снята отметка использования при дефекте"),
+            + (
+                "отмечен доступным несмотря на дефект"
+                if value
+                else "снята отметка использования при дефекте"
+            ),
             object_type="equipment_item",
             object_id=item.id,
         )
