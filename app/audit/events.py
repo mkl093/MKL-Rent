@@ -29,6 +29,8 @@ class EventType(enum.StrEnum):
     AUTH_LOGIN_BLOCKED = "auth_login_blocked"
     STAFF_MANAGE = "staff_manage"
     ASSIGNMENT_MANAGE = "assignment_manage"
+    EQUIPMENT_MANUAL = "equipment_manual"
+    EQUIPMENT_CERTIFICATE = "equipment_certificate"
 
     @property
     def label(self) -> str:
@@ -56,4 +58,6 @@ class EventType(enum.StrEnum):
             "auth_login_blocked": "Блокировка входа по IP",
             "staff_manage": "Управление персоналом",
             "assignment_manage": "Занятость сотрудника",
+            "equipment_manual": "Мануал модели",
+            "equipment_certificate": "Сертификат испытаний",
         }[self.value]

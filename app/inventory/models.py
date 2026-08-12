@@ -6,11 +6,12 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -129,6 +130,12 @@ class EquipmentModel(Base, TimestampMixin):
         cascade="all, delete-orphan",
         order_by="EquipmentModelAccessory.id",
     )
+    # Файлы мануалов (ТЗ: файловое хранилище мануалов и сертификатов).
+    manuals: Mapped[list[EquipmentManual]] = relationship(
+        back_populates="model",
+        cascade="all, delete-orphan",
+        order_by="EquipmentManual.uploaded_at.desc()",
+    )
 
     @property
     def is_serial(self) -> bool:
@@ -241,6 +248,12 @@ class EquipmentItem(Base, TimestampMixin):
         cascade="all, delete-orphan",
         order_by="EquipmentStatusHistory.changed_at.desc()",
     )
+    # Сертификаты испытаний — привязаны к конкретному экземпляру, не к модели.
+    certificates: Mapped[list[EquipmentCertificate]] = relationship(
+        back_populates="item",
+        cascade="all, delete-orphan",
+        order_by="EquipmentCertificate.uploaded_at.desc()",
+    )
 
     @property
     def is_usable(self) -> bool:
@@ -269,6 +282,61 @@ class EquipmentStatusHistory(Base):
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     item: Mapped[EquipmentItem] = relationship(back_populates="status_history")
+
+
+class EquipmentManual(Base):
+    """Файл мануала модели оборудования (PDF/ZIP). У модели их может быть несколько."""
+
+    __tablename__ = "equipment_manuals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    model_id: Mapped[int] = mapped_column(
+        ForeignKey("equipment_models.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    file_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    uploaded_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    model: Mapped[EquipmentModel] = relationship(back_populates="manuals")
+
+
+class EquipmentCertificate(Base):
+    """Файл сертификата испытаний конкретной единицы оборудования. Их может быть несколько."""
+
+    __tablename__ = "equipment_certificates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    item_id: Mapped[int] = mapped_column(
+        ForeignKey("equipment_items.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    issued_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    expires_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    file_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    uploaded_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    item: Mapped[EquipmentItem] = relationship(back_populates="certificates")
+
+    @property
+    def is_expired(self) -> bool:
+        return self.expires_at is not None and self.expires_at < date.today()
+
+    @property
+    def expires_soon(self) -> bool:
+        """Истекает в течение 30 дней — подсветка на карточке единицы."""
+        if self.expires_at is None or self.is_expired:
+            return False
+        return (self.expires_at - date.today()).days <= 30
 
 
 class AccessoryCategory(Base, TimestampMixin):

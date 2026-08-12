@@ -11,7 +11,7 @@ from app.auth.models import User
 from app.database import get_db
 from app.dependencies import redirect, render, require_login, verify_csrf
 from app.settings.schemas import CompanySettingsUpdate
-from app.settings.service import update_company_settings
+from app.settings.service import get_storage_stats, update_company_settings
 from app.templating import flash
 from app.utils.images import ImageError, delete_photo, save_logo
 
@@ -31,7 +31,13 @@ def settings_page(
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    return render(request, "settings/index.html", {"page_title": "Настройки"}, db=db, user=user)
+    return render(
+        request,
+        "settings/index.html",
+        {"page_title": "Настройки", "storage": get_storage_stats()},
+        db=db,
+        user=user,
+    )
 
 
 @router.post("", dependencies=[Depends(verify_csrf)])

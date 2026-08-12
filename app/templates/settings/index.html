@@ -82,4 +82,22 @@
     <button type="submit" class="btn btn-primary">Сохранить</button>
   </div>
 </form>
+
+<div class="card shadow-sm mt-4">
+  <div class="card-header"><strong>Файловое хранилище</strong></div>
+  <div class="card-body">
+    <dl class="row mb-2">
+      <dt class="col-5 col-sm-3">Путь на сервере</dt>
+      <dd class="col-7 col-sm-9"><code>{{ storage.path }}</code></dd>
+      <dt class="col-5 col-sm-3">Свободно</dt>
+      <dd class="col-7 col-sm-9">{{ (storage.free_bytes / 1024 / 1024 / 1024)|round(1) }} ГБ из {{ (storage.total_bytes / 1024 / 1024 / 1024)|round(1) }} ГБ</dd>
+    </dl>
+    <div class="progress" style="height: 0.5rem">
+      <div class="progress-bar {{ 'bg-danger' if storage.percent_used >= 90 else ('bg-warning' if storage.percent_used >= 75 else 'bg-primary') }}"
+           role="progressbar" style="width: {{ storage.percent_used }}%"
+           aria-valuenow="{{ storage.percent_used }}" aria-valuemin="0" aria-valuemax="100"></div>
+    </div>
+    <div class="form-text mt-1">Занято {{ storage.percent_used }}% диска. Здесь хранятся фото, логотип, мануалы и сертификаты испытаний.</div>
+  </div>
+</div>
 {% endblock %}

@@ -4,14 +4,17 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.events import EventType
 from app.audit.service import log as audit_log
 from app.auth.models import User
+from app.config import get_settings
 from app.database import get_db
 from app.dependencies import redirect, render, require_login, verify_csrf
 from app.inventory.enums import AccountingType, ItemStatus, KitWeightMode, PackingType
@@ -26,11 +29,19 @@ from app.inventory.schemas import (
 )
 from app.inventory.services import accessories as acc_service
 from app.inventory.services import categories as cat_service
+from app.inventory.services import documents as doc_service
 from app.inventory.services import equipment as eq_service
 from app.inventory.services import items as item_service
 from app.inventory.services import kits as kit_service
 from app.projects.availability import compute_availability, compute_planboard, occupancy_detail
 from app.templating import flash
+from app.utils.documents import (
+    CERTIFICATES_SUBDIR,
+    MANUALS_SUBDIR,
+    DocumentError,
+    delete_document,
+    save_document,
+)
 from app.utils.images import ImageError, delete_photo, save_model_photo
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
@@ -1058,6 +1069,8 @@ def model_delete(
     if model:
         try:
             delete_photo(model.photo_path)
+            for manual in model.manuals:
+                delete_document(manual.file_path)
             eq_service.delete_model(db, model)
             flash(request, "Модель удалена.", "success")
             return redirect("/inventory")
@@ -1094,6 +1107,115 @@ async def _maybe_save_photo(request: Request, db: Session, model, photo: UploadF
     delete_photo(model.photo_path)
     model.photo_path = rel
     db.commit()
+
+
+# --- Мануалы модели -------------------------------------------------------
+
+
+def _document_media_type(path: Path) -> str:
+    return "application/pdf" if path.suffix.lower() == ".pdf" else "application/zip"
+
+
+@router.post("/models/{model_id}/manuals", dependencies=[Depends(verify_csrf)])
+async def manual_upload(
+    request: Request,
+    model_id: int,
+    title: str | None = Form(None),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    model = eq_service.get_model(db, model_id)
+    if model is None:
+        return redirect("/inventory")
+    if not file.filename:
+        flash(request, "Файл не выбран.", "warning")
+        return redirect(f"/inventory/models/{model_id}")
+    raw = await file.read()
+    try:
+        rel_path = save_document(raw, file.filename, MANUALS_SUBDIR)
+    except DocumentError as exc:
+        flash(request, f"Файл не загружен: {exc}", "warning")
+        return redirect(f"/inventory/models/{model_id}")
+    manual = doc_service.create_manual(
+        db,
+        model,
+        title=_str(title),
+        file_path=rel_path,
+        original_filename=file.filename,
+        file_size=len(raw),
+        uploaded_by_id=user.id,
+    )
+    audit_log(
+        db,
+        user,
+        EventType.EQUIPMENT_MANUAL,
+        f"Загружен мануал «{manual.original_filename}» для «{model.name}»",
+        object_type="equipment_model",
+        object_id=model.id,
+    )
+    flash(request, "Мануал загружен.", "success")
+    return redirect(f"/inventory/models/{model_id}")
+
+
+@router.post("/models/{model_id}/manuals/{manual_id}/rename", dependencies=[Depends(verify_csrf)])
+def manual_rename(
+    request: Request,
+    model_id: int,
+    manual_id: int,
+    title: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    manual = doc_service.get_manual(db, model_id, manual_id)
+    if manual:
+        doc_service.rename_manual(db, manual, _str(title))
+        flash(request, "Название обновлено.", "success")
+    return redirect(f"/inventory/models/{model_id}")
+
+
+@router.post("/models/{model_id}/manuals/{manual_id}/delete", dependencies=[Depends(verify_csrf)])
+def manual_delete(
+    request: Request,
+    model_id: int,
+    manual_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    manual = doc_service.get_manual(db, model_id, manual_id)
+    if manual:
+        filename = manual.original_filename
+        doc_service.delete_manual(db, manual)
+        audit_log(
+            db,
+            user,
+            EventType.EQUIPMENT_MANUAL,
+            f"Удалён мануал «{filename}»",
+            object_type="equipment_model",
+            object_id=model_id,
+        )
+        flash(request, "Мануал удалён.", "success")
+    return redirect(f"/inventory/models/{model_id}")
+
+
+@router.get("/models/{model_id}/manuals/{manual_id}/download")
+def manual_download(
+    model_id: int,
+    manual_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    manual = doc_service.get_manual(db, model_id, manual_id)
+    if manual is None:
+        raise HTTPException(status_code=404)
+    path = Path(get_settings().storage_path) / manual.file_path
+    if not path.is_file():
+        raise HTTPException(status_code=404)
+    return FileResponse(
+        str(path),
+        media_type=_document_media_type(path),
+        headers={"Content-Disposition": f'attachment; filename="{manual.original_filename}"'},
+    )
 
 
 # --- Количественный остаток (ТЗ §10) ------------------------------------
@@ -1287,10 +1409,130 @@ def item_delete(
     if item is None:
         return redirect("/inventory")
     model_id = item.model_id
+    cert_paths = [cert.file_path for cert in item.certificates]
     try:
         item_service.delete_item(db, item)
+        for path in cert_paths:
+            delete_document(path)
         flash(request, "Экземпляр удалён.", "success")
     except item_service.InUse as exc:
         flash(request, str(exc), "danger")
         return redirect(f"/inventory/items/{item_id}")
     return redirect(f"/inventory/models/{model_id}")
+
+
+# --- Сертификаты испытаний единицы ----------------------------------------
+
+
+@router.post("/items/{item_id}/certificates", dependencies=[Depends(verify_csrf)])
+async def certificate_upload(
+    request: Request,
+    item_id: int,
+    title: str | None = Form(None),
+    issued_at: str | None = Form(None),
+    expires_at: str | None = Form(None),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    item = item_service.get_item(db, item_id)
+    if item is None:
+        return redirect("/inventory")
+    if not file.filename:
+        flash(request, "Файл не выбран.", "warning")
+        return redirect(f"/inventory/items/{item_id}")
+    raw = await file.read()
+    try:
+        rel_path = save_document(raw, file.filename, CERTIFICATES_SUBDIR)
+    except DocumentError as exc:
+        flash(request, f"Файл не загружен: {exc}", "warning")
+        return redirect(f"/inventory/items/{item_id}")
+    cert = doc_service.create_certificate(
+        db,
+        item,
+        title=_str(title),
+        issued_at=_date(issued_at),
+        expires_at=_date(expires_at),
+        file_path=rel_path,
+        original_filename=file.filename,
+        file_size=len(raw),
+        uploaded_by_id=user.id,
+    )
+    audit_log(
+        db,
+        user,
+        EventType.EQUIPMENT_CERTIFICATE,
+        f"Загружен сертификат «{cert.original_filename}» для {item.barcode or item.id}",
+        object_type="equipment_item",
+        object_id=item.id,
+    )
+    flash(request, "Сертификат загружен.", "success")
+    return redirect(f"/inventory/items/{item_id}")
+
+
+@router.post(
+    "/items/{item_id}/certificates/{certificate_id}/rename", dependencies=[Depends(verify_csrf)]
+)
+def certificate_rename(
+    request: Request,
+    item_id: int,
+    certificate_id: int,
+    title: str | None = Form(None),
+    issued_at: str | None = Form(None),
+    expires_at: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    cert = doc_service.get_certificate(db, item_id, certificate_id)
+    if cert:
+        doc_service.rename_certificate(
+            db, cert, title=_str(title), issued_at=_date(issued_at), expires_at=_date(expires_at)
+        )
+        flash(request, "Сертификат обновлён.", "success")
+    return redirect(f"/inventory/items/{item_id}")
+
+
+@router.post(
+    "/items/{item_id}/certificates/{certificate_id}/delete", dependencies=[Depends(verify_csrf)]
+)
+def certificate_delete(
+    request: Request,
+    item_id: int,
+    certificate_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    cert = doc_service.get_certificate(db, item_id, certificate_id)
+    if cert:
+        filename = cert.original_filename
+        doc_service.delete_certificate(db, cert)
+        audit_log(
+            db,
+            user,
+            EventType.EQUIPMENT_CERTIFICATE,
+            f"Удалён сертификат «{filename}»",
+            object_type="equipment_item",
+            object_id=item_id,
+        )
+        flash(request, "Сертификат удалён.", "success")
+    return redirect(f"/inventory/items/{item_id}")
+
+
+@router.get("/items/{item_id}/certificates/{certificate_id}/download")
+def certificate_download(
+    item_id: int,
+    certificate_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    cert = doc_service.get_certificate(db, item_id, certificate_id)
+    if cert is None:
+        raise HTTPException(status_code=404)
+    path = Path(get_settings().storage_path) / cert.file_path
+    if not path.is_file():
+        raise HTTPException(status_code=404)
+    return FileResponse(
+        str(path),
+        media_type=_document_media_type(path),
+        headers={"Content-Disposition": f'attachment; filename="{cert.original_filename}"'},
+    )

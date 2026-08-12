@@ -87,6 +87,74 @@
     </div>
   </div>
 </div>
+
+{# Сертификаты испытаний — файлов может быть несколько, привязаны к единице #}
+<div class="card mt-4">
+  <div class="card-header"><strong>Сертификаты испытаний ({{ item.certificates|length }})</strong></div>
+  <div class="card-body">
+    <form method="post" action="/inventory/items/{{ item.id }}/certificates" enctype="multipart/form-data" class="row g-2 mb-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="col-12 col-md-3">
+        <label class="form-label small mb-0">Название</label>
+        <input class="form-control" name="title" placeholder="напр. Протокол №14">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-0">Дата выдачи</label>
+        <input class="form-control" type="date" name="issued_at">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-0">Срок действия до</label>
+        <input class="form-control" type="date" name="expires_at">
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label small mb-0">Файл (PDF или ZIP, до 50 МБ)</label>
+        <input class="form-control" type="file" name="file" accept=".pdf,.zip" required>
+      </div>
+      <div class="col-12 col-md-2 d-flex align-items-end"><button class="btn btn-primary w-100">Загрузить</button></div>
+    </form>
+    {% if item.certificates %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead><tr><th>Название</th><th>Файл</th><th>Выдан</th><th>Действителен до</th><th>Размер</th><th class="text-end">Действия</th></tr></thead>
+        <tbody>
+          {% for c in item.certificates %}
+          <tr>
+            <td>
+              <form method="post" action="/inventory/items/{{ item.id }}/certificates/{{ c.id }}/rename" class="row g-1 m-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="col-12"><input class="form-control form-control-sm" name="title" value="{{ c.title or '' }}" placeholder="без названия"></div>
+                <div class="col-6"><input class="form-control form-control-sm" type="date" name="issued_at" value="{{ c.issued_at or '' }}"></div>
+                <div class="col-6"><input class="form-control form-control-sm" type="date" name="expires_at" value="{{ c.expires_at or '' }}"></div>
+                <div class="col-12"><button class="btn btn-sm btn-outline-secondary w-100" title="Сохранить">✓ Сохранить</button></div>
+              </form>
+            </td>
+            <td><a href="/inventory/items/{{ item.id }}/certificates/{{ c.id }}/download">{{ c.original_filename }}</a></td>
+            <td class="text-secondary small">{{ c.issued_at or "—" }}</td>
+            <td class="small">
+              {% if c.expires_at %}
+                <span class="{{ 'text-danger fw-bold' if c.is_expired else ('text-warning fw-bold' if c.expires_soon else 'text-secondary') }}">
+                  {{ c.expires_at }}{% if c.is_expired %} · просрочен{% elif c.expires_soon %} · истекает{% endif %}
+                </span>
+              {% else %}<span class="text-secondary">—</span>{% endif %}
+            </td>
+            <td class="text-secondary small">{{ (c.file_size / 1024 / 1024)|round(1) }} МБ</td>
+            <td class="text-end">
+              <form method="post" action="/inventory/items/{{ item.id }}/certificates/{{ c.id }}/delete" class="m-0"
+                    onsubmit="return confirm('Удалить сертификат?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="btn btn-sm btn-outline-danger">Удалить</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-secondary m-0">Сертификатов пока нет.</p>
+    {% endif %}
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
