@@ -55,6 +55,13 @@ def save_document(raw: bytes, original_filename: str, subdir: str) -> str:
     return f"{subdir}/{filename}"
 
 
+def format_filesize(size_bytes: int) -> str:
+    """Человекочитаемый размер: КБ до 1 МБ, иначе МБ (иначе мелкие файлы «0.0 МБ»)."""
+    if size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.0f} КБ"
+    return f"{size_bytes / 1024 / 1024:.1f} МБ"
+
+
 def delete_document(rel_path: str | None) -> None:
     """Удалить файл по относительному пути (молча игнорирует отсутствие)."""
     if not rel_path:

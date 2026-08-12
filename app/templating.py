@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
+from app.utils.documents import format_filesize
 from app.utils.timezone import format_datetime
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -14,6 +15,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 templates.env.globals["format_datetime"] = format_datetime
+templates.env.globals["format_filesize"] = format_filesize
 
 
 def static_url(path: str) -> str:

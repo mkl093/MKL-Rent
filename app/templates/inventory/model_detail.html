@@ -160,7 +160,7 @@
               </form>
             </td>
             <td><a href="/inventory/models/{{ model.id }}/manuals/{{ m.id }}/download">{{ m.original_filename }}</a></td>
-            <td class="text-secondary">{{ (m.file_size / 1024 / 1024)|round(1) }} МБ</td>
+            <td class="text-secondary">{{ format_filesize(m.file_size) }}</td>
             <td class="text-secondary small">{{ format_datetime(m.uploaded_at) }}</td>
             <td class="text-end">
               <form method="post" action="/inventory/models/{{ model.id }}/manuals/{{ m.id }}/delete" class="m-0"

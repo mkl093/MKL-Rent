@@ -137,7 +137,7 @@
                 </span>
               {% else %}<span class="text-secondary">—</span>{% endif %}
             </td>
-            <td class="text-secondary small">{{ (c.file_size / 1024 / 1024)|round(1) }} МБ</td>
+            <td class="text-secondary small">{{ format_filesize(c.file_size) }}</td>
             <td class="text-end">
               <form method="post" action="/inventory/items/{{ item.id }}/certificates/{{ c.id }}/delete" class="m-0"
                     onsubmit="return confirm('Удалить сертификат?')">
