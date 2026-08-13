@@ -305,6 +305,27 @@ def test_global_barcode_search(db_session, category):
     assert item_service.find_by_barcode(db_session, "NOPE") is None
 
 
+def test_global_barcode_search_case_and_space_insensitive(db_session, category):
+    """Пробел внутри штрих-кода и разный регистр не должны мешать поиску.
+
+    Регрессия: нормализация для сравнения должна применяться симметрично к
+    введённому коду и к значению в БД — иначе штрих-код со значимым пробелом
+    (например, "Gloshine VA3010006") совпадал бы только с одной стороны.
+    """
+    model = _serial_model(db_session, category)
+    item_service.create_item(
+        db_session, model, EquipmentItemInput(barcode="Gloshine VA3010006"), user_id=None
+    )
+    for query in (
+        "Gloshine VA3010006",
+        "gloshine va3010006",
+        "GLOSHINEVA3010006",
+        "  Gloshine   VA3010006  ",
+    ):
+        found = item_service.find_by_barcode(db_session, query)
+        assert found is not None, f"не найден по запросу {query!r}"
+
+
 def test_stock_quantity(db_session, category):
     qty = _qty_model(db_session, category, qty=7)
     assert eq_service.stock_quantity(db_session, qty) == 7

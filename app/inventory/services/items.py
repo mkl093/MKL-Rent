@@ -20,20 +20,33 @@ class DuplicateBarcode(InventoryError):
 
 
 _INVISIBLE_CHARS = dict.fromkeys(map(ord, "​‌‍﻿"), None)
+_WHITESPACE_CHARS = (" ", "\t", "\n", "\r", "\xa0")
 
 
 def normalize_barcode(value: str) -> str:
     """Нормализовать штрих-код для сравнения (ТЗ §21.4).
 
     Сканер и ручной ввод иногда дают строки, которые выглядят одинаково, но
-    отличаются регистром, невидимыми юникод-символами (NBSP, zero-width) или
-    внутренними пробелами — из-за чего точное сравнение с сохранённым
-    значением не срабатывало, хотя код был распознан верно. Само хранимое
-    значение не трогаем — нормализуем только на момент сравнения.
+    отличаются регистром или невидимыми юникод-символами (zero-width) —
+    из-за чего точное сравнение с сохранённым значением не срабатывало, хотя
+    код был распознан верно. Само хранимое значение не трогаем — нормализуем
+    только на момент сравнения. Набор вырезаемых пробельных символов совпадает
+    с тем, что вырезает _sql_normalized_barcode() на стороне БД — иначе штрих-код,
+    в котором пробел значим (например, "Gloshine VA3010006"), совпадал бы с
+    очищенным от пробелов вводом только с одной стороны сравнения.
     """
-    cleaned = value.replace("\xa0", " ").translate(_INVISIBLE_CHARS).strip()
-    cleaned = re.sub(r"\s+", "", cleaned)
+    cleaned = value.translate(_INVISIBLE_CHARS)
+    for ch in _WHITESPACE_CHARS:
+        cleaned = cleaned.replace(ch, "")
     return cleaned.upper()
+
+
+def _sql_normalized_barcode(column):
+    """SQL-эквивалент normalize_barcode() для сравнения со значением в столбце."""
+    expr = column
+    for ch in _WHITESPACE_CHARS:
+        expr = func.replace(expr, ch, "")
+    return func.upper(expr)
 
 
 def find_by_barcode(db: Session, barcode: str) -> EquipmentItem | None:
@@ -47,7 +60,7 @@ def find_by_barcode(db: Session, barcode: str) -> EquipmentItem | None:
             selectinload(EquipmentItem.model),
             selectinload(EquipmentItem.status_history),
         )
-        .where(func.upper(EquipmentItem.barcode) == normalized)
+        .where(_sql_normalized_barcode(EquipmentItem.barcode) == normalized)
         .order_by(EquipmentItem.id)
         .limit(1)
     )
@@ -82,7 +95,7 @@ def create_item(
     barcode = (data.barcode or "").strip() or None
     if barcode and db.scalar(
         select(EquipmentItem.id).where(
-            func.upper(EquipmentItem.barcode) == normalize_barcode(barcode)
+            _sql_normalized_barcode(EquipmentItem.barcode) == normalize_barcode(barcode)
         )
     ):
         raise DuplicateBarcode("Штрих-код уже используется")
@@ -154,7 +167,7 @@ def create_items_bulk(
         taken = set(
             db.execute(
                 select(EquipmentItem.barcode).where(
-                    func.upper(EquipmentItem.barcode).in_(normalized_barcodes)
+                    _sql_normalized_barcode(EquipmentItem.barcode).in_(normalized_barcodes)
                 )
             )
             .scalars()
@@ -213,7 +226,7 @@ def update_item(db: Session, item: EquipmentItem, data: EquipmentItemInput) -> E
         and normalize_barcode(barcode) != normalize_barcode(item.barcode or "")
         and db.scalar(
             select(EquipmentItem.id).where(
-                func.upper(EquipmentItem.barcode) == normalize_barcode(barcode)
+                _sql_normalized_barcode(EquipmentItem.barcode) == normalize_barcode(barcode)
             )
         )
     ):

@@ -13,7 +13,7 @@
     <div class="container-fluid">
       <a class="navbar-brand fw-semibold" href="/">{{ company.company_name if company and company.company_name else "rental-inventory" }}</a>
       <a class="btn btn-outline-light btn-sm d-lg-none me-2 d-inline-flex align-items-center gap-1"
-         href="/inventory/scan" title="Поиск по штрих-коду">
+         href="/inventory/scan?autostart=1" title="Поиск по штрих-коду">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="M1.5 4.5V1.5H4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
           <path d="M11.5 1.5H14.5V4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>

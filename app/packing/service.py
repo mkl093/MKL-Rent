@@ -5,7 +5,7 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -13,7 +13,7 @@ from app.estimates.service import get_estimate
 from app.inventory.enums import AccountingType
 from app.inventory.models import EquipmentItem, EquipmentModel, Kit
 from app.inventory.services import kits as kit_service
-from app.inventory.services.items import normalize_barcode
+from app.inventory.services.items import _sql_normalized_barcode, normalize_barcode
 from app.numbering.models import DocType
 from app.numbering.service import next_number
 from app.packing.calc import (
@@ -335,7 +335,7 @@ def add_serial_item(
 
     item = db.execute(
         select(EquipmentItem)
-        .where(func.upper(EquipmentItem.barcode) == normalize_barcode(barcode))
+        .where(_sql_normalized_barcode(EquipmentItem.barcode) == normalize_barcode(barcode))
         .order_by(EquipmentItem.id)
         .limit(1)
     ).scalars().first()
@@ -399,7 +399,7 @@ def scan(
     barcode = barcode.strip()
     item = db.execute(
         select(EquipmentItem)
-        .where(func.upper(EquipmentItem.barcode) == normalize_barcode(barcode))
+        .where(_sql_normalized_barcode(EquipmentItem.barcode) == normalize_barcode(barcode))
         .order_by(EquipmentItem.id)
         .limit(1)
     ).scalars().first()

@@ -46,32 +46,44 @@
     hint.classList.add("d-none");
   }
 
-  camBtn.addEventListener("click", async () => {
+  async function startCamera() {
+    hint.classList.remove("d-none");
+    hint.textContent = "Наведите камеру на штрих-код (или QR-дубликат, если штрих-код слишком мелкий), держите телефон на расстоянии ~15-20 см — вплотную камера не сфокусируется.";
+    try {
+      scanner = await window.MklScan.start(reader, {
+        formats: ["code_128", "code_39", "code_93", "codabar", "itf", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"],
+        onDecode: (text) => {
+          if (submitted) return;
+          submitted = true;
+          input.value = text;
+          scanner.stop();
+          form.submit();
+        },
+        onEnded: resetUi,
+      });
+      camOn = true; camBtn.textContent = "Выключить камеру";
+    } catch (e) {
+      resetUi();
+      hint.textContent = (e && e.message) || "Камера недоступна. Нужен HTTPS (см. python -m scripts.make_cert) или ввод вручную.";
+    }
+  }
+
+  camBtn.addEventListener("click", () => {
     if (!camOn) {
-      hint.classList.remove("d-none");
-      hint.textContent = "Наведите камеру на штрих-код (или QR-дубликат, если штрих-код слишком мелкий), держите телефон на расстоянии ~15-20 см — вплотную камера не сфокусируется.";
-      try {
-        scanner = await window.MklScan.start(reader, {
-          formats: ["code_128", "code_39", "code_93", "codabar", "itf", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"],
-          onDecode: (text) => {
-            if (submitted) return;
-            submitted = true;
-            input.value = text;
-            scanner.stop();
-            form.submit();
-          },
-          onEnded: resetUi,
-        });
-        camOn = true; camBtn.textContent = "Выключить камеру";
-      } catch (e) {
-        resetUi();
-        hint.textContent = (e && e.message) || "Камера недоступна. Нужен HTTPS (см. python -m scripts.make_cert) или ввод вручную.";
-      }
+      startCamera();
     } else {
       if (scanner) scanner.stop();
       resetUi();
     }
   });
+
+  // Переход из шапки (?autostart=1) — сразу открыть камеру, без лишнего клика.
+  // Параметр убираем из URL, чтобы обновление страницы или "назад" не перезапускали камеру.
+  const params = new URLSearchParams(location.search);
+  if (params.get("autostart") === "1") {
+    history.replaceState(null, "", location.pathname + location.search.replace(/[?&]autostart=1/, "").replace(/^&/, "?"));
+    startCamera();
+  }
 
   const photoBtn = document.getElementById("photoBtn");
   const photoInput = document.getElementById("photoInput");
