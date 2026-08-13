@@ -442,6 +442,10 @@
         return f !== undefined;
       });
     if (fmts.length) hints.set(ZX.DecodeHintType.POSSIBLE_FORMATS, fmts);
+    // TRY_HARDER заставляет OneDReader пробовать реверс строки — без него
+    // перевёрнутый на 180° штрих-код не распознаётся построчным ридером,
+    // хотя тот же кадр через decodeFile (там TRY_HARDER уже стоит) читается.
+    hints.set(ZX.DecodeHintType.TRY_HARDER, true);
     this._oneDHints = hints;
     this._oneDReader = new ZX.MultiFormatOneDReader(hints);
 
