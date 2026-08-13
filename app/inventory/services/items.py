@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -19,17 +19,39 @@ class DuplicateBarcode(InventoryError):
     """Штрих-код уже существует (ТЗ §21.1, §40.2)."""
 
 
+_INVISIBLE_CHARS = dict.fromkeys(map(ord, "​‌‍﻿"), None)
+
+
+def normalize_barcode(value: str) -> str:
+    """Нормализовать штрих-код для сравнения (ТЗ §21.4).
+
+    Сканер и ручной ввод иногда дают строки, которые выглядят одинаково, но
+    отличаются регистром, невидимыми юникод-символами (NBSP, zero-width) или
+    внутренними пробелами — из-за чего точное сравнение с сохранённым
+    значением не срабатывало, хотя код был распознан верно. Само хранимое
+    значение не трогаем — нормализуем только на момент сравнения.
+    """
+    cleaned = value.replace("\xa0", " ").translate(_INVISIBLE_CHARS).strip()
+    cleaned = re.sub(r"\s+", "", cleaned)
+    return cleaned.upper()
+
+
 def find_by_barcode(db: Session, barcode: str) -> EquipmentItem | None:
     """Глобальный поиск экземпляра по штрих-коду (ТЗ §21.4)."""
+    normalized = normalize_barcode(barcode)
+    if not normalized:
+        return None
     stmt = (
         select(EquipmentItem)
         .options(
             selectinload(EquipmentItem.model),
             selectinload(EquipmentItem.status_history),
         )
-        .where(EquipmentItem.barcode == barcode.strip())
+        .where(func.upper(EquipmentItem.barcode) == normalized)
+        .order_by(EquipmentItem.id)
+        .limit(1)
     )
-    return db.execute(stmt).scalar_one_or_none()
+    return db.execute(stmt).scalars().first()
 
 
 def get_item(db: Session, item_id: int) -> EquipmentItem | None:
@@ -58,7 +80,11 @@ def create_item(
 ) -> EquipmentItem:
     """Создать единицу оборудования (штрих-код опционален; уникален при наличии, ТЗ §38)."""
     barcode = (data.barcode or "").strip() or None
-    if barcode and db.scalar(select(EquipmentItem.id).where(EquipmentItem.barcode == barcode)):
+    if barcode and db.scalar(
+        select(EquipmentItem.id).where(
+            func.upper(EquipmentItem.barcode) == normalize_barcode(barcode)
+        )
+    ):
         raise DuplicateBarcode("Штрих-код уже используется")
 
     item = EquipmentItem(
@@ -124,9 +150,12 @@ def create_items_bulk(
     barcodes: list[str | None]
     if start:
         barcodes = list(barcode_sequence(start, count))
+        normalized_barcodes = [normalize_barcode(bc) for bc in barcodes]
         taken = set(
             db.execute(
-                select(EquipmentItem.barcode).where(EquipmentItem.barcode.in_(barcodes))
+                select(EquipmentItem.barcode).where(
+                    func.upper(EquipmentItem.barcode).in_(normalized_barcodes)
+                )
             )
             .scalars()
             .all()
@@ -181,8 +210,12 @@ def update_item(db: Session, item: EquipmentItem, data: EquipmentItemInput) -> E
     barcode = (data.barcode or "").strip() or None
     if (
         barcode
-        and barcode != item.barcode
-        and db.scalar(select(EquipmentItem.id).where(EquipmentItem.barcode == barcode))
+        and normalize_barcode(barcode) != normalize_barcode(item.barcode or "")
+        and db.scalar(
+            select(EquipmentItem.id).where(
+                func.upper(EquipmentItem.barcode) == normalize_barcode(barcode)
+            )
+        )
     ):
         raise DuplicateBarcode("Штрих-код уже используется")
     item.barcode = barcode

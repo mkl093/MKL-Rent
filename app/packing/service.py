@@ -5,7 +5,7 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -13,6 +13,7 @@ from app.estimates.service import get_estimate
 from app.inventory.enums import AccountingType
 from app.inventory.models import EquipmentItem, EquipmentModel, Kit
 from app.inventory.services import kits as kit_service
+from app.inventory.services.items import normalize_barcode
 from app.numbering.models import DocType
 from app.numbering.service import next_number
 from app.packing.calc import (
@@ -333,8 +334,11 @@ def add_serial_item(
         raise PackingError("Эта строка не серийная")
 
     item = db.execute(
-        select(EquipmentItem).where(EquipmentItem.barcode == barcode.strip())
-    ).scalar_one_or_none()
+        select(EquipmentItem)
+        .where(func.upper(EquipmentItem.barcode) == normalize_barcode(barcode))
+        .order_by(EquipmentItem.id)
+        .limit(1)
+    ).scalars().first()
     if item is None:
         return SerialResult.NOT_FOUND
     if item.model_id != line.model_id:
@@ -394,8 +398,11 @@ def scan(
     """
     barcode = barcode.strip()
     item = db.execute(
-        select(EquipmentItem).where(EquipmentItem.barcode == barcode)
-    ).scalar_one_or_none()
+        select(EquipmentItem)
+        .where(func.upper(EquipmentItem.barcode) == normalize_barcode(barcode))
+        .order_by(EquipmentItem.id)
+        .limit(1)
+    ).scalars().first()
     if item is None:
         return ScanOutcome(SerialResult.NOT_FOUND, barcode)
 
