@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 m-0">Оборудование в ремонте</h1>
+  <a href="/inventory" class="btn btn-outline-secondary">К складу</a>
+</div>
+
+{% if items %}
+<div class="table-responsive">
+  <table class="table align-middle">
+    <thead><tr><th>Модель</th><th>Штрих-код</th><th>Серийный №</th><th>Комментарий</th><th>С какого момента</th></tr></thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td><a href="/inventory/models/{{ item.model_id }}">{{ item.model.name }}</a></td>
+        <td><a href="/inventory/items/{{ item.id }}"><code>{{ item.barcode or "—" }}</code></a></td>
+        <td>{{ item.serial_number or "—" }}</td>
+        <td class="text-secondary small">{{ item.comment or "—" }}</td>
+        <td class="text-secondary small">{{ item.status_history[0].changed_at.strftime('%d.%m.%Y %H:%M') if item.status_history else "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-secondary">Приборов в ремонте нет.</p>
+{% endif %}
+{% endblock %}
