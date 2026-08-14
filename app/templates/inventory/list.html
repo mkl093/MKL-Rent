@@ -118,9 +118,19 @@
 
 {% if view == 'tree' %}
   {% if tree %}
+    <div class="d-flex gap-2 mb-2">
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="tree-expand-all">Развернуть всё</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="tree-collapse-all">Свернуть всё</button>
+    </div>
+    <div id="tree-view-root">
     {% for cat in tree %}
+    {% set cat_id = 'tree-cat-' ~ loop.index %}
     <div class="card mb-2">
-      <div class="card-header fw-semibold">{{ cat.name }}</div>
+      <div class="card-header fw-semibold d-flex align-items-center gap-2" role="button" style="cursor:pointer"
+           data-bs-toggle="collapse" data-bs-target="#{{ cat_id }}" aria-expanded="true" aria-controls="{{ cat_id }}">
+        <span class="mkl-chevron">▸</span> {{ cat.name }}
+      </div>
+      <div class="collapse show" id="{{ cat_id }}">
       <ul class="list-group list-group-flush">
         {% for m in cat.direct %}
         <li class="list-group-item d-flex justify-content-between align-items-center">
@@ -130,7 +140,13 @@
         </li>
         {% endfor %}
         {% for sub in cat.subgroups %}
-        <li class="list-group-item bg-body-tertiary fw-semibold">— {{ sub.name }}</li>
+        {% set sub_id = 'tree-sub-' ~ cat_id ~ '-' ~ loop.index %}
+        <li class="list-group-item bg-body-tertiary fw-semibold d-flex align-items-center gap-2" role="button" style="cursor:pointer"
+            data-bs-toggle="collapse" data-bs-target="#{{ sub_id }}" aria-expanded="true" aria-controls="{{ sub_id }}">
+          <span class="mkl-chevron">▸</span> — {{ sub.name }}
+        </li>
+        <li class="list-group-item p-0 border-0">
+          <ul class="list-group list-group-flush collapse show" id="{{ sub_id }}">
           {% for m in sub.models %}
           <li class="list-group-item d-flex justify-content-between align-items-center ps-4">
             <a href="/inventory/models/{{ m.id }}" class="text-decoration-none">{{ m.name }}{% if m.is_archived %} <span class="badge text-bg-secondary">архив</span>{% endif %}</a>
@@ -138,10 +154,14 @@
           {% if availability.get(m.id) %}<span class="ms-1">{{ state_chips(availability[m.id]) }}</span>{% endif %}
           </li>
           {% endfor %}
+          </ul>
+        </li>
         {% endfor %}
       </ul>
+      </div>
     </div>
     {% endfor %}
+    </div>
   {% else %}
     <p class="text-secondary">Моделей не найдено.</p>
   {% endif %}
@@ -241,5 +261,18 @@ function filterSubcats() {
   if (reset) sub.value = '';
 }
 filterSubcats();
+
+// Развернуть/свернуть все узлы дерева категорий разом.
+(function () {
+  var root = document.getElementById('tree-view-root');
+  if (!root) return;
+  function toggleAll(show) {
+    root.querySelectorAll('.collapse').forEach(function (el) {
+      bootstrap.Collapse.getOrCreateInstance(el, { toggle: false })[show ? 'show' : 'hide']();
+    });
+  }
+  document.getElementById('tree-expand-all').addEventListener('click', function () { toggleAll(true); });
+  document.getElementById('tree-collapse-all').addEventListener('click', function () { toggleAll(false); });
+})();
 </script>
 {% endblock %}

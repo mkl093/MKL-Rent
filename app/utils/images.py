@@ -53,7 +53,16 @@ def save_model_photo(raw: bytes) -> str:
 
     # Оптимизация с сохранением пропорций.
     image.thumbnail((MAX_DIMENSION, MAX_DIMENSION))
-    if image.mode in ("RGBA", "P", "LA"):
+    # JPEG не поддерживает альфа-канал. Прямой convert("RGB") просто отбрасывает
+    # альфу, а прозрачные пиксели PNG обычно хранят (0,0,0) под ней — без
+    # композитинга на подложку они превращаются в чёрную заливку. Поэтому
+    # прозрачность сначала "сплющиваем" на белый фон, и только потом в RGB.
+    if image.mode in ("RGBA", "LA") or (image.mode == "P" and "transparency" in image.info):
+        image = image.convert("RGBA")
+        background = Image.new("RGB", image.size, (255, 255, 255))
+        background.paste(image, mask=image.split()[-1])
+        image = background
+    elif image.mode != "RGB":
         image = image.convert("RGB")
 
     filename = f"{uuid.uuid4().hex}.jpg"

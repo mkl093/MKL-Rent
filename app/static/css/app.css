@@ -26,6 +26,17 @@ body {
   }
 }
 
+/* Стрелка сворачивания/разворачивания (дерево склада, список единиц модели) —
+ * поворачивается по aria-expanded, который Bootstrap Collapse сам проставляет
+ * на элемент-триггер, так что без доп. JS. */
+.mkl-chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+[aria-expanded="true"] > .mkl-chevron {
+  transform: rotate(90deg);
+}
+
 /* Mobile-first: крупные тач-цели (ТЗ §24). */
 @media (max-width: 575.98px) {
   .btn {

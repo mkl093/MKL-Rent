@@ -77,6 +77,10 @@
     <span class="text-secondary small">
       {% for st, cnt in status_counts.items() %}{% if cnt %}{{ st.label }}: {{ cnt }} {% endif %}{% endfor %}
     </span>
+    <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" role="button"
+            data-bs-toggle="collapse" data-bs-target="#units-list-body" aria-expanded="true" aria-controls="units-list-body">
+      <span class="mkl-chevron">▾</span> Список
+    </button>
   </div>
   <div class="card-body">
     <form method="post" action="/inventory/models/{{ model.id }}/items" class="row g-2 mb-1">
@@ -106,6 +110,7 @@
     </form>
     <div class="form-text mb-2">При количестве больше 1 штрих-коды генерируются последовательно от стартового (напр. <code>NVPRO_001</code> → <code>NVPRO_010</code>). Серийный и инвентарный № применяются только при добавлении одной единицы.</div>
     <div id="add-barcode-reader" class="mkl-scan-container mkl-scan-container--compact mb-3" style="display:none"></div>
+    <div class="collapse show" id="units-list-body">
     {% if items %}
     <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
       <span class="text-secondary small">Выбрано: <span id="bulk-count">0</span></span>
@@ -228,6 +233,7 @@
     {% else %}
     <p class="text-secondary m-0">Единиц пока нет.</p>
     {% endif %}
+    </div>
   </div>
 </div>
 
