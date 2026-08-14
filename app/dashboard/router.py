@@ -27,7 +27,7 @@ def index(
             "active_booked": service.active_booked(db),
             "overdue_booked": service.overdue_booked(db),
             "deficit_projects": service.projects_with_deficit(db),
-            "repair_items": service.repair_items(db),
+            "repair_count": service.repair_count(db),
         },
         db=db,
         user=user,

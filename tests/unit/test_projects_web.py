@@ -67,6 +67,55 @@ def test_create_book_copy_flow(auth_client):
     assert "Черновик" in copy_page
 
 
+def test_project_detail_shows_staff_assignments(auth_client, db_session):
+    from datetime import UTC, datetime
+
+    from app.staff import service as staff_service
+    from app.staff.enums import AssignmentStatus, AssignmentType
+    from app.staff.schemas import AssignmentInput, EmployeeInput
+
+    token = _csrf(auth_client, "/projects/new")
+    resp = auth_client.post(
+        "/projects",
+        data={"name": "Концерт", "rental_coefficient": "1", "vat": "0", "csrf_token": token},
+        follow_redirects=False,
+    )
+    url = resp.headers["location"]
+    project_id = int(url.rsplit("/", 1)[-1])
+
+    employee = staff_service.create_employee(
+        db_session, EmployeeInput(first_name="Иван", last_name="Монтажников")
+    )
+    cancelled_employee = staff_service.create_employee(
+        db_session, EmployeeInput(first_name="Пётр", last_name="Отменённый")
+    )
+    staff_service.create_assignment(
+        db_session,
+        AssignmentInput(
+            employee_id=employee.id,
+            project_id=project_id,
+            type=AssignmentType.PROJECT,
+            starts_at=datetime(2026, 7, 1, 8, tzinfo=UTC),
+            ends_at=datetime(2026, 7, 1, 18, tzinfo=UTC),
+        ),
+    )
+    staff_service.create_assignment(
+        db_session,
+        AssignmentInput(
+            employee_id=cancelled_employee.id,
+            project_id=project_id,
+            type=AssignmentType.PROJECT,
+            status=AssignmentStatus.CANCELLED,
+            starts_at=datetime(2026, 7, 1, 8, tzinfo=UTC),
+            ends_at=datetime(2026, 7, 1, 18, tzinfo=UTC),
+        ),
+    )
+
+    page = auth_client.get(url).text
+    assert "Монтажников" in page
+    assert "Отменённый" not in page
+
+
 def test_book_without_dates_flashes(auth_client):
     token = _csrf(auth_client, "/projects/new")
     resp = auth_client.post(

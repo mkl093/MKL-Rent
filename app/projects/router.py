@@ -19,6 +19,7 @@ from app.projects.availability import compute_availability, occupancy_detail
 from app.projects.enums import ProjectStatus
 from app.projects.schemas import ProjectInput
 from app.settings.service import get_company_settings
+from app.staff import service as staff_service
 from app.templating import flash
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -215,6 +216,7 @@ def project_detail(
             "project": project,
             "rows": rows,
             "ProjectStatus": ProjectStatus,
+            "staff_assignments": staff_service.list_project_assignments(db, project.id),
         },
         db=db,
         user=user,

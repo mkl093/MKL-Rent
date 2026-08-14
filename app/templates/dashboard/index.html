@@ -28,10 +28,12 @@
     </div></div>
   </div>
   <div class="col-12 col-md-6 col-xl-3">
-    <div class="card h-100 shadow-sm"><div class="card-body">
-      <h2 class="h6 text-secondary">В ремонте</h2>
-      <p class="display-6 m-0">{{ repair_items|length }}</p>
-    </div></div>
+    <a href="/inventory/repair" class="card h-100 shadow-sm text-decoration-none text-body">
+      <div class="card-body">
+        <h2 class="h6 text-secondary">В ремонте</h2>
+        <p class="display-6 m-0">{{ repair_count }}</p>
+      </div>
+    </a>
   </div>
 </div>
 

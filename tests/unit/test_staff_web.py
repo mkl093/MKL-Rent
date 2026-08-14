@@ -71,6 +71,27 @@ def test_create_edit_delete_employee(auth_client, db_session):
     assert "Иванов-Петров" not in auth_client.get("/staff").text
 
 
+def test_staff_list_grouped_by_department_order(auth_client, db_session):
+    from app.staff import service as staff_service
+    from app.staff.schemas import DepartmentInput, EmployeeInput
+
+    dept_b = staff_service.create_department(db_session, DepartmentInput(name="Свет", sort_order=2))
+    dept_a = staff_service.create_department(db_session, DepartmentInput(name="Звук", sort_order=1))
+    staff_service.create_employee(
+        db_session, EmployeeInput(first_name="Анна", last_name="Светова", department_id=dept_b.id)
+    )
+    staff_service.create_employee(
+        db_session, EmployeeInput(first_name="Борис", last_name="Звуков", department_id=dept_a.id)
+    )
+    staff_service.create_employee(
+        db_session, EmployeeInput(first_name="Вера", last_name="Безотдельная")
+    )
+
+    page = auth_client.get("/staff").text
+    assert page.index("Звук") < page.index("Свет") < page.index("Без отдела")
+    assert "Безотдельная" in page
+
+
 def test_employee_create_without_csrf_forbidden(auth_client):
     resp = auth_client.post(
         "/staff", data={"first_name": "Пётр", "last_name": "Петров"}, follow_redirects=False

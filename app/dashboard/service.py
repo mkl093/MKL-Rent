@@ -56,16 +56,6 @@ def projects_with_deficit(db: Session) -> list[Project]:
     return [p for p in booked if project_deficits(db, p)]
 
 
-def repair_items(db: Session) -> list[EquipmentItem]:
-    """Оборудование в ремонте (ТЗ §5)."""
-    stmt = (
-        select(EquipmentItem)
-        .where(EquipmentItem.status == ItemStatus.REPAIR)
-        .order_by(EquipmentItem.barcode)
-    )
-    return list(db.execute(stmt).scalars().all())
-
-
 def repair_count(db: Session) -> int:
     return (
         db.scalar(

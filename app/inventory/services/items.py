@@ -88,6 +88,21 @@ def list_items(db: Session, model_id: int) -> list[EquipmentItem]:
     return list(db.execute(stmt).scalars().all())
 
 
+def list_by_status(db: Session, status: ItemStatus) -> list[EquipmentItem]:
+    """Все экземпляры в заданном статусе (напр. «в ремонте» — ТЗ §5, §9)."""
+    stmt = (
+        select(EquipmentItem)
+        .join(EquipmentItem.model)
+        .options(
+            selectinload(EquipmentItem.model),
+            selectinload(EquipmentItem.status_history),
+        )
+        .where(EquipmentItem.status == status)
+        .order_by(EquipmentModel.name, EquipmentItem.barcode)
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
 def create_item(
     db: Session, model: EquipmentModel, data: EquipmentItemInput, user_id: int | None
 ) -> EquipmentItem:

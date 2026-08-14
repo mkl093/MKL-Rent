@@ -48,13 +48,15 @@ def employees_page(
         position=_opt_str(position),
         is_active=None if show == "all" else (show != "inactive"),
     )
+    departments = service.list_departments(db)
+    employees = service.list_employees(db, filters)
     return render(
         request,
         "staff/list.html",
         {
             "page_title": "Персонал",
-            "employees": service.list_employees(db, filters),
-            "departments": service.list_departments(db),
+            "groups": service.group_employees_by_department(departments, employees),
+            "departments": departments,
             "q": q or "",
             "department_id": filters.department_id,
             "position": position or "",

@@ -379,6 +379,27 @@ def scan_form(
     )
 
 
+# --- Оборудование в ремонте (карточка «В ремонте» на главной, ТЗ §5) ----
+
+
+@router.get("/repair")
+def repair_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    return render(
+        request,
+        "inventory/repair.html",
+        {
+            "page_title": "Оборудование в ремонте",
+            "items": item_service.list_by_status(db, ItemStatus.REPAIR),
+        },
+        db=db,
+        user=user,
+    )
+
+
 # --- Комплекты (структура «Комплект») -----------------------------------
 
 

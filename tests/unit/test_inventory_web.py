@@ -86,6 +86,54 @@ def test_create_category_and_model_and_item(auth_client):
     assert "не найден" in miss.text
 
 
+def test_repair_page_lists_items_in_repair(auth_client):
+    token = _csrf(auth_client)
+    auth_client.post(
+        "/inventory/categories",
+        data={"name": "Свет", "csrf_token": token},
+        follow_redirects=False,
+    )
+    new_page = auth_client.get("/inventory/models/new").text
+    cat_id = re.search(r'name="category_id"[^>]*>\s*<option value="(\d+)"', new_page).group(1)
+
+    token = _csrf(auth_client, "/inventory/models/new")
+    resp = auth_client.post(
+        "/inventory/models",
+        data={
+            "name": "Прожектор LED",
+            "category_id": cat_id,
+            "accounting_type": "serial",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+    model_url = resp.headers["location"]
+    model_id = model_url.rsplit("/", 1)[-1]
+
+    token = _csrf(auth_client, model_url)
+    auth_client.post(
+        f"/inventory/models/{model_id}/items",
+        data={"barcode": "BC-REPAIR-1", "csrf_token": token},
+        follow_redirects=False,
+    )
+    item_id = re.search(r"/inventory/items/(\d+)", auth_client.get(model_url).text).group(1)
+
+    token = _csrf(auth_client, f"/inventory/items/{item_id}")
+    auth_client.post(
+        f"/inventory/items/{item_id}/status",
+        data={"new_status": "repair", "comment": "сломался", "csrf_token": token},
+        follow_redirects=False,
+    )
+
+    # Карточка на главной кликабельна и ведёт на список.
+    home = auth_client.get("/").text
+    assert 'href="/inventory/repair"' in home
+
+    repair_page = auth_client.get("/inventory/repair").text
+    assert "BC-REPAIR-1" in repair_page
+    assert "Прожектор LED" in repair_page
+
+
 def test_create_quantity_model_and_adjust(auth_client):
     token = _csrf(auth_client)
     auth_client.post(

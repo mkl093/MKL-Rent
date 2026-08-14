@@ -41,6 +41,30 @@ def get_department(db: Session, department_id: int) -> Department | None:
     return db.get(Department, department_id)
 
 
+def group_employees_by_department(
+    departments: list[Department], employees: list[Employee]
+) -> list[tuple[Department | None, list[Employee]]]:
+    """Сгруппировать сотрудников по отделам в порядке отделов (sort_order, name).
+
+    Сотрудники без отдела выносятся отдельной группой (ключ None) в конец —
+    список отделов уже отсортирован вызывающей стороной (list_departments).
+    """
+    by_department: dict[int, list[Employee]] = {}
+    unassigned: list[Employee] = []
+    for employee in employees:
+        if employee.department_id is None:
+            unassigned.append(employee)
+        else:
+            by_department.setdefault(employee.department_id, []).append(employee)
+
+    groups: list[tuple[Department | None, list[Employee]]] = [
+        (dept, by_department[dept.id]) for dept in departments if dept.id in by_department
+    ]
+    if unassigned:
+        groups.append((None, unassigned))
+    return groups
+
+
 def create_department(db: Session, data: DepartmentInput) -> Department:
     dept = Department(name=data.name.strip(), sort_order=data.sort_order)
     db.add(dept)
@@ -172,6 +196,22 @@ def list_assignments(db: Session, filters: AssignmentFilters) -> list[Assignment
         stmt = stmt.where(Assignment.status.in_(filters.statuses))
     stmt = stmt.order_by(Assignment.starts_at)
     return list(db.execute(stmt).scalars().unique().all())
+
+
+def list_project_assignments(db: Session, project_id: int) -> list[Assignment]:
+    """Вся занятость по проекту, кроме отменённой — для карточки проекта.
+
+    В отличие от list_assignments(), диапазон дат не требуется: карточка
+    проекта показывает бронь персонала целиком, а не срез по датам.
+    """
+    stmt = (
+        select(Assignment)
+        .options(selectinload(Assignment.employee).selectinload(Employee.department))
+        .where(Assignment.project_id == project_id)
+        .where(Assignment.status != AssignmentStatus.CANCELLED)
+        .order_by(Assignment.starts_at)
+    )
+    return list(db.execute(stmt).scalars().all())
 
 
 def get_assignment(db: Session, assignment_id: int) -> Assignment | None:
