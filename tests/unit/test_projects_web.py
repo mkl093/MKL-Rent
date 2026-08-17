@@ -218,6 +218,37 @@ def test_calendar_shows_overlapping_projects_and_undated_tail(auth_client):
     assert str(id2) in row1.split(",")
 
 
+def test_calendar_grid_view_shows_project_bar_link(auth_client):
+    token = _csrf(auth_client, "/projects/new")
+    resp = auth_client.post(
+        "/projects",
+        data={
+            "name": "Сеточный",
+            "start_date": "2026-08-10",
+            "end_date": "2026-08-15",
+            "rental_coefficient": "1",
+            "vat": "0",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+    project_id = int(resp.headers["location"].rsplit("/", 1)[-1])
+
+    page = auth_client.get(
+        "/projects/calendar?view=grid&start=2026-08-01", follow_redirects=False
+    ).text
+    assert "Август 2026" in page
+    assert f'href="/projects/{project_id}"' in page
+
+
+def test_calendar_invalid_view_falls_back_to_gantt(auth_client):
+    page = auth_client.get(
+        "/projects/calendar?view=bogus&start=2026-08-01", follow_redirects=False
+    ).text
+    assert "Диаграмма" in page
+    assert "sc-grid-table" not in page
+
+
 def test_invalid_color_is_silently_dropped(auth_client, db_session):
     token = _csrf(auth_client, "/projects/new")
     resp = auth_client.post(

@@ -1,6 +1,6 @@
 """Проекты: статусы, бронирование, копирование, удаление (ТЗ §13–§15)."""
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -220,3 +220,74 @@ def test_list_projects_without_dates(db_session):
     )
     result = service.list_projects_without_dates(db_session, archived=False)
     assert [p.id for p in result] == [undated.id]
+
+
+# --- Сетка месяца календаря проектов (ТЗ §13.9) -------------------------------
+
+
+def _month_grid_range(month_start: date) -> tuple[date, date]:
+    """Тот же расчёт полных недель Пн–Вс, что _month_grid_range() в app/projects/router.py."""
+    import calendar as pycalendar
+
+    days_in_month = pycalendar.monthrange(month_start.year, month_start.month)[1]
+    month_end = month_start + timedelta(days=days_in_month - 1)
+    grid_start = month_start - timedelta(days=month_start.weekday())
+    grid_last_week_start = month_end - timedelta(days=month_end.weekday())
+    grid_end = grid_last_week_start + timedelta(days=6)
+    return grid_start, grid_end
+
+
+def test_build_project_grid_true_boundaries_not_window_edges(db_session):
+    """Скругление торцов полосы — по настоящим start_date/end_date проекта, а не
+    по краю подложки соседнего месяца (грид августа: 27.07–06.09.2026)."""
+    service.create_project(
+        db_session,
+        ProjectInput(name="Долгий", start_date=date(2026, 7, 29), end_date=date(2026, 9, 5)),
+    )
+    month_start = date(2026, 8, 1)
+    grid_start, grid_end = _month_grid_range(month_start)
+    assert (grid_start, grid_end) == (date(2026, 7, 27), date(2026, 9, 6))
+
+    days, rows, _load = service.compute_project_timeline(db_session, grid_start, grid_end)
+    weeks = service.build_project_grid(days, rows, month_start)
+    by_date = {d.date: d for week in weeks for d in week}
+
+    # До настоящего начала — бара нет вовсе.
+    assert by_date[date(2026, 7, 27)].bars == []
+    assert by_date[date(2026, 7, 27)].in_month is False
+
+    # День настоящего начала — is_start=True, даже в подложке июля (in_month=False).
+    start_day = by_date[date(2026, 7, 29)]
+    assert start_day.in_month is False
+    assert start_day.bars[0].is_start is True
+
+    # Обычный день внутри августа — продолжение, без скруглений.
+    mid_day = by_date[date(2026, 8, 15)]
+    assert mid_day.in_month is True
+    assert mid_day.bars[0].is_start is False
+    assert mid_day.bars[0].is_end is False
+
+    # День настоящего конца — is_end=True, в подложке сентября.
+    end_day = by_date[date(2026, 9, 5)]
+    assert end_day.in_month is False
+    assert end_day.bars[0].is_end is True
+
+    # После конца — бара нет.
+    assert by_date[date(2026, 9, 6)].bars == []
+
+
+def test_build_project_grid_stable_order_for_overlapping_projects(db_session):
+    service.create_project(
+        db_session, ProjectInput(name="A", start_date=date(2026, 8, 10), end_date=date(2026, 8, 15))
+    )
+    service.create_project(
+        db_session, ProjectInput(name="B", start_date=date(2026, 8, 12), end_date=date(2026, 8, 20))
+    )
+    month_start = date(2026, 8, 1)
+    grid_start, grid_end = _month_grid_range(month_start)
+    days, rows, _load = service.compute_project_timeline(db_session, grid_start, grid_end)
+    weeks = service.build_project_grid(days, rows, month_start)
+    by_date = {d.date: d for week in weeks for d in week}
+
+    overlap_day = by_date[date(2026, 8, 12)]
+    assert [b.project.name for b in overlap_day.bars] == ["A", "B"]

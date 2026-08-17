@@ -147,6 +147,63 @@ def compute_project_timeline(
     return days, rows, load
 
 
+@dataclass
+class GridBar:
+    """Полоса проекта в ячейке сетки месяца (ТЗ §13.9)."""
+
+    project: Project
+    is_start: bool  # день == project.start_date (не граница окна/недели)
+    is_end: bool  # день == project.end_date
+
+
+@dataclass
+class GridDay:
+    """Ячейка сетки месяца календаря проектов (ТЗ §13.9)."""
+
+    date: date
+    in_month: bool
+    bars: list[GridBar]
+
+
+def _group_rows_by_day(days: list[date], rows: list[TimelineRow]) -> list[list[TimelineRow]]:
+    """Проекты, активные на каждый день диапазона (по offset/length из TimelineRow)."""
+    by_day: list[list[TimelineRow]] = [[] for _ in days]
+    for row in rows:
+        for i in range(row.offset, row.offset + row.length):
+            by_day[i].append(row)
+    return by_day
+
+
+def build_project_grid(
+    days: list[date], rows: list[TimelineRow], month_start: date
+) -> list[list[GridDay]]:
+    """Недели Пн–Вс для сетки месяца календаря проектов (ТЗ §13.9).
+
+    Принимает уже посчитанные `compute_project_timeline()` days/rows (окно —
+    полные недели, захватывающие месяц целиком) без обращения к БД. Скругление
+    торцов полосы (`is_start`/`is_end`) — по настоящим датам проекта, а не по
+    границе окна/недели, иначе полоса, продолжающаяся на новую неделю, выглядела
+    бы законченной.
+    """
+    by_day = _group_rows_by_day(days, rows)
+    weeks: list[list[GridDay]] = []
+    week: list[GridDay] = []
+    for d, day_rows in zip(days, by_day):
+        bars = [
+            GridBar(
+                project=r.project,
+                is_start=d == r.project.start_date,
+                is_end=d == r.project.end_date,
+            )
+            for r in day_rows
+        ]
+        week.append(GridDay(date=d, in_month=d.month == month_start.month, bars=bars))
+        if len(week) == 7:
+            weeks.append(week)
+            week = []
+    return weeks
+
+
 def list_projects_without_dates(db: Session, archived: bool = False) -> list[Project]:
     """Проекты без обеих дат аренды — не попадают в календарь (ТЗ §13.9)."""
     archived_statuses = [ProjectStatus.COMPLETED, ProjectStatus.CANCELLED]

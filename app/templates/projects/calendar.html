@@ -1,10 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
 {% set wd = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'] %}
-{% set span_label = {14: '2 недели', 31: 'Месяц', 92: 'Квартал'} %}
-{% set qs = 'span=' ~ span %}
-{% if q %}{% set qs = qs ~ '&q=' ~ (q|urlencode) %}{% endif %}
-{% if archived %}{% set qs = qs ~ '&archived=1' %}{% endif %}
+{% set span_label = {14: '2 недели', 31: 'Месяц', 92: 'Квартал', 366: 'Год'} %}
+{% set view_label = {'gantt': 'Диаграмма', 'grid': 'Сетка'} %}
+{% set extra_qs = '' %}
+{% if q %}{% set extra_qs = extra_qs ~ '&q=' ~ (q|urlencode) %}{% endif %}
+{% if archived %}{% set extra_qs = extra_qs ~ '&archived=1' %}{% endif %}
+{% set qs = 'span=' ~ span ~ extra_qs %}
 
 <style>
   .pj-grid th, .pj-grid td { text-align: center; white-space: nowrap; font-size: .85rem; }
@@ -16,8 +18,14 @@
   .pj-grid .pj-today { box-shadow: inset 0 0 0 2px var(--bs-primary); }
   .pj-grid .pj-mbound { border-left: 2px solid var(--bs-border-color); }
   .pj-grid .pj-month-head { background: var(--bs-tertiary-bg); font-weight: 600; text-align: left; padding-left: .5rem; }
-  .pj-bar-cell { padding: 0; }
-  .pj-bar { height: 1.4rem; display: flex; align-items: center; justify-content: center; }
+  /* padding: 0 !important — у Bootstrap ".table > :not(caption) > * > *"
+     специфичность выше обычного класса, без !important паддинг ячейки не
+     снимался и полоса схлопывалась в маленький цветной чип с белой рамкой.
+     Границы ячеек (сетку дней) сознательно оставляем — полоса заливает всю
+     ячейку вплотную к границам, поэтому сетка видна тонкими линиями поверх
+     сплошной заливки, а не разрывает её белым полем. */
+  .pj-bar-cell { padding: 0 !important; }
+  .pj-bar { height: 1.4rem; width: 100%; display: flex; align-items: center; justify-content: center; }
   .pj-bar-start { border-top-left-radius: 6px; border-bottom-left-radius: 6px; margin-left: 2px; }
   .pj-bar-end { border-top-right-radius: 6px; border-bottom-right-radius: 6px; margin-right: 2px; }
   .pj-cont { color: #fff; font-weight: 700; text-shadow: 0 0 2px #000, 0 0 3px #000; }
@@ -38,8 +46,9 @@
 </div>
 
 <form method="get" action="/projects/calendar" class="card card-body mb-3">
-  <input type="hidden" name="start" value="{{ start_date.isoformat() }}">
+  <input type="hidden" name="start" value="{{ anchor.isoformat() }}">
   <input type="hidden" name="span" value="{{ span }}">
+  <input type="hidden" name="view" value="{{ view }}">
   <div class="row g-2 align-items-end">
     <div class="col-12 col-md-6">
       <label class="form-label" for="q">Поиск (номер, название, заказчик)</label>
@@ -60,29 +69,89 @@
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
   <div class="btn-group">
+    {% if view == 'grid' %}
+    <a class="btn btn-outline-secondary" href="/projects/calendar?view=grid&start={{ prev_start.isoformat() }}{{ extra_qs }}" title="Назад">&laquo;</a>
+    <a class="btn btn-outline-secondary" href="/projects/calendar?view=grid&start={{ today.isoformat() }}{{ extra_qs }}">Сегодня</a>
+    <a class="btn btn-outline-secondary" href="/projects/calendar?view=grid&start={{ next_start.isoformat() }}{{ extra_qs }}" title="Вперёд">&raquo;</a>
+    {% else %}
     <a class="btn btn-outline-secondary" href="/projects/calendar?start={{ prev_start.isoformat() }}&{{ qs }}" title="Назад">&laquo;</a>
     <a class="btn btn-outline-secondary" href="/projects/calendar?start={{ today.isoformat() }}&{{ qs }}">Сегодня</a>
     <a class="btn btn-outline-secondary" href="/projects/calendar?start={{ next_start.isoformat() }}&{{ qs }}" title="Вперёд">&raquo;</a>
+    {% endif %}
   </div>
-  <div class="fw-semibold">{{ start_date.strftime('%d.%m.%Y') }} – {{ end_date.strftime('%d.%m.%Y') }}</div>
-  <div class="btn-group">
-    {% for s in spans %}
-    <a class="btn btn-outline-secondary {% if span == s %}active{% endif %}"
-       href="/projects/calendar?start={{ start_date.isoformat() }}&span={{ s }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if archived %}&archived=1{% endif %}">
-      {{ span_label[s] }}
-    </a>
-    {% endfor %}
+  <div class="fw-semibold">
+    {% if view == 'grid' %}{{ month_label }}{% else %}{{ start_date.strftime('%d.%m.%Y') }} – {{ end_date.strftime('%d.%m.%Y') }}{% endif %}
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    {% if view == 'gantt' %}
+    <div class="btn-group">
+      {% for s in spans %}
+      <a class="btn btn-outline-secondary {% if span == s %}active{% endif %}"
+         href="/projects/calendar?start={{ start_date.isoformat() }}&span={{ s }}{{ extra_qs }}">
+        {{ span_label[s] }}
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="btn-group">
+      <a class="btn btn-outline-secondary {% if view == 'gantt' %}active{% endif %}"
+         href="/projects/calendar?view=gantt&start={{ anchor.isoformat() }}&span={{ span }}{{ extra_qs }}">{{ view_label['gantt'] }}</a>
+      <a class="btn btn-outline-secondary {% if view == 'grid' %}active{% endif %}"
+         href="/projects/calendar?view=grid&start={{ anchor.isoformat() }}{{ extra_qs }}">{{ view_label['grid'] }}</a>
+    </div>
   </div>
 </div>
 
+{% if view == 'gantt' %}
 <div class="d-flex flex-wrap gap-3 mb-2 small text-secondary">
   <span><span class="badge text-bg-success">&nbsp;</span> одновременно 1 проект</span>
   <span><span class="badge text-bg-warning">&nbsp;</span> 2 проекта</span>
   <span><span class="badge text-bg-danger">&nbsp;</span> 3 и более</span>
   <span>Клик по строке подсвечивает пересекающиеся проекты (Esc — сбросить).</span>
 </div>
+{% endif %}
 
-{% if rows %}
+{% if view == 'grid' %}
+<div class="sc-grid-head">
+  <span class="sc-grid-month">{{ month_label }}</span>
+  {% if is_current_month %}<span class="sc-grid-nowbadge">текущий месяц</span>{% endif %}
+</div>
+<table class="sc-grid-table">
+  <thead><tr>{% for w in wd %}<th>{{ w }}</th>{% endfor %}</tr></thead>
+  <tbody>
+    {% for week in weeks %}
+    <tr>
+      {% for day in week %}
+      {% set cls = [] %}
+      {% if not day.in_month %}{% set _ = cls.append('sc-grid-outside') %}{% endif %}
+      {% if day.date == today %}{% set _ = cls.append('sc-grid-today') %}{% endif %}
+      {% if loop.index0 >= 5 %}{% set _ = cls.append('sc-grid-weekend') %}{% endif %}
+      {% if day.date.day == 1 and loop.index0 > 0 %}{% set _ = cls.append('sc-grid-mbound-left') %}{% endif %}
+      {% if day.date.day <= 7 %}{% set _ = cls.append('sc-grid-mbound-top') %}{% endif %}
+      <td class="sc-grid-day {{ cls|join(' ') }}">
+        <div class="sc-grid-daynum">
+          <span class="sc-grid-daynum-value{{ ' sc-grid-daynum-today' if day.date == today }}">
+            {{ ('1 ' ~ month_short[day.date.month - 1]) if day.date.day == 1 else day.date.day }}
+          </span>
+        </div>
+        {% if day.bars %}
+        <div class="sc-grid-bars">
+          {% for bar in day.bars[:3] %}
+          <a class="sc-grid-bar{{ ' sc-grid-bar-start' if bar.is_start }}{{ ' sc-grid-bar-end' if bar.is_end }}"
+             href="/projects/{{ bar.project.id }}" style="background-color: {{ bar.project.color or '#6c757d' }};"
+             title="{{ bar.project.number }}{{ ' — ' ~ bar.project.name if bar.project.name }}"></a>
+          {% endfor %}
+          {% if day.bars|length > 3 %}<div class="sc-grid-bar-more">+{{ day.bars|length - 3 }}</div>{% endif %}
+        </div>
+        {% endif %}
+      </td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% elif rows %}
 <div class="table-responsive">
   <table class="table table-bordered align-middle pj-grid mb-0" id="pj-table">
     <thead>
@@ -149,6 +218,10 @@
 </div>
 {% else %}
 <p class="text-secondary">Нет проектов с датами аренды в этом периоде.</p>
+{% endif %}
+
+{% if view == 'grid' %}
+<p class="text-secondary small mt-2 mb-0">Клик по цветной полосе открывает проект. Не более 3 полос в ячейке дня — остальные свёрнуты в «+N».</p>
 {% endif %}
 
 {% if without_dates %}

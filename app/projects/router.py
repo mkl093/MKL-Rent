@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar as pycalendar
 import re
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -62,11 +63,19 @@ def _today() -> date:
     return to_local(utcnow()).date()
 
 
-_CALENDAR_SPANS = (14, 31, 92)
+_CALENDAR_SPANS = (14, 31, 92, 366)
+_CALENDAR_VIEWS = ("gantt", "grid")
 
 _MONTH_NAMES = [
     "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
     "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+]
+
+# Родительный падеж для подписи 1-го числа при переходе между месяцами внутри
+# сетки («1 сент.») — тот же список, что MONTH_SHORT в staff-calendar.js.
+_MONTH_SHORT = [
+    "янв.", "февр.", "мар.", "апр.", "мая", "июн.",
+    "июл.", "авг.", "сент.", "окт.", "нояб.", "дек.",
 ]
 
 
@@ -81,6 +90,16 @@ def _month_segments(days: list[date]) -> list[dict]:
     for seg in segments:
         seg["label"] = f"{_MONTH_NAMES[seg['month'] - 1]} {seg['year']}"
     return segments
+
+
+def _month_grid_range(month_start: date) -> tuple[date, date]:
+    """Недели Пн–Вс, целиком захватывающие месяц (сетка календаря проектов, ТЗ §13.9)."""
+    days_in_month = pycalendar.monthrange(month_start.year, month_start.month)[1]
+    month_end = month_start + timedelta(days=days_in_month - 1)
+    grid_start = month_start - timedelta(days=month_start.weekday())
+    grid_last_week_start = month_end - timedelta(days=month_end.weekday())
+    grid_end = grid_last_week_start + timedelta(days=6)
+    return grid_start, grid_end
 
 
 def _dates_label(shipped: date | None, returned: date | None) -> str:
@@ -218,37 +237,74 @@ def projects_calendar(
     archived: int = 0,
     start: str | None = None,
     span: int = 31,
+    view: str = "gantt",
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
+    if view not in _CALENDAR_VIEWS:
+        view = "gantt"
     if span not in _CALENDAR_SPANS:
         span = 31
-    start_date = _date(start) or _today()
-    end_date = start_date + timedelta(days=span - 1)
+    anchor = _date(start) or _today()
+    today = _today()
+    is_archived = bool(archived)
+    common_ctx = {
+        "page_title": "Календарь проектов",
+        "view": view,
+        "anchor": anchor,
+        "span": span,
+        "spans": _CALENDAR_SPANS,
+        "without_dates": service.list_projects_without_dates(db, archived=is_archived),
+        "today": today,
+        "q": q or "",
+        "archived": is_archived,
+    }
 
+    if view == "grid":
+        month_start = anchor.replace(day=1)
+        grid_start, grid_end = _month_grid_range(month_start)
+        days, rows, _load = service.compute_project_timeline(
+            db, grid_start, grid_end, q=_str(q), archived=is_archived
+        )
+        weeks = service.build_project_grid(days, rows, month_start)
+        prev_start = (month_start - timedelta(days=1)).replace(day=1)
+        next_start = month_start + timedelta(days=pycalendar.monthrange(month_start.year, month_start.month)[1])
+
+        return render(
+            request,
+            "projects/calendar.html",
+            {
+                **common_ctx,
+                "weeks": weeks,
+                "month_label": f"{_MONTH_NAMES[month_start.month - 1]} {month_start.year}",
+                "is_current_month": month_start.year == today.year and month_start.month == today.month,
+                "month_short": _MONTH_SHORT,
+                "prev_start": prev_start,
+                "next_start": next_start,
+            },
+            db=db,
+            user=user,
+        )
+
+    start_date = anchor
+    end_date = start_date + timedelta(days=span - 1)
     days, rows, load = service.compute_project_timeline(
-        db, start_date, end_date, q=_str(q), archived=bool(archived)
+        db, start_date, end_date, q=_str(q), archived=is_archived
     )
 
     return render(
         request,
         "projects/calendar.html",
         {
-            "page_title": "Календарь проектов",
+            **common_ctx,
             "days": days,
             "month_segments": _month_segments(days),
             "rows": rows,
             "load": load,
-            "without_dates": service.list_projects_without_dates(db, archived=bool(archived)),
             "start_date": start_date,
             "end_date": end_date,
-            "span": span,
-            "spans": _CALENDAR_SPANS,
             "prev_start": start_date - timedelta(days=span),
             "next_start": start_date + timedelta(days=span),
-            "today": _today(),
-            "q": q or "",
-            "archived": bool(archived),
         },
         db=db,
         user=user,
