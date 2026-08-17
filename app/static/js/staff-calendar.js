@@ -125,6 +125,10 @@
       editable: { add: false, updateTime: true, updateGroup: true, remove: false },
       margin: { item: 4 },
       locale: "ru",
+      // По умолчанию шкала "day" (режим Месяц) подписывает деления только
+      // числом («1», «3», ...) — добавляем день недели, как уже показывает
+      // соседняя шкала "weekday" (режимы День/Неделя).
+      format: { minorLabels: { day: "dd D" } },
       onMove: handleMove,
       // Контент строится через escapeHtml() на каждом пользовательском поле —
       // встроенный XSS-фильтр vis-timeline не нужен и вырезает наши CSS-классы.

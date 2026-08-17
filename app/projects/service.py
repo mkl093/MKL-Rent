@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import utcnow
 from app.inventory.models import EquipmentModel
 from app.numbering.models import DocType
 from app.numbering.service import next_number
-from app.projects.availability import compute_availability
+from app.projects.availability import compute_availability, ranges_overlap
 from app.projects.enums import ProjectStatus
 from app.projects.models import Project
 from app.projects.schemas import ProjectInput
@@ -72,6 +72,92 @@ def list_projects(db: Session, archived: bool = False) -> list[Project]:
         stmt = stmt.where(Project.status.in_(archived_statuses))
     else:
         stmt = stmt.where(Project.status.notin_(archived_statuses))
+    stmt = stmt.order_by(Project.created_at.desc())
+    return list(db.execute(stmt).scalars().all())
+
+
+@dataclass
+class TimelineRow:
+    """Строка диаграммы Ганта календаря проектов (ТЗ §13.9)."""
+
+    project: Project
+    offset: int  # индекс первого дня полосы в окне [start; end]
+    length: int  # длина полосы в днях
+    cont_before: bool  # срок начинается раньше видимого окна
+    cont_after: bool  # срок заканчивается позже видимого окна
+    overlaps: list[Project]  # другие видимые проекты, пересекающиеся по датам
+
+
+def compute_project_timeline(
+    db: Session, start: date, end: date, *, q: str | None = None, archived: bool = False
+) -> tuple[list[date], list[TimelineRow], list[int]]:
+    """Проекты, пересекающие [start; end], разложенные для календаря-Ганта (ТЗ §13.9).
+
+    Наложения (`overlaps`) считаются только среди проектов, попавших в окно —
+    иначе бейдж «×N» ссылался бы на проекты, которых нет на экране. Правило
+    пересечения — `ranges_overlap()` (ТЗ §13.3), то же, что для брони оборудования.
+    """
+    archived_statuses = [ProjectStatus.COMPLETED, ProjectStatus.CANCELLED]
+    stmt = select(Project).where(
+        Project.start_date.is_not(None),
+        Project.end_date.is_not(None),
+        Project.start_date <= end,
+        Project.end_date >= start,
+    )
+    stmt = stmt.where(
+        Project.status.in_(archived_statuses)
+        if archived
+        else Project.status.notin_(archived_statuses)
+    )
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(
+            or_(Project.number.ilike(like), Project.name.ilike(like), Project.customer.ilike(like))
+        )
+    stmt = stmt.order_by(Project.start_date, Project.end_date)
+    projects = list(db.execute(stmt).scalars().all())
+
+    days = [start + timedelta(days=i) for i in range((end - start).days + 1)]
+    rows: list[TimelineRow] = []
+    for p in projects:
+        overlaps = [
+            other
+            for other in projects
+            if other.id != p.id
+            and ranges_overlap(p.start_date, p.end_date, other.start_date, other.end_date)
+        ]
+        bar_start = max(p.start_date, start)
+        bar_end = min(p.end_date, end)
+        rows.append(
+            TimelineRow(
+                project=p,
+                offset=(bar_start - start).days,
+                length=(bar_end - bar_start).days + 1,
+                cont_before=p.start_date < start,
+                cont_after=p.end_date > end,
+                overlaps=overlaps,
+            )
+        )
+
+    load = [0] * len(days)
+    for row in rows:
+        for i in range(row.offset, row.offset + row.length):
+            load[i] += 1
+
+    return days, rows, load
+
+
+def list_projects_without_dates(db: Session, archived: bool = False) -> list[Project]:
+    """Проекты без обеих дат аренды — не попадают в календарь (ТЗ §13.9)."""
+    archived_statuses = [ProjectStatus.COMPLETED, ProjectStatus.CANCELLED]
+    stmt = select(Project).where(
+        or_(Project.start_date.is_(None), Project.end_date.is_(None))
+    )
+    stmt = stmt.where(
+        Project.status.in_(archived_statuses)
+        if archived
+        else Project.status.notin_(archived_statuses)
+    )
     stmt = stmt.order_by(Project.created_at.desc())
     return list(db.execute(stmt).scalars().all())
 

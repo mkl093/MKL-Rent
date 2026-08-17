@@ -153,3 +153,70 @@ def test_list_active_vs_archived(db_session):
     archived_ids = {p.id for p in service.list_projects(db_session, archived=True)}
     assert a.id in active_ids and b.id not in active_ids
     assert b.id in archived_ids and a.id not in archived_ids
+
+
+# --- Календарь проектов: диаграмма Ганта и наложения (ТЗ §13.9) ---------------
+
+
+def test_compute_project_timeline_offsets_and_continuation(db_session):
+    """Проект, торчащий за оба края окна, обрезается по видимому диапазону,
+    но сохраняет флаги cont_before/cont_after."""
+    service.create_project(
+        db_session,
+        ProjectInput(name="Долгий", start_date=date(2026, 6, 25), end_date=date(2026, 7, 15)),
+    )
+    days, rows, load = service.compute_project_timeline(
+        db_session, date(2026, 7, 1), date(2026, 7, 10)
+    )
+    assert len(days) == 10
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.offset == 0
+    assert row.length == 10
+    assert row.cont_before is True
+    assert row.cont_after is True
+    assert row.overlaps == []
+    assert load == [1] * 10
+
+
+def test_compute_project_timeline_detects_overlap_and_load(db_session):
+    service.create_project(
+        db_session,
+        ProjectInput(name="A", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5)),
+    )
+    service.create_project(
+        db_session,
+        ProjectInput(name="B", start_date=date(2026, 7, 4), end_date=date(2026, 7, 8)),
+    )
+    days, rows, load = service.compute_project_timeline(
+        db_session, date(2026, 7, 1), date(2026, 7, 10)
+    )
+    by_name = {r.project.name: r for r in rows}
+    assert [p.name for p in by_name["A"].overlaps] == ["B"]
+    assert [p.name for p in by_name["B"].overlaps] == ["A"]
+    # 4 и 5 июля — оба проекта активны одновременно (индексы 3, 4 в окне с 1 июля).
+    assert load[3] == 2 and load[4] == 2
+    assert load[0] == 1 and load[7] == 1
+
+
+def test_compute_project_timeline_excludes_undated_and_out_of_range(db_session):
+    service.create_project(db_session, ProjectInput(name="Без дат"))
+    service.create_project(
+        db_session,
+        ProjectInput(name="Вне окна", start_date=date(2026, 9, 1), end_date=date(2026, 9, 5)),
+    )
+    days, rows, load = service.compute_project_timeline(
+        db_session, date(2026, 7, 1), date(2026, 7, 10)
+    )
+    assert rows == []
+    assert load == [0] * 10
+
+
+def test_list_projects_without_dates(db_session):
+    undated = service.create_project(db_session, ProjectInput(name="Без дат"))
+    service.create_project(
+        db_session,
+        ProjectInput(name="С датами", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5)),
+    )
+    result = service.list_projects_without_dates(db_session, archived=False)
+    assert [p.id for p in result] == [undated.id]

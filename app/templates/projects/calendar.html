@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block content %}
+{% set wd = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'] %}
+{% set span_label = {14: '2 недели', 31: 'Месяц', 92: 'Квартал'} %}
+{% set qs = 'span=' ~ span %}
+{% if q %}{% set qs = qs ~ '&q=' ~ (q|urlencode) %}{% endif %}
+{% if archived %}{% set qs = qs ~ '&archived=1' %}{% endif %}
+
+<style>
+  .pj-grid th, .pj-grid td { text-align: center; white-space: nowrap; font-size: .85rem; }
+  .pj-grid th.pj-project, .pj-grid td.pj-project {
+    text-align: left; white-space: normal; position: sticky; left: 0;
+    background: var(--bs-body-bg); z-index: 1; min-width: 260px;
+  }
+  .pj-grid .pj-weekend { color: var(--bs-secondary-color); }
+  .pj-grid .pj-today { box-shadow: inset 0 0 0 2px var(--bs-primary); }
+  .pj-grid .pj-mbound { border-left: 2px solid var(--bs-border-color); }
+  .pj-grid .pj-month-head { background: var(--bs-tertiary-bg); font-weight: 600; text-align: left; padding-left: .5rem; }
+  .pj-bar-cell { padding: 0; }
+  .pj-bar { height: 1.4rem; display: flex; align-items: center; justify-content: center; }
+  .pj-bar-start { border-top-left-radius: 6px; border-bottom-left-radius: 6px; margin-left: 2px; }
+  .pj-bar-end { border-top-right-radius: 6px; border-bottom-right-radius: 6px; margin-right: 2px; }
+  .pj-cont { color: #fff; font-weight: 700; text-shadow: 0 0 2px #000, 0 0 3px #000; }
+  .pj-load-1 { background-color: var(--bs-success-bg-subtle); }
+  .pj-load-2 { background-color: var(--bs-warning-bg-subtle); }
+  .pj-load-3 { background-color: var(--bs-danger-bg-subtle); }
+  .pj-row { cursor: pointer; }
+  .pj-row.pj-selected td.pj-project { box-shadow: inset 3px 0 0 var(--bs-primary); }
+  .pj-row.pj-overlap td.pj-project { box-shadow: inset 3px 0 0 var(--bs-warning); }
+  .pj-row.pj-dim { opacity: .35; }
+</style>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 m-0">Календарь проектов</h1>
+  <div class="d-flex flex-wrap gap-2">
+    <a href="/projects" class="btn btn-outline-secondary">Список проектов</a>
+  </div>
+</div>
+
+<form method="get" action="/projects/calendar" class="card card-body mb-3">
+  <input type="hidden" name="start" value="{{ start_date.isoformat() }}">
+  <input type="hidden" name="span" value="{{ span }}">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-6">
+      <label class="form-label" for="q">Поиск (номер, название, заказчик)</label>
+      <input class="form-control" id="q" name="q" value="{{ q }}">
+    </div>
+    <div class="col-8 col-md-4">
+      <label class="form-label" for="archived">Показывать</label>
+      <select class="form-select" id="archived" name="archived" onchange="this.form.submit()">
+        <option value="0" {% if not archived %}selected{% endif %}>Активные</option>
+        <option value="1" {% if archived %}selected{% endif %}>Архив</option>
+      </select>
+    </div>
+    <div class="col-4 col-md-2">
+      <button class="btn btn-primary w-100" type="submit">Применить</button>
+    </div>
+  </div>
+</form>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+  <div class="btn-group">
+    <a class="btn btn-outline-secondary" href="/projects/calendar?start={{ prev_start.isoformat() }}&{{ qs }}" title="Назад">&laquo;</a>
+    <a class="btn btn-outline-secondary" href="/projects/calendar?start={{ today.isoformat() }}&{{ qs }}">Сегодня</a>
+    <a class="btn btn-outline-secondary" href="/projects/calendar?start={{ next_start.isoformat() }}&{{ qs }}" title="Вперёд">&raquo;</a>
+  </div>
+  <div class="fw-semibold">{{ start_date.strftime('%d.%m.%Y') }} – {{ end_date.strftime('%d.%m.%Y') }}</div>
+  <div class="btn-group">
+    {% for s in spans %}
+    <a class="btn btn-outline-secondary {% if span == s %}active{% endif %}"
+       href="/projects/calendar?start={{ start_date.isoformat() }}&span={{ s }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if archived %}&archived=1{% endif %}">
+      {{ span_label[s] }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="d-flex flex-wrap gap-3 mb-2 small text-secondary">
+  <span><span class="badge text-bg-success">&nbsp;</span> одновременно 1 проект</span>
+  <span><span class="badge text-bg-warning">&nbsp;</span> 2 проекта</span>
+  <span><span class="badge text-bg-danger">&nbsp;</span> 3 и более</span>
+  <span>Клик по строке подсвечивает пересекающиеся проекты (Esc — сбросить).</span>
+</div>
+
+{% if rows %}
+<div class="table-responsive">
+  <table class="table table-bordered align-middle pj-grid mb-0" id="pj-table">
+    <thead>
+      <tr>
+        <th class="pj-project"></th>
+        {% for seg in month_segments %}
+        <th class="pj-month-head" colspan="{{ seg.span }}">{{ seg.label }}</th>
+        {% endfor %}
+      </tr>
+      <tr>
+        <th class="pj-project">Проект</th>
+        {% for d in days %}
+        <th class="{{ 'pj-weekend' if d.weekday() >= 5 }} {{ 'pj-today' if d == today }} {{ 'pj-mbound' if d.day == 1 and not loop.first }}">
+          <div>{{ wd[d.weekday()] }}</div><div>{{ d.day }}</div>
+        </th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="pj-project fw-semibold">Одновременно</td>
+        {% for d in days %}
+        {% set n = load[loop.index0] %}
+        <td class="{{ 'pj-load-' ~ (3 if n >= 3 else n) if n else '' }} {{ 'pj-weekend' if d.weekday() >= 5 }} {{ 'pj-today' if d == today }} {{ 'pj-mbound' if d.day == 1 and not loop.first }}">
+          {{ n if n else '' }}
+        </td>
+        {% endfor %}
+      </tr>
+      {% for row in rows %}
+      <tr class="pj-row" data-project-id="{{ row.project.id }}" data-overlaps="{{ row.overlaps | map(attribute='id') | list | join(',') }}">
+        <td class="pj-project">
+          <a href="/projects/{{ row.project.id }}" class="text-decoration-none" onclick="event.stopPropagation()"><code>{{ row.project.number }}</code></a>
+          {% if row.overlaps %}
+          <span class="badge text-bg-warning" title="Пересекается с: {{ row.overlaps | map(attribute='number') | join(', ') }}">×{{ row.overlaps | length }}</span>
+          {% endif %}
+          <div class="fw-semibold">{{ row.project.name }}</div>
+          <div class="small text-secondary">
+            {{ row.project.customer or "—" }} ·
+            {{ row.project.start_date.strftime('%d.%m.%Y') }} – {{ row.project.end_date.strftime('%d.%m.%Y') }} ·
+            <span class="badge text-bg-{{ row.project.status.badge }}">{{ row.project.status.label }}</span>
+          </div>
+        </td>
+        {% for d in days %}
+        {% set i = loop.index0 %}
+        {% set on = i >= row.offset and i < row.offset + row.length %}
+        {% set is_start = on and i == row.offset %}
+        {% set is_end = on and i == row.offset + row.length - 1 %}
+        {% if on %}
+        <td class="pj-bar-cell {{ 'pj-mbound' if d.day == 1 and not loop.first }}">
+          <div class="pj-bar {{ 'pj-bar-start' if is_start }} {{ 'pj-bar-end' if is_end }}"
+               style="background-color: {{ row.project.color or '#6c757d' }};">
+            {% if is_start and row.cont_before %}<span class="pj-cont" title="Начался раньше видимого периода">&lsaquo;</span>{% endif %}
+            {% if is_end and row.cont_after %}<span class="pj-cont" title="Продолжается после видимого периода">&rsaquo;</span>{% endif %}
+          </div>
+        </td>
+        {% else %}
+        <td class="{{ 'pj-weekend' if d.weekday() >= 5 }} {{ 'pj-today' if d == today }} {{ 'pj-mbound' if d.day == 1 and not loop.first }}"></td>
+        {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-secondary">Нет проектов с датами аренды в этом периоде.</p>
+{% endif %}
+
+{% if without_dates %}
+<div class="mt-3 small text-secondary">
+  Без дат аренды (не показаны в календаре):
+  {% for p in without_dates %}<a href="/projects/{{ p.id }}">{{ p.number }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+</div>
+{% endif %}
+
+<script>
+(function () {
+  var table = document.getElementById("pj-table");
+  if (!table) return;
+  var selected = null;
+
+  function clearSelection() {
+    table.querySelectorAll("tr.pj-row").forEach(function (tr) {
+      tr.classList.remove("pj-selected", "pj-overlap", "pj-dim");
+    });
+    selected = null;
+  }
+
+  table.querySelectorAll("tr.pj-row").forEach(function (tr) {
+    tr.addEventListener("click", function () {
+      if (selected === tr) { clearSelection(); return; }
+      var overlapIds = (tr.dataset.overlaps || "").split(",").filter(Boolean);
+      clearSelection();
+      selected = tr;
+      table.querySelectorAll("tr.pj-row").forEach(function (other) {
+        if (other === tr) { other.classList.add("pj-selected"); }
+        else if (overlapIds.indexOf(other.dataset.projectId) !== -1) { other.classList.add("pj-overlap"); }
+        else { other.classList.add("pj-dim"); }
+      });
+    });
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") clearSelection();
+  });
+})();
+</script>
+{% endblock %}

@@ -163,6 +163,61 @@ def test_create_project_with_color_and_calendar_bar(auth_client, db_session):
     assert "checked" in checkbox
 
 
+def test_calendar_requires_login(client):
+    assert client.get("/projects/calendar", follow_redirects=False).status_code == 303
+
+
+def test_calendar_shows_overlapping_projects_and_undated_tail(auth_client):
+    token = _csrf(auth_client, "/projects/new")
+    r1 = auth_client.post(
+        "/projects",
+        data={
+            "name": "Первый",
+            "start_date": "2026-07-01",
+            "end_date": "2026-07-05",
+            "rental_coefficient": "1",
+            "vat": "0",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+    token = _csrf(auth_client, "/projects/new")
+    r2 = auth_client.post(
+        "/projects",
+        data={
+            "name": "Второй",
+            "start_date": "2026-07-04",
+            "end_date": "2026-07-08",
+            "rental_coefficient": "1",
+            "vat": "0",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+    token = _csrf(auth_client, "/projects/new")
+    auth_client.post(
+        "/projects",
+        data={
+            "name": "Без дат",
+            "rental_coefficient": "1",
+            "vat": "0",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+    id1 = int(r1.headers["location"].rsplit("/", 1)[-1])
+    id2 = int(r2.headers["location"].rsplit("/", 1)[-1])
+
+    page = auth_client.get(
+        "/projects/calendar?start=2026-07-01&span=14", follow_redirects=False
+    ).text
+    assert "Первый" in page and "Второй" in page
+    assert "Без дат" in page
+
+    row1 = re.search(rf'data-project-id="{id1}" data-overlaps="([^"]*)"', page).group(1)
+    assert str(id2) in row1.split(",")
+
+
 def test_invalid_color_is_silently_dropped(auth_client, db_session):
     token = _csrf(auth_client, "/projects/new")
     resp = auth_client.post(

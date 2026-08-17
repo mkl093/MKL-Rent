@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.audit.events import EventType
 from app.audit.service import log as audit_log
 from app.auth.models import User
-from app.database import get_db
+from app.database import get_db, utcnow
 from app.dependencies import redirect, render, require_login, verify_csrf
 from app.inventory.models import EquipmentModel
 from app.projects import service
@@ -22,6 +22,7 @@ from app.projects.schemas import ProjectInput
 from app.settings.service import get_company_settings
 from app.staff import service as staff_service
 from app.templating import flash
+from app.utils.timezone import to_local
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -55,6 +56,31 @@ def _color(value: str | None) -> str | None:
         return None
     value = value.lower()
     return value if re.fullmatch(r"#[0-9a-f]{6}", value) else None
+
+
+def _today() -> date:
+    return to_local(utcnow()).date()
+
+
+_CALENDAR_SPANS = (14, 31, 92)
+
+_MONTH_NAMES = [
+    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+]
+
+
+def _month_segments(days: list[date]) -> list[dict]:
+    """Заголовок месяцев для календаря проектов: label + colspan (ТЗ §13.9)."""
+    segments: list[dict] = []
+    for d in days:
+        if segments and (segments[-1]["year"], segments[-1]["month"]) == (d.year, d.month):
+            segments[-1]["span"] += 1
+        else:
+            segments.append({"year": d.year, "month": d.month, "span": 1})
+    for seg in segments:
+        seg["label"] = f"{_MONTH_NAMES[seg['month'] - 1]} {seg['year']}"
+    return segments
 
 
 def _dates_label(shipped: date | None, returned: date | None) -> str:
@@ -181,6 +207,52 @@ def project_create(
     )
     flash(request, f"Проект {project.number} создан.", "success")
     return redirect(f"/projects/{project.id}")
+
+
+# Статический путь — обязательно выше /{project_id}, иначе "calendar" уйдёт в
+# динамический параметр и упадёт с 422.
+@router.get("/calendar")
+def projects_calendar(
+    request: Request,
+    q: str | None = None,
+    archived: int = 0,
+    start: str | None = None,
+    span: int = 31,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    if span not in _CALENDAR_SPANS:
+        span = 31
+    start_date = _date(start) or _today()
+    end_date = start_date + timedelta(days=span - 1)
+
+    days, rows, load = service.compute_project_timeline(
+        db, start_date, end_date, q=_str(q), archived=bool(archived)
+    )
+
+    return render(
+        request,
+        "projects/calendar.html",
+        {
+            "page_title": "Календарь проектов",
+            "days": days,
+            "month_segments": _month_segments(days),
+            "rows": rows,
+            "load": load,
+            "without_dates": service.list_projects_without_dates(db, archived=bool(archived)),
+            "start_date": start_date,
+            "end_date": end_date,
+            "span": span,
+            "spans": _CALENDAR_SPANS,
+            "prev_start": start_date - timedelta(days=span),
+            "next_start": start_date + timedelta(days=span),
+            "today": _today(),
+            "q": q or "",
+            "archived": bool(archived),
+        },
+        db=db,
+        user=user,
+    )
 
 
 @router.get("/{project_id}")
