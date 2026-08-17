@@ -256,3 +256,93 @@ def _create_assignment(client, employee_id, starts_at, ends_at):
             "csrf_token": token,
         },
     )
+
+
+# --- Цветовая маркировка проекта в календаре (ТЗ §54.3) -----------------------
+
+
+def _make_project(db_session, *, color=None, calendar_bar=False, start=None, end=None):
+    from datetime import date
+
+    from app.projects import service as project_service
+    from app.projects.schemas import ProjectInput
+
+    return project_service.create_project(
+        db_session,
+        ProjectInput(
+            name="Цветной проект",
+            start_date=date.fromisoformat(start) if start else None,
+            end_date=date.fromisoformat(end) if end else None,
+            color=color,
+            calendar_bar=calendar_bar,
+        ),
+    )
+
+
+def test_project_bars_api_filters_by_flags_and_range(auth_client, db_session):
+    with_bar = _make_project(
+        db_session, color="#039be5", calendar_bar=True, start="2026-08-10", end="2026-08-15"
+    )
+    _make_project(db_session, color="#e67c73", calendar_bar=False, start="2026-08-10", end="2026-08-15")
+    _make_project(db_session, color=None, calendar_bar=True, start="2026-08-10", end="2026-08-15")
+    _make_project(db_session, color="#0b8043", calendar_bar=True, start="2026-09-10", end="2026-09-15")
+
+    resp = auth_client.get(
+        "/calendar/api/project-bars",
+        params={"start": "2026-08-01T00:00:00", "end": "2026-08-31T23:59:59"},
+    )
+    assert resp.status_code == 200
+    bars = resp.json()
+    assert [b["id"] for b in bars] == [with_bar.id]
+    assert bars[0]["color"] == "#039be5"
+    assert bars[0]["start_date"] == "2026-08-10"
+    assert bars[0]["end_date"] == "2026-08-15"
+
+
+def test_project_color_update_requires_csrf(auth_client, db_session):
+    project = _make_project(db_session)
+    resp = auth_client.post(
+        f"/calendar/api/projects/{project.id}/color", data={"color": "#039be5"}
+    )
+    assert resp.status_code == 403
+
+
+def test_project_color_update_saves(auth_client, db_session):
+    project = _make_project(db_session)
+    token = _csrf(auth_client, "/calendar")
+    resp = auth_client.post(
+        f"/calendar/api/projects/{project.id}/color",
+        data={"color": "#039BE5", "calendar_bar": "1", "csrf_token": token},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body == {"ok": True, "color": "#039be5", "calendar_bar": True}
+
+
+def test_project_color_update_rejects_invalid_hex(auth_client, db_session):
+    project = _make_project(db_session, color="#039be5")
+    token = _csrf(auth_client, "/calendar")
+    resp = auth_client.post(
+        f"/calendar/api/projects/{project.id}/color",
+        data={"color": "not-a-color", "csrf_token": token},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["color"] is None
+
+
+def test_assignment_response_includes_project_color(auth_client, employee, db_session):
+    project = _make_project(db_session, color="#8e24aa")
+    token = _csrf(auth_client, "/calendar")
+    resp = auth_client.post(
+        "/calendar/api/assignments",
+        data={
+            "employee_id": employee.id,
+            "project_id": project.id,
+            "type": "project",
+            "starts_at": "2026-08-10T10:00:00",
+            "ends_at": "2026-08-10T18:00:00",
+            "csrf_token": token,
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["assignment"]["project_color"] == "#8e24aa"

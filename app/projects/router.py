@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
@@ -16,7 +17,7 @@ from app.dependencies import redirect, render, require_login, verify_csrf
 from app.inventory.models import EquipmentModel
 from app.projects import service
 from app.projects.availability import compute_availability, occupancy_detail
-from app.projects.enums import ProjectStatus
+from app.projects.enums import PROJECT_COLOR_PRESETS, ProjectStatus
 from app.projects.schemas import ProjectInput
 from app.settings.service import get_company_settings
 from app.staff import service as staff_service
@@ -48,6 +49,14 @@ def _str(value: str | None) -> str | None:
     return value or None
 
 
+def _color(value: str | None) -> str | None:
+    value = _str(value)
+    if value is None:
+        return None
+    value = value.lower()
+    return value if re.fullmatch(r"#[0-9a-f]{6}", value) else None
+
+
 def _dates_label(shipped: date | None, returned: date | None) -> str:
     fmt = lambda d: d.strftime("%d.%m.%Y") if d else "—"  # noqa: E731
     return f"отгрузка {fmt(shipped)}, возврат {fmt(returned)}"
@@ -64,6 +73,8 @@ def _input(
     customer: str | None,
     address: str | None,
     comment: str | None,
+    color: str | None,
+    calendar_bar: str | None,
 ) -> ProjectInput:
     return ProjectInput(
         name=name,
@@ -76,6 +87,8 @@ def _input(
         customer=_str(customer),
         address=_str(address),
         comment=_str(comment),
+        color=_color(color),
+        calendar_bar=calendar_bar is not None,
     )
 
 
@@ -110,7 +123,12 @@ def project_new(
     return render(
         request,
         "projects/project_form.html",
-        {"page_title": "Новый проект", "project": None, "default_vat": company.default_vat},
+        {
+            "page_title": "Новый проект",
+            "project": None,
+            "default_vat": company.default_vat,
+            "color_presets": PROJECT_COLOR_PRESETS,
+        },
         db=db,
         user=user,
     )
@@ -129,6 +147,8 @@ def project_create(
     customer: str | None = Form(None),
     address: str | None = Form(None),
     comment: str | None = Form(None),
+    color: str | None = Form(None),
+    calendar_bar: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
@@ -143,6 +163,8 @@ def project_create(
         customer,
         address,
         comment,
+        color,
+        calendar_bar,
     )
     try:
         project = service.create_project(db, data)
@@ -247,6 +269,7 @@ def project_edit(
             "page_title": f"Редактирование {project.number}",
             "project": project,
             "default_vat": project.vat,
+            "color_presets": PROJECT_COLOR_PRESETS,
         },
         db=db,
         user=user,
@@ -267,6 +290,8 @@ def project_update(
     customer: str | None = Form(None),
     address: str | None = Form(None),
     comment: str | None = Form(None),
+    color: str | None = Form(None),
+    calendar_bar: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
@@ -286,6 +311,8 @@ def project_update(
         customer,
         address,
         comment,
+        color,
+        calendar_bar,
     )
     try:
         service.update_project(db, project, data)

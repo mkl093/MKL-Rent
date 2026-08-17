@@ -128,3 +128,57 @@ def test_book_without_dates_flashes(auth_client):
     # Остаётся черновиком, показана ошибка
     page = auth_client.get(url).text
     assert "Черновик" in page
+
+
+# --- Цветовая маркировка в календаре (ТЗ §54.3) --------------------------------
+
+
+def test_create_project_with_color_and_calendar_bar(auth_client, db_session):
+    token = _csrf(auth_client, "/projects/new")
+    resp = auth_client.post(
+        "/projects",
+        data={
+            "name": "Цветной",
+            "rental_coefficient": "1",
+            "vat": "0",
+            "color": "#039BE5",
+            "calendar_bar": "1",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+    url = resp.headers["location"]
+    project_id = int(url.rsplit("/", 1)[-1])
+
+    from app.projects import service as project_service
+
+    project = project_service.get_project(db_session, project_id)
+    assert project.color == "#039be5"
+    assert project.calendar_bar is True
+
+    # Форма редактирования подставляет сохранённый цвет обратно в скрытое поле.
+    edit_page = auth_client.get(f"/projects/{project_id}/edit").text
+    assert 'value="#039be5"' in edit_page
+    checkbox = re.search(r'id="calendar_bar"[^>]*>', edit_page).group(0)
+    assert "checked" in checkbox
+
+
+def test_invalid_color_is_silently_dropped(auth_client, db_session):
+    token = _csrf(auth_client, "/projects/new")
+    resp = auth_client.post(
+        "/projects",
+        data={
+            "name": "Без валидного цвета",
+            "rental_coefficient": "1",
+            "vat": "0",
+            "color": "not-a-color",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+    project_id = int(resp.headers["location"].rsplit("/", 1)[-1])
+
+    from app.projects import service as project_service
+
+    project = project_service.get_project(db_session, project_id)
+    assert project.color is None

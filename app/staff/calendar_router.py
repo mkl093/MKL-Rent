@@ -15,10 +15,12 @@
 from __future__ import annotations
 
 import calendar as pycalendar
+import re
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit.events import EventType
@@ -26,6 +28,8 @@ from app.audit.service import log as audit_log
 from app.auth.models import User
 from app.database import get_db, utcnow
 from app.dependencies import render, require_login, verify_csrf
+from app.projects.enums import ProjectStatus
+from app.projects.models import Project
 from app.projects.service import list_projects
 from app.staff import service
 from app.staff.enums import AssignmentStatus, AssignmentType
@@ -109,6 +113,25 @@ def _split_str(value: str | None) -> list[str] | None:
     return [v for v in value.split(",") if v.strip()]
 
 
+_HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _color(value: str | None) -> str | None:
+    """Тихо отбрасывает некорректный hex — см. app.projects.schemas._validate_color."""
+    value = _opt_str(value)
+    if value is None:
+        return None
+    value = value.lower()
+    return value if _HEX_COLOR.match(value) else None
+
+
+def _wire_date(value: str) -> date:
+    """Дата из query-строки календаря (может быть полным wire-datetime) — берём
+    только календарную часть, без пересчёта поясов: Project.start_date/end_date
+    это обычные календарные даты аренды, а не UTC-моменты."""
+    return date.fromisoformat(value[:10])
+
+
 # --- Сериализация -------------------------------------------------------------
 
 
@@ -132,6 +155,7 @@ def _assignment_dict(a: Assignment) -> dict:
         "project_name": a.project.name if a.project else None,
         "project_customer": a.project.customer if a.project else None,
         "project_address": a.project.address if a.project else None,
+        "project_color": a.project.color if a.project else None,
         "type": a.type.value,
         "type_label": a.type.label,
         "status": a.status.value,
@@ -141,6 +165,17 @@ def _assignment_dict(a: Assignment) -> dict:
         "title": a.title,
         "comment": a.comment,
         "blocks": a.status.blocks,
+    }
+
+
+def _project_bar_dict(p: Project) -> dict:
+    return {
+        "id": p.id,
+        "number": p.number,
+        "name": p.name,
+        "color": p.color,
+        "start_date": p.start_date.isoformat(),
+        "end_date": p.end_date.isoformat(),
     }
 
 
@@ -264,6 +299,35 @@ def api_conflicts(
     return {"conflicts": [_assignment_dict(c) for c in conflicts]}
 
 
+@router.get("/api/project-bars")
+def api_project_bars(
+    start: str,
+    end: str,
+    project_id: str | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+) -> list[dict]:
+    """Проекты с полосой на весь срок аренды (ТЗ §54.3): нужен цвет, обе даты
+    аренды, включённый calendar_bar и пересечение с запрошенным диапазоном.
+    Архивные (завершён/отменён) проекты не показываем — они больше не активны."""
+    start_date = _wire_date(start)
+    end_date = _wire_date(end)
+    stmt = select(Project).where(
+        Project.calendar_bar.is_(True),
+        Project.color.is_not(None),
+        Project.start_date.is_not(None),
+        Project.end_date.is_not(None),
+        Project.start_date <= end_date,
+        Project.end_date >= start_date,
+        Project.status.notin_([ProjectStatus.COMPLETED, ProjectStatus.CANCELLED]),
+    )
+    pid = _opt_id(project_id)
+    if pid is not None:
+        stmt = stmt.where(Project.id == pid)
+    stmt = stmt.order_by(Project.start_date)
+    return [_project_bar_dict(p) for p in db.execute(stmt).scalars().all()]
+
+
 def _assignment_form_data(
     employee_id: int,
     project_id: str | None,
@@ -370,6 +434,37 @@ def api_assignment_bulk(
         object_id=None,
     )
     return {"ok": True, "created": [_assignment_dict(a) for a in result.created]}
+
+
+@router.post("/api/projects/{project_id}/color", dependencies=[Depends(verify_csrf)])
+def api_project_color(
+    project_id: int,
+    color: str | None = Form(None),
+    calendar_bar: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    """Сохранить цвет/полосу проекта прямо из модалки занятости (ТЗ §54.3),
+    без перехода в форму проекта."""
+    project = db.get(Project, project_id)
+    if project is None:
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+    old_color = project.color
+    project.color = _color(color)
+    project.calendar_bar = calendar_bar is not None
+    db.commit()
+    db.refresh(project)
+    audit_log(
+        db,
+        user,
+        EventType.PROJECT_UPDATE,
+        f"Цвет проекта {project.number} в календаре занятости",
+        object_type="project",
+        object_id=project.id,
+        old_value=old_color,
+        new_value=project.color,
+    )
+    return {"ok": True, "color": project.color, "calendar_bar": project.calendar_bar}
 
 
 # Динамические маршруты /{assignment_id}* регистрируются после /bulk,

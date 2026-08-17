@@ -147,7 +147,40 @@ body {
   .vis-item.vis-background.sc-bg-today { background: rgba(13, 110, 253, 0.16); }
 }
 
+/* Разделение по месяцам в Day/Week/Month (буквально те же .sc-bg-* фоны, но
+ * на масштаб месяца, а не дня) — чередующаяся подложка, подсветка текущего
+ * месяца и жирная граница-разделитель слева на 1-м числе (см. buildMonthBackgroundItems()
+ * в staff-calendar.js). border-left рисуется поверх подложек дня/недели —
+ * .sc-bg-month добавляется в items первым, поэтому красится «под» ними. */
+.vis-item.vis-background.sc-bg-month { background: transparent; border: none; }
+.vis-item.vis-background.sc-bg-month-odd { background: rgba(0, 0, 0, 0.025); }
+.vis-item.vis-background.sc-bg-month-current { background: rgba(13, 110, 253, 0.05); }
+.vis-item.vis-background.sc-bg-month-boundary { border-left: 2px solid var(--bs-secondary-color); }
+@media (prefers-color-scheme: dark) {
+  .vis-item.vis-background.sc-bg-month-odd { background: rgba(255, 255, 255, 0.03); }
+  .vis-item.vis-background.sc-bg-month-current { background: rgba(13, 110, 253, 0.1); }
+}
+
 /* Сетка месяца — общий вид на всех сотрудников (альтернатива timeline). */
+.sc-grid-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+.sc-grid-month {
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+.sc-grid-nowbadge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+  border-radius: 999px;
+  color: var(--bs-primary);
+  background: rgba(13, 110, 253, 0.12);
+}
 .sc-grid-table {
   width: 100%;
   border-collapse: collapse;
@@ -168,9 +201,16 @@ body {
   padding: 0.25rem;
   overflow: hidden;
 }
+/* Дни соседних месяцев — заметно приглушены (референс: Google Calendar).
+ * Затемняется и фон ячейки, и её содержимое, поэтому чипы занятости в чужом
+ * месяце не спорят по контрасту с текущим. */
 .sc-grid-day.sc-grid-outside {
   background: var(--bs-tertiary-bg);
   color: var(--bs-secondary-color);
+}
+.sc-grid-day.sc-grid-outside .sc-grid-daynum,
+.sc-grid-day.sc-grid-outside .sc-grid-items {
+  opacity: 0.45;
 }
 .sc-grid-day.sc-grid-today {
   background: rgba(13, 110, 253, 0.08);
@@ -178,6 +218,17 @@ body {
 .sc-grid-day.sc-grid-weekend:not(.sc-grid-today) {
   background: rgba(0, 0, 0, 0.03);
 }
+
+/* Граница между месяцами: жирная линия «лесенкой» (см. renderGrid()).
+ * border-collapse: collapse схлопывает соседние границы, оставляя более
+ * широкую, — поэтому достаточно рисовать её только на ячейках нового месяца. */
+.sc-grid-day.sc-grid-mbound-left {
+  border-left: 2px solid var(--bs-secondary-color);
+}
+.sc-grid-day.sc-grid-mbound-top {
+  border-top: 2px solid var(--bs-secondary-color);
+}
+
 .sc-grid-daynum {
   display: flex;
   justify-content: space-between;
@@ -185,6 +236,18 @@ body {
   font-size: 0.8rem;
   font-weight: 600;
   margin-bottom: 0.2rem;
+}
+/* Сегодняшнее число — синий кружок, как в Google Calendar. */
+.sc-grid-daynum-today {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--bs-primary);
+  color: #fff;
 }
 .sc-grid-add {
   border: none;
@@ -217,4 +280,70 @@ body {
 }
 @media (prefers-color-scheme: dark) {
   .sc-grid-day.sc-grid-weekend:not(.sc-grid-today) { background: rgba(255, 255, 255, 0.05); }
+}
+
+/* Виджет выбора цвета проекта — общий для формы проекта (project_form.html)
+ * и модалок занятости/массового назначения в календаре (staff-calendar.js). */
+.sc-color-swatch {
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: none;
+  transition: box-shadow 0.1s ease-in-out;
+}
+.sc-color-swatch.selected {
+  box-shadow: 0 0 0 2px var(--bs-body-bg), 0 0 0 4px var(--bs-primary);
+}
+.sc-color-swatch-none {
+  background: var(--bs-body-bg);
+  color: var(--bs-secondary-color);
+  line-height: 1;
+  font-size: 0.9rem;
+}
+input.sc-color-custom {
+  padding: 1px;
+}
+
+/* Строка-псевдогруппа "Проекты" сверху timeline-режимов (Day/Week/Month) —
+ * см. PROJECTS_GROUP_ID в staff-calendar.js. Слегка выделена фоном и
+ * нижней границей, чтобы визуально отделяться от настоящих строк сотрудников. */
+.vis-label.sc-projects-group,
+.vis-group.sc-projects-group {
+  background: var(--bs-tertiary-bg);
+  border-bottom: 1px solid var(--bs-border-color);
+}
+
+/* Полоса проекта на весь его срок в timeline-режимах — обычный vis-item,
+ * цвет красится инлайново (произвольный hex, см. buildProjectBarItems()). */
+.vis-item.sc-project-bar {
+  height: 1.4rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.4rem;
+  padding: 0 0.35rem;
+  border-radius: 4px;
+}
+
+/* Полоса проекта на весь его срок в сетке месяца — тонкая цветная плашка
+ * над списком занятости дня (см. gridBarsHtml()). Скругление только на
+ * настоящих границах проекта (.sc-grid-bar-start/-end), не на разрезе недели. */
+.sc-grid-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 2px;
+}
+.sc-grid-bar {
+  height: 4px;
+  border-radius: 0;
+}
+.sc-grid-bar-start { border-top-left-radius: 3px; border-bottom-left-radius: 3px; }
+.sc-grid-bar-end { border-top-right-radius: 3px; border-bottom-right-radius: 3px; }
+.sc-grid-bar-more {
+  font-size: 0.65rem;
+  line-height: 1;
+  color: var(--bs-secondary-color);
 }

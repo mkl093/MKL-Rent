@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base, TimestampMixin
@@ -44,6 +44,13 @@ class Project(Base, TimestampMixin):
     customer: Mapped[str | None] = mapped_column(String(255), nullable=True)
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Цветовая маркировка в календаре занятости (ТЗ §54.3): hex "#rrggbb",
+    # выбирается из пресетов или произвольно. calendar_bar включает отдельную
+    # тонкую полосу на весь срок проекта (start_date–end_date), а не только
+    # раскраску отдельных записей занятости.
+    color: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    calendar_bar: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     status: Mapped[ProjectStatus] = mapped_column(
         _enum_column(ProjectStatus, 12),

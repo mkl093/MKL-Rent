@@ -55,6 +55,25 @@
       <label class="form-label" for="comment">Комментарий</label>
       <textarea class="form-control" id="comment" name="comment" rows="2">{{ project.comment or '' if editing else '' }}</textarea>
     </div>
+    <div class="col-12">
+      <label class="form-label d-block">Цвет в календаре занятости</label>
+      <div class="d-flex flex-wrap align-items-center gap-2" id="color-picker">
+        <button type="button" class="sc-color-swatch sc-color-swatch-none" data-color="" title="Без цвета">×</button>
+        {% for hex in color_presets %}
+        <button type="button" class="sc-color-swatch" data-color="{{ hex }}" style="background-color: {{ hex }};" title="{{ hex }}"></button>
+        {% endfor %}
+        <input type="color" class="sc-color-swatch sc-color-custom" id="color-custom-input" title="Свой цвет"
+               value="{{ (project.color if editing and project.color else none) or '#7986cb' }}">
+      </div>
+      <input type="hidden" name="color" id="color-value" value="{{ (project.color if editing else none) or '' }}">
+      <div class="form-check mt-2">
+        <input class="form-check-input" type="checkbox" id="calendar_bar" name="calendar_bar" value="1"
+               {% if editing and project.calendar_bar %}checked{% endif %}>
+        <label class="form-check-label" for="calendar_bar">
+          Показывать полосу на весь срок проекта в календаре занятости
+        </label>
+      </div>
+    </div>
   </div>
   <div class="mt-3 text-end">
     <button class="btn btn-primary" type="submit">{{ "Сохранить" if editing else "Создать" }}</button>
@@ -62,4 +81,35 @@
   <div class="form-text mt-2">Даты аренды можно заполнить позже, но они обязательны для бронирования.
     Даты отгрузки/возврата — фактические; проставляются автоматически при смене статуса, но их можно поправить вручную.</div>
 </form>
+
+<script>
+  (function () {
+    const valueInput = document.getElementById("color-value");
+    const customInput = document.getElementById("color-custom-input");
+    const presetButtons = document.querySelectorAll("#color-picker .sc-color-swatch[data-color]");
+
+    function highlight(hex) {
+      let matched = false;
+      presetButtons.forEach((btn) => {
+        const isMatch = btn.dataset.color === hex;
+        btn.classList.toggle("selected", isMatch);
+        if (isMatch) matched = true;
+      });
+      customInput.classList.toggle("selected", !matched && hex !== "");
+    }
+
+    presetButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        valueInput.value = btn.dataset.color;
+        if (btn.dataset.color) customInput.value = btn.dataset.color;
+        highlight(btn.dataset.color);
+      });
+    });
+    customInput.addEventListener("input", () => {
+      valueInput.value = customInput.value;
+      highlight(customInput.value);
+    });
+    highlight(valueInput.value);
+  })();
+</script>
 {% endblock %}

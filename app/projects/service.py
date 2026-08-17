@@ -100,6 +100,8 @@ def create_project(db: Session, data: ProjectInput) -> Project:
         customer=(data.customer or None),
         address=(data.address or None),
         comment=(data.comment or None),
+        color=data.color,
+        calendar_bar=data.calendar_bar,
         status=ProjectStatus.DRAFT,
     )
     db.add(project)
@@ -121,6 +123,8 @@ def update_project(db: Session, project: Project, data: ProjectInput) -> Project
     project.customer = data.customer or None
     project.address = data.address or None
     project.comment = data.comment or None
+    project.color = data.color
+    project.calendar_bar = data.calendar_bar
     db.commit()
     db.refresh(project)
     return project
@@ -143,6 +147,8 @@ def copy_project(db: Session, project: Project) -> Project:
         customer=project.customer,
         address=project.address,
         comment=project.comment,
+        color=project.color,
+        calendar_bar=project.calendar_bar,
         status=ProjectStatus.DRAFT,
     )
     db.add(copy)

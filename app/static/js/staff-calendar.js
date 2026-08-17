@@ -23,11 +23,33 @@
     filters: { q: "", department_id: "", position: "", project_id: "", type: "", status: "" },
     employees: [],
     items: [],
+    projectBars: [],
     visibleStart: new Date(root.dataset.rangeStart + "T00:00:00"),
     visibleEnd: new Date(root.dataset.rangeEnd + "T23:59:59"),
     gridItems: [],
+    gridProjectBars: [],
     gridRange: null,
   };
+
+  // Пресеты цветовой маркировки проекта — держать в синхроне с
+  // PROJECT_COLOR_PRESETS в app/projects/enums.py (тот же список для формы
+  // проекта на сервере).
+  const PROJECT_COLOR_PRESETS = [
+    "#7986cb", "#33b679", "#8e24aa", "#e67c73", "#f6bf26", "#f4511e",
+    "#039be5", "#616161", "#3f51b5", "#0b8043", "#d50000",
+  ];
+
+  // Цвет текста, читаемый на произвольном фоне (упрощённая яркость по sRGB —
+  // точности WCAG здесь не нужно, только выбор между тёмным и белым текстом).
+  function contrastText(hex) {
+    const h = (hex || "").replace("#", "");
+    if (h.length !== 6) return "#fff";
+    const r = parseInt(h.substring(0, 2), 16);
+    const g = parseInt(h.substring(2, 4), 16);
+    const b = parseInt(h.substring(4, 6), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.6 ? "#1f2430" : "#ffffff";
+  }
 
   function pad(n) {
     return String(n).padStart(2, "0");
@@ -140,10 +162,24 @@
     }
   }
 
+  async function loadProjectBars(start, end) {
+    const params = new URLSearchParams({
+      start: toWire(start),
+      end: toWire(end),
+      project_id: state.filters.project_id,
+    });
+    const { body } = await api("/calendar/api/project-bars?" + params.toString());
+    return body || [];
+  }
+
   async function loadAssignments() {
     const params = new URLSearchParams(currentAssignmentFilters());
-    const { body } = await api("/calendar/api/assignments?" + params.toString());
-    state.items = body || [];
+    const [assignmentsRes, bars] = await Promise.all([
+      api("/calendar/api/assignments?" + params.toString()),
+      loadProjectBars(state.visibleStart, state.visibleEnd),
+    ]);
+    state.items = assignmentsRes.body || [];
+    state.projectBars = bars;
     applyItems();
   }
 
@@ -180,20 +216,100 @@
     return ids;
   }
 
+  // Псевдогруппа-строка "Проекты" сверху таймлайна — полосы на весь срок
+  // проекта (см. buildProjectBarItems()). Не настоящий сотрудник, поэтому
+  // не участвует в фильтре «Показывать: свободные/занятые».
+  const PROJECTS_GROUP_ID = "__projects__";
+
   function applyGroups() {
     const busy = busyEmployeeIds();
     let visible = state.employees;
     if (state.availability === "free") visible = visible.filter((e) => !busy.has(e.id));
     if (state.availability === "busy") visible = visible.filter((e) => busy.has(e.id));
     groupsDS.clear();
-    groupsDS.add(
-      visible.map((e) => ({ id: e.id, content: employeeLabel(e) }))
-    );
+    const groups = visible.map((e) => ({ id: e.id, content: employeeLabel(e) }));
+    if (!isGrid && state.projectBars.length) {
+      groups.unshift({
+        id: PROJECTS_GROUP_ID,
+        content: '<div class="sc-employee-name">Проекты</div>',
+        className: "sc-projects-group",
+      });
+    }
+    groupsDS.add(groups);
   }
 
   const TYPE_ICON = {
     project: "▶", busy: "●", vacation: "☀", sick: "⚕", unavailable: "✕", other: "…",
   };
+
+  // --- Разделение по месяцам (общее для сетки и timeline-режимов) -----------
+
+  const MONTH_NAMES = [
+    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+  ];
+  // Сокращения для подписи первого числа месяца («1 сент.», как в Google
+  // Calendar). Май в такой связке читается как «1 мая» — родительный падеж.
+  const MONTH_SHORT = [
+    "янв.", "февр.", "мар.", "апр.", "мая", "июн.",
+    "июл.", "авг.", "сент.", "окт.", "нояб.", "дек.",
+  ];
+
+  // Заголовок «Август 2026» (+ бейдж «текущий месяц», если сегодня попадает
+  // в диапазон [start, end)). Если диапазон пересекает несколько месяцев —
+  // «Август – Сентябрь 2026» / «Декабрь 2026 – Январь 2027».
+  function renderMonthHeading(start, end) {
+    const lastDay = new Date(end.getTime() - 1);
+    const startLabel = MONTH_NAMES[start.getMonth()] + " " + start.getFullYear();
+    const sameMonth =
+      start.getFullYear() === lastDay.getFullYear() && start.getMonth() === lastDay.getMonth();
+    let text = startLabel;
+    if (!sameMonth) {
+      const endLabel = MONTH_NAMES[lastDay.getMonth()] + " " + lastDay.getFullYear();
+      text =
+        start.getFullYear() === lastDay.getFullYear()
+          ? MONTH_NAMES[start.getMonth()] + " – " + endLabel
+          : startLabel + " – " + endLabel;
+    }
+    const today = new Date();
+    const isCurrent = today >= start && today < end;
+    return (
+      '<span class="sc-grid-month">' + text + "</span>" +
+      (isCurrent ? '<span class="sc-grid-nowbadge">текущий месяц</span>' : "")
+    );
+  }
+
+  // Фоновые элементы vis-timeline на каждый календарный месяц видимого
+  // диапазона: слабая чередующаяся подложка + подсветка текущего месяца +
+  // жирная граница слева на первом дне месяца (кроме самого первого сегмента
+  // — там это просто край видимого окна, а не настоящая граница месяца).
+  function buildMonthBackgroundItems(start, end) {
+    const items = [];
+    const today = new Date();
+    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    let first = true;
+    let guard = 0;
+    while (cursor < end && guard < 60) {
+      guard++;
+      const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+      const isCurrent =
+        cursor.getFullYear() === today.getFullYear() && cursor.getMonth() === today.getMonth();
+      const cls = ["sc-bg-month"];
+      if (cursor.getMonth() % 2 === 1) cls.push("sc-bg-month-odd");
+      if (isCurrent) cls.push("sc-bg-month-current");
+      if (!first) cls.push("sc-bg-month-boundary");
+      first = false;
+      items.push({
+        id: "bg-month-" + cursor.getFullYear() + "-" + cursor.getMonth(),
+        type: "background",
+        start: cursor < start ? new Date(start) : new Date(cursor),
+        end: monthEnd > end ? new Date(end) : monthEnd,
+        className: cls.join(" "),
+      });
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+    return items;
+  }
 
   function itemContent(a) {
     const icon = a.status === "cancelled" ? "✕ " : (TYPE_ICON[a.type] || "") + " ";
@@ -214,10 +330,21 @@
     return cls.join(" ");
   }
 
+  // Цвет проекта переопределяет цвет типа (см. приписку к легенде в
+  // calendar.html) — но не для отменённых: там диагональная штриховка на
+  // !important в .sc-status-cancelled, инлайновый стиль её не должен перебить.
+  function itemStyle(a) {
+    if (a.type !== "project" || !a.project_color || a.status === "cancelled") return "";
+    return (
+      "background-color:" + a.project_color + ";border-color:" + a.project_color +
+      ";color:" + contrastText(a.project_color) + ";"
+    );
+  }
+
   let bgIds = [];
 
   function buildBackgroundItems(start, end) {
-    const items = [];
+    const items = buildMonthBackgroundItems(start, end);
     const [workStartH, workStartM] = WORK_START.split(":").map(Number);
     const [workEndH, workEndM] = WORK_END.split(":").map(Number);
     const today = new Date();
@@ -269,6 +396,28 @@
     return items;
   }
 
+  // Полоса проекта на весь его срок (ТЗ §54.3) — обычный item vis-timeline в
+  // псевдогруппе "Проекты", а не абсолютно спозиционированный оверлей: сам
+  // vis пересчитывает координаты при зуме/прокрутке. editable:false — иначе
+  // handleMove() принял бы PROJECTS_GROUP_ID за employee_id при перетаскивании.
+  function buildProjectBarItems() {
+    return state.projectBars.map((p) => {
+      const start = new Date(p.start_date + "T00:00:00");
+      const end = addDays(new Date(p.end_date + "T00:00:00"), 1);
+      return {
+        id: "projbar-" + p.id,
+        group: PROJECTS_GROUP_ID,
+        start,
+        end,
+        content: escapeHtml(p.number),
+        className: "sc-project-bar",
+        editable: false,
+        style: "background-color:" + p.color + ";border-color:" + p.color + ";color:" + contrastText(p.color) + ";",
+        title: p.number + (p.name ? " — " + p.name : ""),
+      };
+    });
+  }
+
   function applyItems() {
     itemsDS.clear();
     itemsDS.add(
@@ -279,14 +428,18 @@
         end: new Date(a.ends_at),
         content: itemContent(a),
         className: itemClass(a),
+        style: itemStyle(a),
         title: tooltipText(a),
         _raw: a,
       }))
     );
+    itemsDS.add(buildProjectBarItems());
     const bg = buildBackgroundItems(state.visibleStart, state.visibleEnd);
     bgIds = bg.map((b) => b.id);
     itemsDS.add(bg);
     applyGroups();
+    const head = document.getElementById("sc-timeline-head");
+    if (head) head.innerHTML = renderMonthHeading(state.visibleStart, state.visibleEnd);
   }
 
   function tooltipText(a) {
@@ -414,7 +567,9 @@
     timeline.on("click", (props) => {
       if (props.item == null) return;
       const item = itemsDS.get(props.item);
-      if (item) openEditModal(item._raw);
+      // item._raw отсутствует у фоновых элементов и у полос проектов
+      // (buildProjectBarItems()) — им нечего редактировать через эту модалку.
+      if (item && item._raw) openEditModal(item._raw);
     });
 
     // --- Создание занятости: правая кнопка мыши ---------------------------
@@ -430,7 +585,7 @@
     container.addEventListener("mousedown", (e) => {
       if (e.button !== 2) return;
       const props = timeline.getEventProperties(e);
-      if (props.item == null && props.group != null) {
+      if (props.item == null && props.group != null && props.group !== PROJECTS_GROUP_ID) {
         rightDragAnchor = props;
       } else {
         rightDragAnchor = null;
@@ -439,7 +594,8 @@
     container.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       const props = timeline.getEventProperties(e);
-      if (props.item != null || props.group == null) {
+      // В строке "Проекты" создавать занятость нельзя — это не сотрудник.
+      if (props.item != null || props.group == null || props.group === PROJECTS_GROUP_ID) {
         rightDragAnchor = null;
         return;
       }
@@ -489,8 +645,12 @@
       types: state.filters.type,
       statuses: state.filters.status,
     });
-    const { body } = await api("/calendar/api/assignments?" + params.toString());
-    state.gridItems = body || [];
+    const [assignmentsRes, bars] = await Promise.all([
+      api("/calendar/api/assignments?" + params.toString()),
+      loadProjectBars(range.start, range.end),
+    ]);
+    state.gridItems = assignmentsRes.body || [];
+    state.gridProjectBars = bars;
     renderGrid();
   }
 
@@ -501,21 +661,54 @@
     const label = a.type === "project" && a.project_number ? a.project_number : a.title || a.type_label;
     const cls = ["sc-grid-chip", "sc-type-" + a.type];
     if (a.status === "cancelled") cls.push("sc-status-cancelled");
+    const style = itemStyle(a);
     return (
-      '<div class="' + cls.join(" ") + '" data-assignment-id="' + a.id + '" title="' +
+      '<div class="' + cls.join(" ") + '" data-assignment-id="' + a.id + '"' +
+      (style ? ' style="' + style + '"' : "") + ' title="' +
       escapeHtml(tooltipText(a)) + '">' + icon + " " + escapeHtml(name) + " — " + escapeHtml(label) + "</div>"
     );
+  }
+
+  // Тонкая полоса-стрелка на весь срок проекта (ТЗ §54.3), над списком
+  // занятости дня — не более 3 одновременно, лишние сворачиваются в "+N".
+  // Скругление только на настоящих границах проекта (start_date/end_date),
+  // чтобы полоса читалась непрерывной при переносе через недели.
+  function gridBarsHtml(dayBars, day) {
+    if (!dayBars.length) return "";
+    const MAX = 3;
+    const shown = dayBars.slice(0, MAX);
+    const extra = dayBars.length - shown.length;
+    const bars = shown
+      .map((p) => {
+        const s = new Date(p.start_date + "T00:00:00");
+        const e = new Date(p.end_date + "T00:00:00");
+        const cls = ["sc-grid-bar"];
+        if (day.getTime() === s.getTime()) cls.push("sc-grid-bar-start");
+        if (day.getTime() === e.getTime()) cls.push("sc-grid-bar-end");
+        const titleText = p.number + (p.name ? " — " + p.name : "");
+        return (
+          '<div class="' + cls.join(" ") + '" style="background-color:' + p.color +
+          ';" title="' + escapeHtml(titleText) + '"></div>'
+        );
+      })
+      .join("");
+    const more = extra > 0 ? '<div class="sc-grid-bar-more">+' + extra + "</div>" : "";
+    return '<div class="sc-grid-bars">' + bars + more + "</div>";
   }
 
   function renderGrid() {
     const gridEl = document.getElementById("sc-grid");
     const range = state.gridRange || computeGridRange();
     const employeeIds = new Set(state.employees.map((e) => e.id));
-    const monthNum = new Date(root.dataset.rangeStart + "T00:00:00").getMonth();
+    const monthAnchor = new Date(root.dataset.rangeStart + "T00:00:00");
+    const monthNum = monthAnchor.getMonth();
     const todayStr = root.dataset.today;
     const weekdayNames = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+    const monthNext = new Date(monthAnchor.getFullYear(), monthAnchor.getMonth() + 1, 1);
 
-    let html = "<table class=\"sc-grid-table\"><thead><tr>" +
+    let html =
+      '<div class="sc-grid-head">' + renderMonthHeading(monthAnchor, monthNext) + "</div>" +
+      "<table class=\"sc-grid-table\"><thead><tr>" +
       weekdayNames.map((w) => "<th>" + w + "</th>").join("") +
       "</tr></thead><tbody>";
 
@@ -525,10 +718,16 @@
       for (let i = 0; i < 7; i++) {
         const dayEnd = addDays(day, 1);
         const dateStr = toWire(day).slice(0, 10);
+        const dayOfMonth = day.getDate();
         const cls = ["sc-grid-day"];
         if (day.getMonth() !== monthNum) cls.push("sc-grid-outside");
         if (dateStr === todayStr) cls.push("sc-grid-today");
         if (day.getDay() === 0 || day.getDay() === 6) cls.push("sc-grid-weekend");
+        // Граница месяца идёт «лесенкой»: жирная линия слева от 1-го числа
+        // (если оно не в первой колонке) и сверху над первой неделей месяца
+        // (дни 1–7 — их верхний сосед, день−7, всегда из прошлого месяца).
+        if (dayOfMonth === 1 && i > 0) cls.push("sc-grid-mbound-left");
+        if (dayOfMonth <= 7) cls.push("sc-grid-mbound-top");
 
         const dayItems = state.gridItems.filter(
           (a) =>
@@ -536,12 +735,19 @@
             new Date(a.starts_at) < dayEnd &&
             new Date(a.ends_at) > day
         );
+        const dayBars = state.gridProjectBars.filter(
+          (p) => new Date(p.start_date + "T00:00:00") < dayEnd && new Date(p.end_date + "T00:00:00") >= day
+        );
+
+        const numCls = "sc-grid-daynum-value" + (dateStr === todayStr ? " sc-grid-daynum-today" : "");
+        const numText = dayOfMonth === 1 ? "1 " + MONTH_SHORT[day.getMonth()] : String(dayOfMonth);
 
         html +=
           '<td class="' + cls.join(" ") + '">' +
-          '<div class="sc-grid-daynum"><span>' + day.getDate() + "</span>" +
+          '<div class="sc-grid-daynum"><span class="' + numCls + '">' + numText + "</span>" +
           '<button type="button" class="sc-grid-add" data-date="' + dateStr +
           '" title="Добавить занятость">+</button></div>' +
+          gridBarsHtml(dayBars, day) +
           '<div class="sc-grid-items">' + dayItems.map(gridChip).join("") + "</div></td>";
         day = addDays(day, 1);
       }
@@ -568,6 +774,105 @@
     });
   }
 
+  // --- Виджет выбора цвета проекта (модалки занятости/массового назначения) --
+  //
+  // Тот же набор классов .sc-color-swatch/.sc-color-swatch-none/.sc-color-custom,
+  // что и в project_form.html — общий CSS (app.css), независимая разметка.
+
+  function createColorPicker(pickerEl) {
+    pickerEl.innerHTML =
+      '<button type="button" class="sc-color-swatch sc-color-swatch-none" data-color="" title="Без цвета">×</button>' +
+      PROJECT_COLOR_PRESETS.map(
+        (hex) =>
+          '<button type="button" class="sc-color-swatch" data-color="' + hex +
+          '" style="background-color: ' + hex + ';" title="' + hex + '"></button>'
+      ).join("") +
+      '<input type="color" class="sc-color-swatch sc-color-custom" title="Свой цвет" value="#7986cb">';
+
+    const customInput = pickerEl.querySelector(".sc-color-custom");
+    const buttons = () => pickerEl.querySelectorAll(".sc-color-swatch[data-color]");
+    let value = "";
+
+    function highlight() {
+      let matched = false;
+      buttons().forEach((btn) => {
+        const isMatch = btn.dataset.color === value;
+        btn.classList.toggle("selected", isMatch);
+        if (isMatch) matched = true;
+      });
+      customInput.classList.toggle("selected", !matched && value !== "");
+    }
+
+    buttons().forEach((btn) => {
+      btn.addEventListener("click", () => {
+        value = btn.dataset.color;
+        if (value) customInput.value = value;
+        highlight();
+      });
+    });
+    customInput.addEventListener("input", () => {
+      value = customInput.value;
+      highlight();
+    });
+
+    return {
+      setValue(hex) {
+        value = hex || "";
+        if (value) customInput.value = value;
+        highlight();
+      },
+      getValue() {
+        return value;
+      },
+    };
+  }
+
+  // Подставляет в пикер текущий цвет/флаг полосы выбранного в select проекта
+  // (данные лежат в data-атрибутах <option> — см. calendar.html) и
+  // показывает/скрывает сам блок пикера в зависимости от того, выбран ли проект.
+  function syncColorPicker(selectEl, wrapEl, picker, barCheckbox) {
+    const opt = selectEl.options[selectEl.selectedIndex];
+    if (!opt || !opt.value) {
+      wrapEl.classList.add("d-none");
+      return;
+    }
+    wrapEl.classList.remove("d-none");
+    picker.setValue(opt.dataset.color || "");
+    barCheckbox.checked = opt.dataset.calendarBar === "1";
+  }
+
+  // Сохраняет цвет/полосу проекта отдельным запросом при сохранении занятости
+  // (проект — общий для всех его занятостей объект, поэтому цвет не поле
+  // самой занятости). Ничего не делает, если проект не выбран.
+  function saveProjectColorIfNeeded(projectId, picker, barCheckbox) {
+    if (!projectId) return Promise.resolve();
+    return api(`/calendar/api/projects/${projectId}/color`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: formParams({ color: picker.getValue(), calendar_bar: barCheckbox.checked ? "1" : "" }),
+    });
+  }
+
+  const colorPickerSingle = createColorPicker(document.getElementById("sc-f-color-picker"));
+  const colorPickerBulk = createColorPicker(document.getElementById("sc-b-color-picker"));
+
+  document.getElementById("sc-f-project").addEventListener("change", (e) => {
+    syncColorPicker(
+      e.target,
+      document.getElementById("sc-f-color-wrap"),
+      colorPickerSingle,
+      document.getElementById("sc-f-color-bar")
+    );
+  });
+  document.getElementById("sc-b-project").addEventListener("change", (e) => {
+    syncColorPicker(
+      e.target,
+      document.getElementById("sc-b-color-wrap"),
+      colorPickerBulk,
+      document.getElementById("sc-b-color-bar")
+    );
+  });
+
   // --- Модальное окно занятости ----------------------------------------------
 
   const modalEl = document.getElementById("sc-modal");
@@ -591,6 +896,12 @@
     document.getElementById("sc-f-title").value = "";
     document.getElementById("sc-f-status").value = "planned";
     document.getElementById("sc-f-comment").value = "";
+    syncColorPicker(
+      document.getElementById("sc-f-project"),
+      document.getElementById("sc-f-color-wrap"),
+      colorPickerSingle,
+      document.getElementById("sc-f-color-bar")
+    );
     conflictBox.classList.add("d-none");
     deleteBtn.classList.add("d-none");
     modal.show();
@@ -609,6 +920,12 @@
     document.getElementById("sc-f-title").value = a.title || "";
     document.getElementById("sc-f-status").value = a.status;
     document.getElementById("sc-f-comment").value = a.comment || "";
+    syncColorPicker(
+      document.getElementById("sc-f-project"),
+      document.getElementById("sc-f-color-wrap"),
+      colorPickerSingle,
+      document.getElementById("sc-f-color-bar")
+    );
     conflictBox.classList.add("d-none");
     deleteBtn.classList.remove("d-none");
     modal.show();
@@ -637,7 +954,11 @@
 
     if (ok) {
       modal.hide();
-      refreshAssignments();
+      saveProjectColorIfNeeded(
+        payload.project_id,
+        colorPickerSingle,
+        document.getElementById("sc-f-color-bar")
+      ).then(refreshAssignments);
       return;
     }
     if (status === 409) {
@@ -675,6 +996,12 @@
     bulkForm.reset();
     document.getElementById("sc-b-start").value = toDatetimeLocal(state.visibleStart);
     document.getElementById("sc-b-end").value = toDatetimeLocal(state.visibleEnd);
+    syncColorPicker(
+      document.getElementById("sc-b-project"),
+      document.getElementById("sc-b-color-wrap"),
+      colorPickerBulk,
+      document.getElementById("sc-b-color-bar")
+    );
     bulkModal.show();
   });
 
@@ -703,7 +1030,11 @@
 
     if (ok) {
       bulkModal.hide();
-      refreshAssignments();
+      saveProjectColorIfNeeded(
+        payload.project_id,
+        colorPickerBulk,
+        document.getElementById("sc-b-color-bar")
+      ).then(refreshAssignments);
       return;
     }
     if (status === 409) {

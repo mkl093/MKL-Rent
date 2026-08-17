@@ -59,7 +59,7 @@
       <label class="form-label small mb-0" for="sc-project">Проект</label>
       <select class="form-select form-select-sm" id="sc-project">
         <option value="">Все</option>
-        {% for p in projects %}<option value="{{ p.id }}">{{ p.number }} — {{ p.name }}</option>{% endfor %}
+        {% for p in projects %}<option value="{{ p.id }}" data-color="{{ p.color or '' }}" data-calendar-bar="{{ '1' if p.calendar_bar else '' }}">{{ p.number }} — {{ p.name }}</option>{% endfor %}
       </select>
     </div>
     <div class="col-6 col-md-2">
@@ -93,7 +93,9 @@
   {% endfor %}
   <span><span class="sc-swatch sc-status-cancelled"></span> ✕ отменено</span>
 </div>
+<p class="text-secondary small mb-2" id="sc-legend-note">Проект с заданным цветом окрашивается им вместо цвета типа «Проект» — выбирается в модалке занятости при выборе проекта.</p>
 
+<div id="sc-timeline-head" class="sc-grid-head{% if view == 'grid' %} d-none{% endif %}"></div>
 <div id="sc-timeline" {% if view == 'grid' %}class="d-none"{% endif %}></div>
 <div id="sc-grid" {% if view != 'grid' %}class="d-none"{% endif %}></div>
 
@@ -140,8 +142,16 @@
             <label class="form-label" for="sc-f-project">Проект</label>
             <select class="form-select" id="sc-f-project">
               <option value="">Без проекта</option>
-              {% for p in projects %}<option value="{{ p.id }}">{{ p.number }} — {{ p.name }}</option>{% endfor %}
+              {% for p in projects %}<option value="{{ p.id }}" data-color="{{ p.color or '' }}" data-calendar-bar="{{ '1' if p.calendar_bar else '' }}">{{ p.number }} — {{ p.name }}</option>{% endfor %}
             </select>
+          </div>
+          <div class="mb-2 d-none" id="sc-f-color-wrap">
+            <label class="form-label">Цвет проекта в календаре</label>
+            <div class="d-flex flex-wrap align-items-center gap-2" id="sc-f-color-picker"></div>
+            <div class="form-check mt-1">
+              <input class="form-check-input" type="checkbox" id="sc-f-color-bar">
+              <label class="form-check-label" for="sc-f-color-bar">Полоса на весь срок проекта</label>
+            </div>
           </div>
           <div class="mb-2">
             <label class="form-label" for="sc-f-title">Название</label>
@@ -201,12 +211,20 @@
               {% for t in assignment_types %}<option value="{{ t.value }}">{{ t.label }}</option>{% endfor %}
             </select>
           </div>
-          <div class="mb-2">
+          <div class="mb-2" id="sc-b-project-wrap">
             <label class="form-label" for="sc-b-project">Проект</label>
             <select class="form-select" id="sc-b-project">
               <option value="">Без проекта</option>
-              {% for p in projects %}<option value="{{ p.id }}">{{ p.number }} — {{ p.name }}</option>{% endfor %}
+              {% for p in projects %}<option value="{{ p.id }}" data-color="{{ p.color or '' }}" data-calendar-bar="{{ '1' if p.calendar_bar else '' }}">{{ p.number }} — {{ p.name }}</option>{% endfor %}
             </select>
+          </div>
+          <div class="mb-2 d-none" id="sc-b-color-wrap">
+            <label class="form-label">Цвет проекта в календаре</label>
+            <div class="d-flex flex-wrap align-items-center gap-2" id="sc-b-color-picker"></div>
+            <div class="form-check mt-1">
+              <input class="form-check-input" type="checkbox" id="sc-b-color-bar">
+              <label class="form-check-label" for="sc-b-color-bar">Полоса на весь срок проекта</label>
+            </div>
           </div>
           <div class="mb-2">
             <label class="form-label" for="sc-b-title">Название</label>
