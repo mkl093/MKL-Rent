@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app.estimates.models import EstimateLine
 from app.estimates.service import get_estimate
 from app.inventory.enums import AccountingType
 from app.inventory.models import EquipmentItem, EquipmentModel, Kit
@@ -38,6 +40,14 @@ class AlreadyExists(PackingError):
 
 class UndercompleteError(PackingError):
     """Перевод в «Скомплектован» при недокомплекте без подтверждения (ТЗ §17.4)."""
+
+
+class SyncConfirmRequired(PackingError):
+    """Синхронизация удалит строки с уже собранным фактом — нужно подтверждение."""
+
+    def __init__(self, names: list[str]) -> None:
+        self.names = names
+        super().__init__(f"Требуется подтверждение удаления: {', '.join(names)}")
 
 
 def _current_year() -> int:
@@ -77,6 +87,18 @@ def _estimate_kit_ids(db: Session, project: Project) -> list[int]:
     if estimate is None:
         return []
     return [line.kit_id for line in estimate.lines if line.kit_id is not None]
+
+
+def _estimate_custom_lines(db: Session, project: Project) -> list[EstimateLine]:
+    """Произвольные строки сметы, переносимые в packing-лист (ТЗ §16.5, §17.9).
+
+    Строка с отключённым чекбоксом «Не добавлять в паккинг лист» (add_to_packing=False)
+    в переносе не участвует.
+    """
+    estimate = get_estimate(db, project)
+    if estimate is None:
+        return []
+    return [ln for ln in estimate.lines if ln.is_custom and ln.add_to_packing]
 
 
 def _new_line_from_kit(kit: Kit, sort_order: int) -> PackingLine:
@@ -139,6 +161,32 @@ def _new_line_from_model(model: EquipmentModel, planned: int, sort_order: int) -
     return line
 
 
+def _new_line_from_estimate_custom(est_line: EstimateLine, sort_order: int) -> PackingLine:
+    """Строка packing-листа из произвольной строки сметы (ТЗ §17.9).
+
+    Вес и габариты не переносятся из сметы (там их нет) — правятся в самом
+    packing-листе, как и у обычной дополнительной позиции.
+    """
+    return PackingLine(
+        model_id=None,
+        estimate_line_id=est_line.id,
+        is_custom=True,
+        is_serial=False,
+        is_manual=False,
+        name=est_line.name,
+        planned_quantity=est_line.quantity,
+        quantity=est_line.quantity,
+        packed_quantity=0,
+        unit_weight_kg=Decimal("0"),
+        length_mm=0,
+        width_mm=0,
+        height_mm=0,
+        has_packing=False,
+        comment=est_line.comment,
+        sort_order=sort_order,
+    )
+
+
 def create_from_estimate(db: Session, project: Project) -> PackingList:
     """Создать packing-лист из текущей сметы (ТЗ §17.1)."""
     if get_packing(db, project) is not None:
@@ -167,6 +215,10 @@ def create_from_estimate(db: Session, project: Project) -> PackingList:
             continue
         packing.lines.append(_new_line_from_kit(kit, sort_order))
         sort_order += 1
+    # Произвольные строки сметы — суб-аренда и подобное (ТЗ §17.9).
+    for est_line in _estimate_custom_lines(db, project):
+        packing.lines.append(_new_line_from_estimate_custom(est_line, sort_order))
+        sort_order += 1
     db.commit()
     db.refresh(packing)
     return packing
@@ -182,6 +234,7 @@ class Discrepancy:
     estimate_quantity: int
     planned_quantity: int
     is_kit: bool = False
+    is_custom: bool = False
 
 
 def discrepancies(db: Session, project: Project, packing: PackingList) -> list[Discrepancy]:
@@ -196,7 +249,7 @@ def discrepancies(db: Session, project: Project, packing: PackingList) -> list[D
             name = line.name if line else (db.get(EquipmentModel, model_id).name)
             result.append(Discrepancy(model_id, name, est_qty, planned))
     for model_id, line in by_model.items():
-        if model_id not in estimate_qty and line.planned_quantity != 0:
+        if model_id not in estimate_qty and not line.is_manual and line.planned_quantity != 0:
             result.append(Discrepancy(model_id, line.name, 0, line.planned_quantity))
 
     # Комплекты: расхождение состава сметы и packing-листа («Комплект»).
@@ -208,16 +261,65 @@ def discrepancies(db: Session, project: Project, packing: PackingList) -> list[D
             if kit is not None:
                 result.append(Discrepancy(None, kit.name, 1, 0, is_kit=True))
     for kit_id, line in packing_kits.items():
-        if kit_id not in est_kits:
+        if kit_id not in est_kits and not line.is_manual:
             result.append(Discrepancy(None, line.name, 0, 1, is_kit=True))
+
+    # Произвольные строки сметы — перенос/обновление/удаление в packing (ТЗ §17.9).
+    custom_lines = _estimate_custom_lines(db, project)
+    custom_by_est_id = {
+        ln.estimate_line_id: ln
+        for ln in packing.lines
+        if ln.is_custom and ln.estimate_line_id is not None
+    }
+    current_est_ids = {ln.id for ln in custom_lines}
+    for est_line in custom_lines:
+        line = custom_by_est_id.get(est_line.id)
+        planned = line.planned_quantity if line else 0
+        if line is None or planned != est_line.quantity:
+            result.append(
+                Discrepancy(None, est_line.name, est_line.quantity, planned, is_custom=True)
+            )
+    for est_id, line in custom_by_est_id.items():
+        if est_id not in current_est_ids:
+            result.append(Discrepancy(None, line.name, 0, line.planned_quantity, is_custom=True))
     return result
 
 
-def apply_sync(db: Session, project: Project, packing: PackingList) -> None:
-    """Применить синхронизацию: план = смета; добавить новые модели (ТЗ §17.2)."""
+def sync_removals(db: Session, project: Project, packing: PackingList) -> list[PackingLine]:
+    """Строки, которые синхронизация удалит (пропавшие из сметы модели/произвольные)."""
+    estimate_qty = _estimate_warehouse_quantities(db, project)
+    by_model = {ln.model_id: ln for ln in packing.lines if not ln.is_custom and ln.model_id}
+    to_delete = [
+        line
+        for model_id, line in by_model.items()
+        if model_id not in estimate_qty and not line.is_manual
+    ]
+
+    current_est_ids = {ln.id for ln in _estimate_custom_lines(db, project)}
+    to_delete += [
+        ln
+        for ln in packing.lines
+        if ln.is_custom and ln.estimate_line_id is not None and ln.estimate_line_id not in current_est_ids
+    ]
+    return to_delete
+
+
+def apply_sync(db: Session, project: Project, packing: PackingList, *, confirm_delete: bool = False) -> None:
+    """Применить синхронизацию: план = смета; добавить новые, удалить пропавшие (ТЗ §17.2).
+
+    Строки, добавленные в packing вручную (is_manual), синхронизация не удаляет.
+    Если среди удаляемых есть строки с уже собранным фактом, требуется явное
+    подтверждение (confirm_delete) — иначе бросается SyncConfirmRequired.
+    """
     estimate_qty = _estimate_warehouse_quantities(db, project)
     by_model = {ln.model_id: ln for ln in packing.lines if not ln.is_custom and ln.model_id}
     next_sort = max((ln.sort_order for ln in packing.lines), default=0) + 1
+
+    to_delete = sync_removals(db, project, packing)
+    if not confirm_delete:
+        with_fact = [ln for ln in to_delete if ln.fact_quantity > 0]
+        if with_fact:
+            raise SyncConfirmRequired([ln.name for ln in with_fact])
 
     for model_id, est_qty in estimate_qty.items():
         line = by_model.get(model_id)
@@ -228,9 +330,8 @@ def apply_sync(db: Session, project: Project, packing: PackingList) -> None:
                 next_sort += 1
         else:
             line.planned_quantity = est_qty
-    for model_id, line in by_model.items():
-        if model_id not in estimate_qty:
-            line.planned_quantity = 0
+    for line in to_delete:
+        db.delete(line)
 
     # Комплекты: добавить новые, убрать отсутствующие в смете («Комплект»).
     est_kits = set(_estimate_kit_ids(db, project))
@@ -242,8 +343,26 @@ def apply_sync(db: Session, project: Project, packing: PackingList) -> None:
                 packing.lines.append(_new_line_from_kit(kit, next_sort))
                 next_sort += 1
     for kit_id, line in by_kit.items():
-        if kit_id not in est_kits:
+        if kit_id not in est_kits and not line.is_manual:
             db.delete(line)
+
+    # Произвольные строки сметы: добавить новые, обновить существующие (ТЗ §17.9).
+    custom_by_est_id = {
+        ln.estimate_line_id: ln
+        for ln in packing.lines
+        if ln.is_custom and ln.estimate_line_id is not None
+    }
+    for est_line in _estimate_custom_lines(db, project):
+        line = custom_by_est_id.get(est_line.id)
+        if line is None:
+            packing.lines.append(_new_line_from_estimate_custom(est_line, next_sort))
+            next_sort += 1
+        else:
+            line.name = est_line.name
+            line.comment = est_line.comment
+            line.planned_quantity = est_line.quantity
+            line.quantity = est_line.quantity
+
     db.commit()
 
 
@@ -274,6 +393,7 @@ def add_model(
 
     sort_order = max((ln.sort_order for ln in packing.lines), default=0) + 1
     line = _new_line_from_model(model, quantity, sort_order)
+    line.is_manual = True
     packing.lines.append(line)
     db.commit()
     db.refresh(line)
@@ -289,6 +409,7 @@ def add_kit(db: Session, packing: PackingList, kit: Kit) -> PackingLine | None:
         return None
     sort_order = max((ln.sort_order for ln in packing.lines), default=0) + 1
     line = _new_line_from_kit(kit, sort_order)
+    line.is_manual = True
     packing.lines.append(line)
     db.commit()
     db.refresh(line)
@@ -300,14 +421,36 @@ def get_line(db: Session, packing: PackingList, line_id: int) -> PackingLine | N
 
 
 def update_quantity_line(
-    db: Session, line: PackingLine, fact_quantity: int, packed_quantity: int, comment: str | None
+    db: Session,
+    line: PackingLine,
+    fact_quantity: int,
+    packed_quantity: int,
+    comment: str | None,
+    *,
+    unit_weight_kg: Decimal | None = None,
+    length_mm: int | None = None,
+    width_mm: int | None = None,
+    height_mm: int | None = None,
 ) -> None:
-    """Обновить количественную строку: факт и распределение (ТЗ §17.6, §18)."""
+    """Обновить количественную строку: факт и распределение (ТЗ §17.6, §18).
+
+    Вес/габариты правятся только у дополнительных позиций (ТЗ §17.9) — у складских
+    моделей это неизменный снимок модели.
+    """
     if line.is_serial:
         raise PackingError("Серийная строка комплектуется экземплярами")
     line.quantity = max(0, fact_quantity)
     line.packed_quantity = max(0, min(packed_quantity, line.quantity))
     line.comment = comment or None
+    if line.is_custom:
+        if unit_weight_kg is not None:
+            line.unit_weight_kg = max(Decimal("0"), unit_weight_kg)
+        if length_mm is not None:
+            line.length_mm = max(0, length_mm)
+        if width_mm is not None:
+            line.width_mm = max(0, width_mm)
+        if height_mm is not None:
+            line.height_mm = max(0, height_mm)
     db.commit()
 
 
@@ -480,6 +623,7 @@ def add_custom_line(db: Session, packing: PackingList, data: CustomPackingLine) 
         model_id=None,
         is_custom=True,
         is_serial=False,
+        is_manual=True,
         name=data.name.strip(),
         planned_quantity=data.quantity,
         quantity=data.quantity,

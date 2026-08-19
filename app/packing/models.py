@@ -65,6 +65,12 @@ class PackingLine(Base):
     )
     is_custom: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_serial: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Строка произвольной строки сметы — связь для синхронизации (ТЗ §17.2, §17.9).
+    estimate_line_id: Mapped[int | None] = mapped_column(
+        ForeignKey("estimate_lines.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # Добавлена в packing вручную, минуя смету — синхронизация её не трогает.
+    is_manual: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Снимки для группировки (ТЗ §17.3) и отображения.
     name: Mapped[str] = mapped_column(String(255), nullable=False)

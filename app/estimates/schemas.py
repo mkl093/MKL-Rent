@@ -20,6 +20,7 @@ class CustomLineInput(BaseModel):
     coefficient: Decimal = Field(default=Decimal("1"), ge=0)
     discount_percent: Decimal = Field(default=Decimal("0"), ge=0, le=100)
     comment: str | None = None
+    add_to_packing: bool = True
 
 
 class LineUpdate(BaseModel):

@@ -1,10 +1,12 @@
 """PDF-документы: локализация, рендеринг, устаревание (ТЗ §26)."""
 
+import re
 from datetime import date
 from decimal import Decimal
 
 import pytest
 
+from app.auth import service as auth_service
 from app.documents import builder
 from app.documents.enums import DocumentType
 from app.documents.l10n import (
@@ -22,6 +24,18 @@ from app.inventory.services import categories as cat_service
 from app.inventory.services import equipment as eq_service
 from app.projects import service as proj_service
 from app.projects.schemas import ProjectInput
+
+
+@pytest.fixture
+def auth_client(client, db_session):
+    auth_service.create_user(db_session, "admin", "pass123")
+    token = re.search(r'name="csrf_token" value="([^"]+)"', client.get("/login").text).group(1)
+    client.post(
+        "/login",
+        data={"username": "admin", "password": "pass123", "csrf_token": token},
+        follow_redirects=False,
+    )
+    return client
 
 # --- Локализация (ТЗ §26.3) ---------------------------------------------
 
@@ -135,6 +149,45 @@ def test_estimate_available_packing_not(db_session, project):
     assert not pack_ru.available  # packing-лист не создан
 
 
+def test_download_filename_includes_project_number_and_name(
+    auth_client, db_session, tmp_path, monkeypatch
+):
+    """Имя скачиваемого PDF включает номер и название проекта (не просто estimate_ru.pdf)."""
+    monkeypatch.setattr(builder, "_html_to_pdf", lambda html: b"%PDF-1.4 test")
+    monkeypatch.setattr(builder, "_storage_dir", lambda pid: tmp_path)
+
+    cat = cat_service.create_category(db_session, "Звук")
+    model = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id,
+            name="Колонка",
+            accounting_type=AccountingType.QUANTITY,
+            total_quantity=20,
+            base_price_eur=Decimal("100.00"),
+        ),
+    )
+    project = proj_service.create_project(
+        db_session,
+        ProjectInput(name="Тур/весна", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5)),
+    )
+    estimate = est_service.get_or_create_estimate(db_session, project)
+    est_service.add_model(db_session, estimate, project, model, 2)
+    builder.generate(db_session, project, DocumentType.ESTIMATE, "ru")
+
+    resp = auth_client.get(f"/projects/{project.id}/documents/estimate/ru/download")
+    disposition = resp.headers["content-disposition"]
+    assert project.number in disposition
+    match = re.search(r"filename\*=utf-8''([^;]+)", disposition)
+    assert match, disposition
+    from urllib.parse import unquote
+
+    decoded = unquote(match.group(1))
+    # «/» в названии — недопустимый символ имени файла, заменяется.
+    assert "Тур_весна" in decoded
+    assert "estimate_ru.pdf" not in disposition
+
+
 def test_generate_and_staleness(db_session, project, tmp_path, monkeypatch):
     monkeypatch.setattr(builder, "_html_to_pdf", lambda html: b"%PDF-1.4 test")
     monkeypatch.setattr(builder, "_storage_dir", lambda pid: tmp_path)
@@ -175,6 +228,50 @@ def test_generate_real_pdf_xhtml2pdf(db_session, project, tmp_path, monkeypatch)
     data = (tmp_path / "estimate_ru.pdf").read_bytes()
     assert data[:5] == b"%PDF-"
     assert len(data) > 5000  # кириллический шрифт встроен в документ
+
+
+def test_render_packing_html_localizes_packages_unit(db_session):
+    """packing_pdf.html: суффикс количества упаковок берётся из LABELS, не «уп.» (ТЗ §26.1)."""
+    from app.inventory.enums import PackingType
+    from app.inventory.schemas import PackingRuleInput
+    from app.packing import service as packing_service
+
+    cat = cat_service.create_category(db_session, "Звук")
+    model = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id,
+            name="Колонка",
+            accounting_type=AccountingType.QUANTITY,
+            total_quantity=20,
+            packing=PackingRuleInput(
+                packing_type=PackingType.CASE,
+                capacity=4,
+                empty_weight_kg=Decimal("1.0"),
+                length_mm=500,
+                width_mm=400,
+                height_mm=300,
+            ),
+        ),
+    )
+    project = proj_service.create_project(
+        db_session,
+        ProjectInput(name="Тур", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5)),
+    )
+    estimate = est_service.get_or_create_estimate(db_session, project)
+    est_service.add_model(db_session, estimate, project, model, 2)
+    packing_service.create_from_estimate(db_session, project)
+
+    html_ru, _ = builder.render_html(db_session, project, DocumentType.PACKING, "ru")
+    assert "уп." in html_ru
+
+    html_en, _ = builder.render_html(db_session, project, DocumentType.PACKING, "en")
+    assert "уп." not in html_en
+    assert "pkgs" in html_en
+
+    html_de, _ = builder.render_html(db_session, project, DocumentType.PACKING, "de")
+    assert "уп." not in html_de
+    assert "Kolli" in html_de
 
 
 def test_render_estimate_html_de(db_session, project):

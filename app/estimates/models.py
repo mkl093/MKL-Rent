@@ -57,6 +57,8 @@ class EstimateLine(Base):
         ForeignKey("kits.id", ondelete="SET NULL"), nullable=True, index=True
     )
     is_custom: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Произвольную строку можно исключить из переноса в packing-лист (ТЗ §16.5, §17.9).
+    add_to_packing: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Снимки на момент добавления (ТЗ §7.3).
     name: Mapped[str] = mapped_column(String(255), nullable=False)

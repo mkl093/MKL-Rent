@@ -336,6 +336,124 @@ def test_sync_with_estimate(env):
     assert line.planned_quantity == 15
 
 
+def test_sync_deletes_line_removed_from_estimate(env):
+    """Удалённая из сметы модель без факта пропадает из packing-листа при синхронизации."""
+    db, project, qty_model, serial_model = env
+    packing = service.create_from_estimate(db, project)
+    line = next(ln for ln in packing.lines if ln.model_id == qty_model.id)
+    # Обнуляем факт — иначе автоматически проставленный «факт = план» (ТЗ §18)
+    # потребует подтверждения удаления (см. test_sync_requires_confirmation_when_fact_collected).
+    service.update_quantity_line(db, line, fact_quantity=0, packed_quantity=0, comment=None)
+
+    estimate = est_service.get_estimate(db, project)
+    qty_line = next(ln for ln in estimate.lines if ln.model_id == qty_model.id)
+    est_service.delete_line(db, qty_line)
+    db.expire_all()  # как в роутере: коллекция estimate.lines закэширована в сессии
+
+    disc = service.discrepancies(db, project, packing)
+    assert any(d.model_id == qty_model.id and d.planned_quantity == 10 for d in disc)
+
+    service.apply_sync(db, project, packing)
+    db.refresh(packing)
+    assert not any(ln.model_id == qty_model.id for ln in packing.lines)
+
+
+def test_sync_requires_confirmation_when_fact_collected(env):
+    """Если по удаляемой позиции уже есть факт — синхронизация без подтверждения не удаляет."""
+    db, project, qty_model, serial_model = env
+    packing = service.create_from_estimate(db, project)
+    line = next(ln for ln in packing.lines if ln.model_id == qty_model.id)
+    service.update_quantity_line(db, line, fact_quantity=5, packed_quantity=0, comment=None)
+
+    estimate = est_service.get_estimate(db, project)
+    qty_line = next(ln for ln in estimate.lines if ln.model_id == qty_model.id)
+    est_service.delete_line(db, qty_line)
+    db.expire_all()
+
+    with pytest.raises(service.SyncConfirmRequired):
+        service.apply_sync(db, project, packing)
+    db.refresh(packing)
+    assert any(ln.model_id == qty_model.id for ln in packing.lines)
+
+    service.apply_sync(db, project, packing, confirm_delete=True)
+    db.refresh(packing)
+    assert not any(ln.model_id == qty_model.id for ln in packing.lines)
+
+
+def test_sync_does_not_touch_manual_line(env):
+    """Модель, добавленная в packing вручную и отсутствующая в смете, синхронизацию переживает."""
+    db, project, qty_model, serial_model = env
+    packing = service.create_from_estimate(db, project)
+    other = eq_service.create_model(
+        db,
+        EquipmentModelCreate(
+            category_id=qty_model.category_id,
+            name="Ручная модель",
+            accounting_type=AccountingType.QUANTITY,
+            total_quantity=5,
+        ),
+    )
+    service.add_model(db, packing, other, 2)
+    line = next(ln for ln in packing.lines if ln.model_id == other.id)
+    assert line.is_manual
+
+    service.apply_sync(db, project, packing)
+    db.refresh(packing)
+    assert any(ln.model_id == other.id for ln in packing.lines)
+
+
+def test_custom_estimate_line_synced_to_packing(env):
+    """Произвольная позиция сметы переносится в packing-лист и обновляется/удаляется синком."""
+    db, project, qty_model, serial_model = env
+    from app.estimates.schemas import CustomLineInput
+
+    estimate = est_service.get_estimate(db, project)
+    est_service.add_custom_line(
+        db, estimate, project, CustomLineInput(name="Суб-аренда пульта", quantity=1)
+    )
+    packing = service.create_from_estimate(db, project)
+    line = next(ln for ln in packing.lines if ln.name == "Суб-аренда пульта")
+    assert line.is_custom
+    assert line.planned_quantity == 1
+
+    est_line = next(ln for ln in estimate.lines if ln.name == "Суб-аренда пульта")
+    from app.estimates.schemas import LineUpdate
+
+    est_service.update_line(
+        db, est_line, LineUpdate(quantity=3, unit_price=Decimal("0"), coefficient=Decimal("1"))
+    )
+    disc = service.discrepancies(db, project, packing)
+    assert any(d.is_custom and d.estimate_quantity == 3 for d in disc)
+    service.apply_sync(db, project, packing)
+    db.refresh(packing)
+    line = next(ln for ln in packing.lines if ln.name == "Суб-аренда пульта")
+    assert line.planned_quantity == 3
+
+    est_service.delete_line(db, est_line)
+    db.expire_all()
+    # Факт произвольной позиции по умолчанию = план (как и у складских), поэтому удаление
+    # требует подтверждения — здесь проверяется сам перенос/удаление, а не запрос подтверждения.
+    service.apply_sync(db, project, packing, confirm_delete=True)
+    db.refresh(packing)
+    assert not any(ln.name == "Суб-аренда пульта" for ln in packing.lines)
+
+
+def test_custom_estimate_line_skip_packing_checkbox(env):
+    """Чекбокс «Не добавлять в паккинг лист» исключает произвольную строку из переноса."""
+    db, project, qty_model, serial_model = env
+    from app.estimates.schemas import CustomLineInput
+
+    estimate = est_service.get_estimate(db, project)
+    est_service.add_custom_line(
+        db,
+        estimate,
+        project,
+        CustomLineInput(name="Доставка", quantity=1, add_to_packing=False),
+    )
+    packing = service.create_from_estimate(db, project)
+    assert not any(ln.name == "Доставка" for ln in packing.lines)
+
+
 # --- Интеграция с удалением проекта (ТЗ §13.7) --------------------------
 
 

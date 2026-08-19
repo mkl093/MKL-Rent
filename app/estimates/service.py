@@ -158,6 +158,7 @@ def add_custom_line(
         coefficient=data.coefficient,
         discount_percent=_clamp_percent(data.discount_percent),
         comment=(data.comment or None),
+        add_to_packing=data.add_to_packing,
         sort_order=_next_sort_order(estimate),
     )
     estimate.lines.append(line)

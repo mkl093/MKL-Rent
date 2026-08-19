@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -79,11 +80,22 @@ def documents_generate(
     return redirect(f"/projects/{project_id}/documents")
 
 
+_UNSAFE_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|]')
+
+
+def _filename_part(value: str) -> str:
+    """Убрать символы, недопустимые в имени файла (Windows/заголовок Content-Disposition)."""
+    return _UNSAFE_FILENAME_CHARS.sub("_", value).strip() or "-"
+
+
 def _serve(db: Session, project_id: int, doc_type: str, language: str, *, download: bool):
     try:
         dt = DocumentType(doc_type)
         lang = Language(language).value
     except ValueError:
+        return redirect(f"/projects/{project_id}/documents")
+    project = get_project(db, project_id)
+    if project is None:
         return redirect(f"/projects/{project_id}/documents")
     doc = builder.get_document(db, project_id, dt, lang)
     if doc is None:
@@ -91,12 +103,14 @@ def _serve(db: Session, project_id: int, doc_type: str, language: str, *, downlo
     path = Path(get_settings().storage_path) / doc.file_path
     if not path.exists():
         return redirect(f"/projects/{project_id}/documents")
-    filename = f"{dt.value}_{lang}.pdf"
-    disposition = "attachment" if download else "inline"
+    filename = (
+        f"{dt.value}_{_filename_part(project.number)}_{_filename_part(project.name)}_{lang}.pdf"
+    )
     return FileResponse(
         str(path),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'{disposition}; filename="{filename}"'},
+        filename=filename,
+        content_disposition_type="attachment" if download else "inline",
     )
 
 

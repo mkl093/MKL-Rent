@@ -70,7 +70,7 @@
           <td>
             {% if line.is_kit %}—{% else %}{% for si in line.serial_items %}<span class="bc">{{ si.barcode }}{% if si.serial_number %} ({{ si.serial_number }}){% endif %}</span>{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}{% endif %}
           </td>
-          <td class="num">{{ c.packed }}{% if c.packages %} <span style="color:#666">/ {{ c.packages }} уп.</span>{% endif %}</td>
+          <td class="num">{{ c.packed }}{% if c.packages %} <span style="color:#666">/ {{ c.packages }} {{ L.packages_unit }}</span>{% endif %}</td>
           <td class="num">{{ c.unpacked }}</td>
           <td class="num">{{ fmt_weight(c.equipment_weight) }}</td>
           <td class="num">{{ fmt_weight(c.packaging_weight) }}</td>

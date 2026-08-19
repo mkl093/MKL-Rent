@@ -23,12 +23,26 @@
 <div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-2">
   <div>Смета изменилась — план расходится ({{ discrepancies|length }} поз.).
     {% for d in discrepancies %}<div class="small">{{ d.name }}: смета {{ d.estimate_quantity }} / план {{ d.planned_quantity }}</div>{% endfor %}
+    {% if sync_removals_with_fact %}
+    <div class="small text-danger mt-1">
+      Будут удалены позиции с уже собранным фактом: {% for ln in sync_removals_with_fact %}{{ ln.name }}{% if not loop.last %}, {% endif %}{% endfor %}.
+    </div>
+    {% endif %}
   </div>
   {% if editable %}
+  {% if sync_removals_with_fact %}
+  <form method="post" action="{{ base }}/sync" class="m-0"
+        onsubmit="return confirm('Удалить из packing-листа позиции с уже собранным фактом? Это необратимо.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="confirm" value="1">
+    <button class="btn btn-danger">Синхронизировать и удалить собранное</button>
+  </form>
+  {% else %}
   <form method="post" action="{{ base }}/sync" class="m-0">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button class="btn btn-warning">Синхронизировать план</button>
   </form>
+  {% endif %}
   {% endif %}
 </div>
 {% endif %}
@@ -123,6 +137,16 @@
           {% else %}<input type="hidden" name="packed_quantity" value="0">{% endif %}
           <div class="col"><label class="small">Комментарий</label>
             <input class="form-control form-control-sm" name="comment" value="{{ line.comment or '' }}"></div>
+          {% if line.is_custom %}
+          <div class="col-auto"><label class="small">Вес ед., кг</label>
+            <input class="form-control form-control-sm" name="unit_weight_kg" inputmode="decimal" value="{{ line.unit_weight_kg }}" style="width:6rem"></div>
+          <div class="col-auto"><label class="small">Длина, мм</label>
+            <input class="form-control form-control-sm" name="length_mm" inputmode="numeric" value="{{ line.length_mm }}" style="width:6rem"></div>
+          <div class="col-auto"><label class="small">Ширина, мм</label>
+            <input class="form-control form-control-sm" name="width_mm" inputmode="numeric" value="{{ line.width_mm }}" style="width:6rem"></div>
+          <div class="col-auto"><label class="small">Высота, мм</label>
+            <input class="form-control form-control-sm" name="height_mm" inputmode="numeric" value="{{ line.height_mm }}" style="width:6rem"></div>
+          {% endif %}
           <div class="col-auto align-self-end"><button class="btn btn-sm btn-outline-primary">Сохранить</button></div>
         </form>
         {% if line.has_packing %}

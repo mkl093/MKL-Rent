@@ -132,6 +132,9 @@ def packing_page(
             "breakdown": service.category_breakdown(db, packing),
             "accessories": service.accessory_totals(db, packing),
             "discrepancies": service.discrepancies(db, project, packing),
+            "sync_removals_with_fact": [
+                ln for ln in service.sync_removals(db, project, packing) if ln.fact_quantity > 0
+            ],
             "undercomplete": service.is_undercomplete(packing),
             "editable": editable,
             "PackingStatus": PackingStatus,
@@ -171,13 +174,24 @@ def packing_create(
 def packing_sync(
     request: Request,
     project_id: int,
+    confirm: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
     project, packing, editable = _load(db, project_id, require_editable=True)
     if project is None or packing is None or not editable:
         return redirect(f"/projects/{project_id}/packing")
-    service.apply_sync(db, project, packing)
+    try:
+        service.apply_sync(db, project, packing, confirm_delete=confirm is not None)
+    except service.SyncConfirmRequired as exc:
+        flash(
+            request,
+            "Синхронизация удалит уже собранные позиции: "
+            + ", ".join(exc.names)
+            + ". Подтвердите удаление и повторите синхронизацию.",
+            "danger",
+        )
+        return redirect(f"/projects/{project_id}/packing")
     audit_log(
         db,
         user,
@@ -307,12 +321,26 @@ def line_quantity(
     fact_quantity: str = Form("0"),
     packed_quantity: str = Form("0"),
     comment: str | None = Form(None),
+    unit_weight_kg: str | None = Form(None),
+    length_mm: str | None = Form(None),
+    width_mm: str | None = Form(None),
+    height_mm: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
     packing, line, _ = _line(db, project_id, line_id)
     if line is not None and not line.is_serial:
-        service.update_quantity_line(db, line, _int(fact_quantity), _int(packed_quantity), comment)
+        service.update_quantity_line(
+            db,
+            line,
+            _int(fact_quantity),
+            _int(packed_quantity),
+            comment,
+            unit_weight_kg=_dec(unit_weight_kg) if unit_weight_kg is not None else None,
+            length_mm=_int(length_mm) if length_mm is not None else None,
+            width_mm=_int(width_mm) if width_mm is not None else None,
+            height_mm=_int(height_mm) if height_mm is not None else None,
+        )
         flash(request, "Строка обновлена.", "success")
     return redirect(f"/projects/{project_id}/packing")
 

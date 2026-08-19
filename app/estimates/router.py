@@ -200,6 +200,7 @@ def add_custom(
     coefficient: str = Form("1"),
     discount_percent: str = Form("0"),
     comment: str | None = Form(None),
+    skip_packing: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
@@ -217,6 +218,7 @@ def add_custom(
             coefficient=_dec(coefficient, "1"),
             discount_percent=_pct(discount_percent),
             comment=(comment.strip() if comment else None),
+            add_to_packing=skip_packing is None,
         ),
     )
     audit_log(
