@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<style>
+  {% if fontface %}
+  @font-face { font-family: "dejavu"; src: url("{{ font_regular }}"); font-weight: normal; }
+  @font-face { font-family: "dejavu"; src: url("{{ font_bold }}"); font-weight: bold; }
+  {% endif %}
+  @page { size: a4; margin: 1.5cm; }
+  body { font-family: "dejavu", sans-serif; font-size: 10pt; color: #111; }
+  .head { width: 100%; border-bottom: 2px solid #333; padding-bottom: 6px; }
+  .head td { vertical-align: top; }
+  .company .name { font-size: 12pt; font-weight: bold; }
+  .logo { max-height: 50px; }
+  h1 { font-size: 16pt; margin: 10px 0 2px; }
+  .meta { font-size: 9pt; color: #444; margin-bottom: 10px; }
+  table.items { width: 100%; border-collapse: collapse; font-size: 10pt; }
+  table.items th, table.items td {
+    padding: 4px 6px; border: 1px solid #ddd; text-align: left; vertical-align: top;
+  }
+  table.items th { background: #f2f2f2; }
+  .num { text-align: right; }
+  .cat td { background: #e9ecef; font-weight: bold; }
+  .footer { margin-top: 18px; padding-top: 6px; border-top: 1px solid #ccc; font-size: 8pt; color: #666; text-align: center; }
+</style>
+</head>
+<body>
+  <table class="head"><tr>
+    <td class="company">
+      <div class="name">{{ company.company_name or "—" }}</div>
+      {% if company.address %}<div style="font-size:8pt">{{ company.address }}</div>{% endif %}
+    </td>
+    <td class="num" width="25%">{% if logo_uri %}<img class="logo" src="{{ logo_uri }}" alt="">{% endif %}</td>
+  </tr></table>
+
+  <h1>{{ L.picking }} {{ packing.number }}</h1>
+  <div class="meta">
+    {{ L.date }}: {{ fmt_date(generated_at.date()) }} ·
+    {{ L.project }}: {{ project.name }} ({{ project.number }}) ·
+    {{ L.rental_dates }}: {{ fmt_date(project.start_date) }} – {{ fmt_date(project.end_date) }} ·
+    {{ L.shipped }}: {{ fmt_date(project.shipped_date) }} · {{ L.returned }}: {{ fmt_date(project.returned_date) }}
+  </div>
+
+  <table class="items">
+    <thead><tr>
+      <th width="55%">{{ L.name }}</th>
+      <th class="num" width="15%">{{ L.qty }}</th>
+      <th width="30%">{{ L.location }}</th>
+    </tr></thead>
+    <tbody>
+      {% set ns = namespace(group=None) %}
+      {% for line, location, qty in rows %}
+        {% set gname = (L.packing if line.is_custom else (line.category_name or "—") ~ (" / " ~ line.subcategory_name if line.subcategory_name else "")) %}
+        {% if gname != ns.group %}{% set ns.group = gname %}
+        <tr class="cat"><td colspan="3">{{ gname }}</td></tr>{% endif %}
+        <tr>
+          <td>{{ line.name }}{% if line.is_kit %} ({{ "комплект" if lang == "ru" else "kit" }}){% endif %}</td>
+          <td class="num">{{ qty }}</td>
+          <td>{{ location }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if company.pdf_footer %}<div class="footer">{{ company.pdf_footer }}</div>{% endif %}
+</body>
+</html>

@@ -1,5 +1,6 @@
 """PDF-документы: локализация, рендеринг, устаревание (ТЗ §26)."""
 
+import io
 import re
 from datetime import date
 from decimal import Decimal
@@ -325,6 +326,187 @@ def test_generate_pdf_embeds_logo_xhtml2pdf(db_session, project, tmp_path, monke
     assert data[:5] == b"%PDF-"
     # Растровое изображение в PDF хранится как XObject.
     assert b"/XObject" in data
+
+
+def test_picking_render_shows_location_hides_weight(db_session):
+    """Лист комплектации: место хранения есть, вес/энергопотребление скрыты (ТЗ: лист комплектации)."""
+    from app.packing import service as packing_service
+
+    cat = cat_service.create_category(db_session, "Звук")
+    model = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id,
+            name="Колонка",
+            accounting_type=AccountingType.QUANTITY,
+            total_quantity=20,
+            weight_kg=Decimal("12.5"),
+        ),
+    )
+    model.storage_location = "Стеллаж А-3"
+    db_session.commit()
+    project = proj_service.create_project(
+        db_session,
+        ProjectInput(name="Тур", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5)),
+    )
+    estimate = est_service.get_or_create_estimate(db_session, project)
+    est_service.add_model(db_session, estimate, project, model, 3)
+    packing_service.create_from_estimate(db_session, project)
+
+    html, fp = builder.render_html(db_session, project, DocumentType.PICKING, "ru")
+    assert "Стеллаж А-3" in html
+    assert "Колонка" in html
+    assert "12,5" not in html  # вес не выводится
+    assert fp
+
+
+def test_picking_becomes_stale_when_storage_location_changes(db_session, tmp_path, monkeypatch):
+    """Смена места хранения на складе помечает лист комплектации устаревшим (ТЗ §26.6)."""
+    from app.packing import service as packing_service
+
+    monkeypatch.setattr(builder, "_html_to_pdf", lambda html: b"%PDF-1.4 test")
+    monkeypatch.setattr(builder, "_storage_dir", lambda pid: tmp_path)
+
+    cat = cat_service.create_category(db_session, "Звук")
+    model = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id, name="Колонка", accounting_type=AccountingType.QUANTITY, total_quantity=20
+        ),
+    )
+    model.storage_location = "А-1"
+    db_session.commit()
+    project = proj_service.create_project(
+        db_session,
+        ProjectInput(name="Тур", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5)),
+    )
+    estimate = est_service.get_or_create_estimate(db_session, project)
+    est_service.add_model(db_session, estimate, project, model, 1)
+    packing_service.create_from_estimate(db_session, project)
+
+    builder.generate(db_session, project, DocumentType.PICKING, "ru")
+    statuses = {(s.doc_type, s.language.value): s for s in builder.status(db_session, project)}
+    assert not statuses[(DocumentType.PICKING, "ru")].stale
+
+    model.storage_location = "Б-2"
+    db_session.commit()
+    statuses = {(s.doc_type, s.language.value): s for s in builder.status(db_session, project)}
+    assert statuses[(DocumentType.PICKING, "ru")].stale
+
+
+def test_transport_unavailable_without_assignments(db_session):
+    """Packing-лист по машинам недоступен, пока оборудование не распределено (ТЗ: транспорт)."""
+    from app.packing import service as packing_service
+
+    cat = cat_service.create_category(db_session, "Звук")
+    model = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id, name="Колонка", accounting_type=AccountingType.QUANTITY, total_quantity=20
+        ),
+    )
+    project = proj_service.create_project(
+        db_session,
+        ProjectInput(name="Тур", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5)),
+    )
+    estimate = est_service.get_or_create_estimate(db_session, project)
+    est_service.add_model(db_session, estimate, project, model, 2)
+    packing_service.create_from_estimate(db_session, project)
+
+    statuses = {(s.doc_type, s.language.value): s for s in builder.status(db_session, project)}
+    assert not statuses[(DocumentType.TRANSPORT, "ru")].available
+
+
+def test_transport_render_paginates_per_vehicle(db_session):
+    """PDF по машинам: каждая машина с новой страницы (page-break-before)."""
+    from app.packing import service as packing_service
+    from app.transport import service as transport_service
+
+    cat = cat_service.create_category(db_session, "Звук")
+    model = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id, name="Колонка", accounting_type=AccountingType.QUANTITY, total_quantity=20
+        ),
+    )
+    project = proj_service.create_project(
+        db_session,
+        ProjectInput(name="Тур", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5)),
+    )
+    estimate = est_service.get_or_create_estimate(db_session, project)
+    est_service.add_model(db_session, estimate, project, model, 10)
+    packing = packing_service.create_from_estimate(db_session, project)
+    line = next(ln for ln in packing.lines if ln.model_id == model.id)
+
+    van = transport_service.create_vehicle(
+        db_session, name="Газель", plate_number="А1", max_weight_kg=Decimal("1000"), comment=None
+    )
+    bus = transport_service.create_vehicle(
+        db_session, name="Бус", plate_number="Б2", max_weight_kg=Decimal("1000"), comment=None
+    )
+    pv_van = transport_service.add_vehicle_to_project(db_session, project, van)
+    pv_bus = transport_service.add_vehicle_to_project(db_session, project, bus)
+    transport_service.assign(db_session, project, pv_van, line, 6)
+    transport_service.assign(db_session, project, pv_bus, line, 4)
+
+    html, fp = builder.render_html(db_session, project, DocumentType.TRANSPORT, "ru")
+    # Каждая машина — свой <div class="sheet ...">; разрыв страницы (.page-break)
+    # ставится перед каждым, кроме самого первого (xhtml2pdf не понимает :first-child,
+    # поэтому разрыв — условный класс из шаблона, а не CSS-псевдокласс).
+    assert html.count('class="sheet') == 2
+    assert html.count('class="sheet page-break"') == 1
+    assert "Газель" in html and "Бус" in html
+    assert fp
+
+
+def test_transport_real_pdf_has_one_page_per_vehicle_xhtml2pdf(db_session):
+    """Regression: реальный PDF (не только HTML) должен иметь отдельную страницу на машину.
+
+    xhtml2pdf молча игнорирует правило page-break-before, если рядом в том же
+    CSS-блоке стоит неподдерживаемый им селектор :first-child — простой подсчёт
+    class="sheet" в HTML этого не ловит, нужен разбор реального PDF.
+    """
+    from pypdf import PdfReader
+
+    from app.packing import service as packing_service
+    from app.transport import service as transport_service
+
+    cat = cat_service.create_category(db_session, "Звук")
+    model = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id, name="Колонка", accounting_type=AccountingType.QUANTITY, total_quantity=20
+        ),
+    )
+    project = proj_service.create_project(
+        db_session,
+        ProjectInput(name="Тур", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5)),
+    )
+    estimate = est_service.get_or_create_estimate(db_session, project)
+    est_service.add_model(db_session, estimate, project, model, 10)
+    packing = packing_service.create_from_estimate(db_session, project)
+    line = next(ln for ln in packing.lines if ln.model_id == model.id)
+
+    van = transport_service.create_vehicle(
+        db_session, name="Газель", plate_number=None, max_weight_kg=Decimal("1000"), comment=None
+    )
+    bus = transport_service.create_vehicle(
+        db_session, name="Бус", plate_number=None, max_weight_kg=Decimal("1000"), comment=None
+    )
+    pv_van = transport_service.add_vehicle_to_project(db_session, project, van)
+    pv_bus = transport_service.add_vehicle_to_project(db_session, project, bus)
+    transport_service.assign(db_session, project, pv_van, line, 6)
+    transport_service.assign(db_session, project, pv_bus, line, 4)
+
+    html, _ = builder.render_html(db_session, project, DocumentType.TRANSPORT, "ru", fontface=False)
+    pdf_bytes = builder._render_xhtml2pdf(html)
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    assert len(reader.pages) == 2  # ровно 2 машины, весь план распределён — остатка нет
+    assert "Газель" in reader.pages[0].extract_text()
+    assert "Бус" in reader.pages[1].extract_text()
+
+    statuses = {(s.doc_type, s.language.value): s for s in builder.status(db_session, project)}
+    assert statuses[(DocumentType.TRANSPORT, "ru")].available
 
 
 def test_resolve_engine_override(monkeypatch):

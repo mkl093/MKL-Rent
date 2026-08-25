@@ -47,6 +47,14 @@ LABELS = {
     "ru": {
         "estimate": "Смета",
         "packing": "Упаковочный лист",
+        "picking": "Лист комплектации",
+        "transport": "Packing-лист по машинам",
+        "location": "Место хранения",
+        "vehicle": "Машина",
+        "plate": "Гос. номер",
+        "max_weight": "Грузоподъёмность",
+        "positions": "Позиций",
+        "unassigned": "Не распределено",
         "number": "№",
         "date": "Дата",
         "project": "Проект",
@@ -94,6 +102,14 @@ LABELS = {
     "en": {
         "estimate": "Estimate",
         "packing": "Packing list",
+        "picking": "Picking list",
+        "transport": "Packing list by vehicle",
+        "location": "Location",
+        "vehicle": "Vehicle",
+        "plate": "Plate no.",
+        "max_weight": "Max. weight",
+        "positions": "Positions",
+        "unassigned": "Unassigned",
         "number": "No.",
         "date": "Date",
         "project": "Project",
@@ -141,6 +157,14 @@ LABELS = {
     "de": {
         "estimate": "Angebot",
         "packing": "Packliste",
+        "picking": "Kommissionierliste",
+        "transport": "Packliste je Fahrzeug",
+        "location": "Lagerplatz",
+        "vehicle": "Fahrzeug",
+        "plate": "Kennzeichen",
+        "max_weight": "Zuladung",
+        "positions": "Positionen",
+        "unassigned": "Nicht zugeordnet",
         "number": "Nr.",
         "date": "Datum",
         "project": "Projekt",
@@ -284,16 +308,7 @@ def _packing_render(
     if packing is None:
         raise PdfUnavailable("Packing-лист не создан")
 
-    ordered = sorted(
-        packing.lines,
-        key=lambda ln: (
-            ln.is_custom,
-            ln.category_name or "",
-            ln.subcategory_name or "",
-            ln.sort_order,
-            ln.id,
-        ),
-    )
+    ordered = _packing_ordered_lines(packing)
     rows = [(ln, compute_line(ln)) for ln in ordered]
     totals = compute_totals(packing.lines)
     breakdown = compute_category_breakdown(packing.lines)
@@ -364,16 +379,146 @@ def _packing_render(
     return html, _hash(fingerprint)
 
 
+def _packing_ordered_lines(packing) -> list:
+    return sorted(
+        packing.lines,
+        key=lambda ln: (
+            ln.is_custom,
+            ln.category_name or "",
+            ln.subcategory_name or "",
+            ln.sort_order,
+            ln.id,
+        ),
+    )
+
+
+def _storage_locations(db: Session, ordered: list) -> dict[int, str]:
+    """Место хранения по строкам packing-листа: живьём из модели/комплекта (не снимок)."""
+    from app.inventory.models import EquipmentModel, Kit
+
+    model_ids = {ln.model_id for ln in ordered if ln.model_id is not None}
+    kit_ids = {ln.kit_id for ln in ordered if ln.kit_id is not None}
+    model_locations: dict[int, str] = {}
+    if model_ids:
+        rows = db.execute(
+            select(EquipmentModel.id, EquipmentModel.storage_location).where(
+                EquipmentModel.id.in_(model_ids)
+            )
+        ).all()
+        model_locations = {mid: loc or "" for mid, loc in rows}
+    kit_locations: dict[int, str] = {}
+    if kit_ids:
+        rows = db.execute(select(Kit.id, Kit.storage_location).where(Kit.id.in_(kit_ids))).all()
+        kit_locations = {kid: loc or "" for kid, loc in rows}
+
+    result: dict[int, str] = {}
+    for ln in ordered:
+        if ln.model_id is not None:
+            result[ln.id] = model_locations.get(ln.model_id, "") or "—"
+        elif ln.kit_id is not None:
+            result[ln.id] = kit_locations.get(ln.kit_id, "") or "—"
+        else:
+            result[ln.id] = "—"
+    return result
+
+
+def _picking_render(
+    db: Session, project: Project, lang: str, fontface: bool = True
+) -> tuple[str, str]:
+    company = get_company_settings(db)
+    packing = get_packing(db, project)
+    if packing is None:
+        raise PdfUnavailable("Packing-лист не создан")
+
+    ordered = _packing_ordered_lines(packing)
+    locations = _storage_locations(db, ordered)
+    rows = [(ln, locations[ln.id], 1 if ln.is_kit else ln.fact_quantity) for ln in ordered]
+
+    fingerprint = json.dumps(
+        {
+            "company": [company.company_name, company.address, company.pdf_footer],
+            "project": [project.number, project.name],
+            "packing": [packing.number],
+            "lines": [[ln.name, qty, loc] for ln, loc, qty in rows],
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    html = _env.get_template("picking_pdf.html").render(
+        company=company,
+        project=project,
+        packing=packing,
+        rows=rows,
+        generated_at=utcnow(),
+        logo_uri=_logo_uri(company),
+        fontface=fontface,
+        **_l10n_helpers(lang),
+    )
+    return html, _hash(fingerprint)
+
+
+def _transport_render(
+    db: Session, project: Project, lang: str, fontface: bool = True
+) -> tuple[str, str]:
+    from app.transport import service as transport_service
+
+    company = get_company_settings(db)
+    packing = get_packing(db, project)
+    if packing is None:
+        raise PdfUnavailable("Packing-лист не создан")
+
+    board = transport_service.board(db, project)
+    if not board.vehicles or not any(v.assignments for v in board.vehicles):
+        raise PdfUnavailable("Оборудование не распределено по машинам")
+
+    fingerprint = json.dumps(
+        {
+            "company": [company.company_name, company.address, company.pdf_footer],
+            "project": [project.number, project.name],
+            "packing": [packing.number],
+            "vehicles": [
+                [
+                    v.project_vehicle.name,
+                    v.project_vehicle.plate_number,
+                    str(v.project_vehicle.max_weight_kg),
+                    [[a.line.name, a.assignment.quantity] for a in v.assignments],
+                ]
+                for v in board.vehicles
+            ],
+            "unassigned": [[u.line.name, u.remaining] for u in board.unassigned],
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    html = _env.get_template("transport_pdf.html").render(
+        company=company,
+        project=project,
+        packing=packing,
+        board=board,
+        generated_at=utcnow(),
+        logo_uri=_logo_uri(company),
+        fontface=fontface,
+        **_l10n_helpers(lang),
+    )
+    return html, _hash(fingerprint)
+
+
 def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+_RENDERERS = {
+    DocumentType.ESTIMATE: _estimate_render,
+    DocumentType.PACKING: _packing_render,
+    DocumentType.PICKING: _picking_render,
+    DocumentType.TRANSPORT: _transport_render,
+}
 
 
 def render_html(
     db: Session, project: Project, doc_type: DocumentType, lang: str, *, fontface: bool = True
 ) -> tuple[str, str]:
-    if doc_type == DocumentType.ESTIMATE:
-        return _estimate_render(db, project, lang, fontface)
-    return _packing_render(db, project, lang, fontface)
+    return _RENDERERS[doc_type](db, project, lang, fontface)
 
 
 def _weasyprint_available() -> bool:

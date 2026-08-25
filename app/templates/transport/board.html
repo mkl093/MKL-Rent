@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h1 class="h3 m-0">Транспорт — {{ project.number }}</h1>
+    <div class="text-secondary">{{ project.name }}</div>
+  </div>
+  <a href="/projects/{{ project.id }}" class="btn btn-outline-secondary">К проекту</a>
+</div>
+
+{% if editable %}
+<form method="post" action="/projects/{{ project.id }}/transport/vehicles" class="card card-body mb-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-6">
+      <label class="form-label small mb-0" for="vehicle_id">Добавить машину из справочника</label>
+      <select class="form-select" id="vehicle_id" name="vehicle_id" required>
+        <option value="">Выберите машину…</option>
+        {% for v in available_vehicles %}
+        <option value="{{ v.id }}">{{ v.name }}{% if v.plate_number %} ({{ v.plate_number }}){% endif %} — до {{ v.max_weight_kg }} кг</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-md-3">
+      <button class="btn btn-primary" type="submit">Добавить в проект</button>
+    </div>
+    <div class="col-12 col-md-3 text-md-end">
+      <a href="/transport/new" class="link-secondary small">Нет нужной машины? Добавить в справочник</a>
+    </div>
+  </div>
+</form>
+{% endif %}
+
+<div class="row g-3" id="transport-board" data-csrf="{{ csrf_token }}"
+     data-move-url="/projects/{{ project.id }}/transport/api/move" data-editable="{{ 'true' if editable else 'false' }}">
+
+  <div class="col-12 col-lg-4">
+    <div class="card h-100 mkl-drop-zone" data-dropzone="pool">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Не распределено</span>
+        <span class="badge text-bg-secondary">{{ board.unassigned|length }}</span>
+      </div>
+      <div class="card-body p-2">
+        {% if board.unassigned %}
+        <form method="post" action="/projects/{{ project.id }}/transport/assign" id="pool-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="list-group mb-2">
+            {% for item in board.unassigned %}
+            <label class="list-group-item d-flex align-items-center gap-2 mkl-drag-item" draggable="{{ 'true' if editable else 'false' }}"
+                   data-line-id="{{ item.line.id }}" data-source="pool">
+              {% if editable %}<input class="form-check-input flex-shrink-0" type="checkbox" name="line_id" value="{{ item.line.id }}">{% endif %}
+              <span class="flex-grow-1">
+                {{ item.line.name }}
+                <span class="text-secondary small">— {{ item.remaining }} из {{ item.line.fact_quantity if not item.line.is_kit else 1 }}</span>
+              </span>
+              {% if editable %}
+              <input type="number" class="form-control form-control-sm" style="width:5.5rem" min="1" max="{{ item.remaining }}"
+                     name="qty_{{ item.line.id }}" placeholder="{{ item.remaining }}">
+              {% endif %}
+            </label>
+            {% endfor %}
+          </div>
+          {% if editable %}
+          <div class="d-flex gap-2">
+            <select class="form-select form-select-sm" name="target" required>
+              <option value="">В машину…</option>
+              {% for vb in board.vehicles %}
+              <option value="{{ vb.project_vehicle.id }}">{{ vb.project_vehicle.name }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn btn-sm btn-primary text-nowrap" type="submit" {% if not board.vehicles %}disabled{% endif %}>Переместить</button>
+          </div>
+          {% endif %}
+        </form>
+        {% else %}
+        <p class="text-secondary small m-2">Всё оборудование распределено по машинам.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-8">
+    <div class="row g-3">
+      {% for vb in board.vehicles %}
+      <div class="col-12 col-md-6">
+        <div class="card h-100 mkl-drop-zone {% if vb.totals.overload %}border-danger{% endif %}" data-dropzone="{{ vb.project_vehicle.id }}">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+              <div class="fw-semibold">{{ vb.project_vehicle.name }}</div>
+              {% if vb.project_vehicle.plate_number %}<div class="text-secondary small">{{ vb.project_vehicle.plate_number }}</div>{% endif %}
+            </div>
+            {% if editable %}
+            <form method="post" action="/projects/{{ project.id }}/transport/vehicles/{{ vb.project_vehicle.id }}/delete" class="m-0"
+                  onsubmit="return confirm('Убрать машину «{{ vb.project_vehicle.name }}» из проекта? Все назначения вернутся в пул.')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-sm btn-outline-danger">Убрать</button>
+            </form>
+            {% endif %}
+          </div>
+          <div class="card-body">
+            <div class="d-flex justify-content-between small mb-1">
+              <span>{{ vb.totals.weight }} / {{ vb.totals.max_weight_kg }} кг</span>
+              <span class="text-secondary">об. {{ vb.totals.volume }} м³</span>
+            </div>
+            <div class="progress mb-2" style="height:6px" role="progressbar" aria-valuenow="{{ vb.totals.weight }}" aria-valuemin="0" aria-valuemax="{{ vb.totals.max_weight_kg }}">
+              <div class="progress-bar {{ 'bg-danger' if vb.totals.overload else 'bg-success' }}"
+                   style="width: {{ [(vb.totals.weight / vb.totals.max_weight_kg * 100) if vb.totals.max_weight_kg > 0 else 100, 100]|min }}%"></div>
+            </div>
+            {% if vb.totals.overload %}
+            <div class="alert alert-danger py-1 px-2 small mb-2">Перегруз на {{ vb.totals.overload_kg }} кг</div>
+            {% endif %}
+
+            {% if vb.assignments %}
+            <div class="list-group">
+              {% for row in vb.assignments %}
+              <div class="list-group-item d-flex align-items-center gap-2 mkl-drag-item" draggable="{{ 'true' if editable else 'false' }}"
+                   data-line-id="{{ row.line.id }}" data-source="{{ vb.project_vehicle.id }}">
+                <span class="flex-grow-1">
+                  {{ row.line.name }}
+                  <span class="text-secondary small">× {{ row.assignment.quantity }} · {{ row.calc.total_weight }} кг</span>
+                </span>
+                {% if editable %}
+                <form method="post" action="/projects/{{ project.id }}/transport/assignments/{{ row.assignment.id }}/delete" class="m-0">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="btn btn-sm btn-outline-secondary" title="Вернуть в пул">×</button>
+                </form>
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-secondary small m-0">Ничего не назначено.</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+      {% if not board.vehicles %}
+      <div class="col-12"><p class="text-secondary">Добавьте хотя бы одну машину, чтобы начать распределение.</p></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ static_url('js/transport-board.js') }}"></script>
+{% endblock %}

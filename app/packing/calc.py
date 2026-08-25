@@ -70,6 +70,16 @@ def compute_line(line: PackingLine) -> LineCalc:
     """
     fact = line.fact_quantity
     packed = min(line.packed_quantity, fact)
+    return compute_part(line, fact, packed)
+
+
+def compute_part(line: PackingLine, fact: int, packed: int) -> LineCalc:
+    """Расчёт по части строки (fact/packed единиц) — для распределения по машинам.
+
+    Та же формула, что и в compute_line, но количества берутся не из самой
+    строки, а переданы явно: одна физическая строка packing-листа может быть
+    разделена между несколькими машинами (ТЗ: распределение по транспорту).
+    """
     unpacked = fact - packed
 
     pkgs = packages_count(packed, line.has_packing, line.pack_capacity)

@@ -347,3 +347,15 @@ input.sc-color-custom {
   line-height: 1;
   color: var(--bs-secondary-color);
 }
+
+/* Доска распределения по транспорту (app/static/js/transport-board.js). */
+.mkl-drag-item {
+  cursor: grab;
+}
+.mkl-drag-item.mkl-dragging {
+  opacity: 0.4;
+}
+.mkl-drop-zone.mkl-drop-target {
+  outline: 2px dashed var(--bs-primary);
+  outline-offset: -2px;
+}

@@ -8,10 +8,17 @@ import enum
 class DocumentType(enum.StrEnum):
     ESTIMATE = "estimate"  # PDF-смета (A4 книжная)
     PACKING = "packing"  # PDF packing-листа (A4 альбомная)
+    PICKING = "picking"  # Упрощённый лист комплектации для склада (A4 книжная)
+    TRANSPORT = "transport"  # Packing-лист по машинам (A4 альбомная)
 
     @property
     def label(self) -> str:
-        return {"estimate": "Смета", "packing": "Packing-лист"}[self.value]
+        return {
+            "estimate": "Смета",
+            "packing": "Packing-лист",
+            "picking": "Лист комплектации",
+            "transport": "Packing-лист по машинам",
+        }[self.value]
 
 
 class Language(enum.StrEnum):

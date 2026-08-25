@@ -29,6 +29,7 @@ from app.packing import models as _packing_models  # noqa: F401
 from app.projects import models as _projects_models  # noqa: F401
 from app.settings import models as _settings_models  # noqa: F401
 from app.staff import models as _staff_models  # noqa: F401
+from app.transport import models as _transport_models  # noqa: F401
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -121,6 +122,8 @@ def create_app() -> FastAPI:
     from app.settings.router import router as settings_router
     from app.staff.calendar_router import router as staff_calendar_router
     from app.staff.router import router as staff_router
+    from app.transport.project_router import router as transport_project_router
+    from app.transport.router import router as transport_router
     from app.users.router import router as users_router
 
     app.include_router(auth_router)
@@ -133,6 +136,8 @@ def create_app() -> FastAPI:
     app.include_router(settings_router)
     app.include_router(staff_router)
     app.include_router(staff_calendar_router)
+    app.include_router(transport_router)
+    app.include_router(transport_project_router)
     app.include_router(users_router)
     app.include_router(audit_router)
     app.include_router(backup_router)

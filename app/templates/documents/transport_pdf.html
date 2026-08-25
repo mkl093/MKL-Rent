@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<style>
+  {% if fontface %}
+  @font-face { font-family: "dejavu"; src: url("{{ font_regular }}"); font-weight: normal; }
+  @font-face { font-family: "dejavu"; src: url("{{ font_bold }}"); font-weight: bold; }
+  {% endif %}
+  @page { size: a4 landscape; margin: 1cm; }
+  body { font-family: "dejavu", sans-serif; font-size: 9pt; color: #111; }
+  /* xhtml2pdf не понимает :first-child (и молча роняет весь блок правил, если
+     он есть рядом) — поэтому разрыв вешаем условным классом .page-break из
+     шаблона (не первый .sheet), а не через CSS-псевдокласс. */
+  .page-break { page-break-before: always; }
+  .head { width: 100%; border-bottom: 2px solid #333; padding-bottom: 6px; }
+  .head td { vertical-align: top; }
+  .company .name { font-size: 12pt; font-weight: bold; }
+  .logo { max-height: 50px; }
+  h1 { font-size: 14pt; margin: 10px 0 2px; }
+  .meta { font-size: 8.5pt; color: #444; margin-bottom: 8px; }
+  table.items { width: 100%; border-collapse: collapse; font-size: 8pt; }
+  table.items th, table.items td {
+    padding: 3px 5px; border: 1px solid #ddd; text-align: left; vertical-align: top;
+  }
+  table.items th { background: #f2f2f2; }
+  .num { text-align: right; }
+  .totals { margin-top: 8px; font-size: 10pt; font-weight: bold; text-align: right; }
+  .overload { color: #b00; }
+  .footer { margin-top: 18px; padding-top: 6px; border-top: 1px solid #ccc; font-size: 8pt; color: #666; text-align: center; }
+</style>
+</head>
+<body>
+  {% set ns = namespace(first=True) %}
+  {% for vb in board.vehicles %}
+  <div class="sheet{{ '' if ns.first else ' page-break' }}">
+    {% set ns.first = False %}
+    <table class="head"><tr>
+      <td class="company">
+        <div class="name">{{ company.company_name or "—" }}</div>
+        {% if company.address %}<div style="font-size:8pt">{{ company.address }}</div>{% endif %}
+      </td>
+      <td class="num" width="25%">{% if logo_uri %}<img class="logo" src="{{ logo_uri }}" alt="">{% endif %}</td>
+    </tr></table>
+
+    <h1>{{ L.transport }} — {{ packing.number }}</h1>
+    <div class="meta">
+      {{ L.date }}: {{ fmt_date(generated_at.date()) }} ·
+      {{ L.project }}: {{ project.name }} ({{ project.number }}) ·
+      {{ L.vehicle }}: {{ vb.project_vehicle.name }}{% if vb.project_vehicle.plate_number %} · {{ L.plate }}: {{ vb.project_vehicle.plate_number }}{% endif %} ·
+      {{ L.max_weight }}: {{ fmt_weight(vb.totals.max_weight_kg) }}
+      {% if vb.totals.overload %}<span class="overload"> — {{ fmt_weight(vb.totals.overload_kg) }} {{ L.total_weight|lower }}</span>{% endif %}
+    </div>
+
+    <table class="items">
+      <thead><tr>
+        <th width="30%">{{ L.name }}</th>
+        <th class="num" width="8%">{{ L.qty }}</th>
+        <th class="num" width="8%">{{ L.packed }}</th>
+        <th class="num" width="8%">{{ L.unpacked }}</th>
+        <th class="num" width="10%">{{ L.weight }}</th>
+        <th class="num" width="10%">{{ L.volume }}</th>
+        <th width="26%">{{ L.comment }}</th>
+      </tr></thead>
+      <tbody>
+        {% for row in vb.assignments %}
+        <tr>
+          <td>{{ row.line.name }}</td>
+          <td class="num">{{ row.assignment.quantity }}</td>
+          <td class="num">{{ row.calc.packed }}</td>
+          <td class="num">{{ row.calc.unpacked }}</td>
+          <td class="num">{{ fmt_weight(row.calc.total_weight) }}</td>
+          <td class="num">{{ fmt_volume(row.calc.total_volume) }}</td>
+          <td>{{ row.line.comment or "" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="totals">
+      {{ L.positions }}: {{ vb.totals.positions }} ·
+      {{ L.total_weight }}: {{ fmt_weight(vb.totals.weight) }} ·
+      {{ L.total_volume }}: {{ fmt_volume(vb.totals.volume) }}
+    </div>
+    {% if company.pdf_footer %}<div class="footer">{{ company.pdf_footer }}</div>{% endif %}
+  </div>
+  {% endfor %}
+
+  {% if board.unassigned %}
+  <div class="sheet{{ '' if ns.first else ' page-break' }}">
+    <table class="head"><tr>
+      <td class="company">
+        <div class="name">{{ company.company_name or "—" }}</div>
+      </td>
+    </tr></table>
+    <h1>{{ L.unassigned }}</h1>
+    <table class="items">
+      <thead><tr><th>{{ L.name }}</th><th class="num">{{ L.qty }}</th></tr></thead>
+      <tbody>
+        {% for item in board.unassigned %}
+        <tr><td>{{ item.line.name }}</td><td class="num">{{ item.remaining }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</body>
+</html>
