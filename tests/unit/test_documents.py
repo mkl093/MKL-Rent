@@ -315,6 +315,108 @@ def test_render_packing_html_localizes_additional_group(db_session):
     assert html_de.count("Sonstiges") == 2
 
 
+def test_render_packing_html_localizes_kit_group_and_suffix(db_session):
+    """packing_pdf.html: группа «Комплекты» и суффикс «(комплект)» переводятся на en/de.
+
+    Regression: оба места полагались на нелокализуемые данные — group-заголовок
+    брал сохранённый снимок category_name="Комплекты" (packing.service.KIT_GROUP_NAME)
+    напрямую, а суффикс ссылался на несуществующий L.kit (тихо падал обратно на
+    русский литерал). Теперь оба места определяют комплект через line.is_kit и
+    берут перевод из LABELS.
+    """
+    from app.inventory.schemas import KitInput
+    from app.inventory.services import kits as kit_service
+    from app.packing import service as packing_service
+
+    cat = cat_service.create_category(db_session, "Звук")
+    project = proj_service.create_project(
+        db_session,
+        ProjectInput(name="Тур", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5)),
+    )
+    estimate = est_service.get_or_create_estimate(db_session, project)
+    kit = kit_service.create_kit(db_session, KitInput(name="Кейс света"))
+    est_service.add_kit_line(db_session, estimate, project, kit)
+    packing_service.create_from_estimate(db_session, project)
+
+    html_ru, _ = builder.render_html(db_session, project, DocumentType.PACKING, "ru")
+    assert "Комплекты" in html_ru
+    assert "(комплект)" in html_ru
+
+    html_en, _ = builder.render_html(db_session, project, DocumentType.PACKING, "en")
+    assert "Комплекты" not in html_en and "комплект" not in html_en
+    assert "Kits" in html_en
+    assert "(kit)" in html_en
+
+    html_de, _ = builder.render_html(db_session, project, DocumentType.PACKING, "de")
+    assert "Комплекты" not in html_de and "комплект" not in html_de
+    assert "Sets" in html_de
+    assert "(Set)" in html_de
+
+
+def test_render_picking_html_localizes_kit_group_and_suffix(db_session):
+    """picking_pdf.html: тот же перевод для «Комплекты»/«(комплект)», что и в packing."""
+    from app.inventory.schemas import KitInput
+    from app.inventory.services import kits as kit_service
+    from app.packing import service as packing_service
+
+    cat = cat_service.create_category(db_session, "Звук")
+    project = proj_service.create_project(
+        db_session,
+        ProjectInput(name="Тур", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5)),
+    )
+    estimate = est_service.get_or_create_estimate(db_session, project)
+    kit = kit_service.create_kit(db_session, KitInput(name="Кейс света"))
+    est_service.add_kit_line(db_session, estimate, project, kit)
+    packing_service.create_from_estimate(db_session, project)
+
+    html_en, _ = builder.render_html(db_session, project, DocumentType.PICKING, "en")
+    assert "Комплекты" not in html_en and "комплект" not in html_en
+    assert "Kits" in html_en
+    assert "(kit)" in html_en
+
+
+def test_render_estimate_html_localizes_kit_and_other_groups(db_session):
+    """estimate_pdf.html: группы «Комплекты»/«Прочее» переводятся на en/de.
+
+    Regression: grouped_lines() сравнивал строку category_name с русским
+    литералом KIT_GROUP_NAME и жёстко подставлял "Прочее"/"Без категории" —
+    группировка теперь идёт по line.is_kit/is_custom, а метки берутся из LABELS.
+    """
+    from app.estimates.schemas import CustomLineInput
+    from app.inventory.schemas import KitInput
+    from app.inventory.services import kits as kit_service
+
+    cat = cat_service.create_category(db_session, "Звук")
+    model = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id, name="Колонка", accounting_type=AccountingType.QUANTITY, total_quantity=20
+        ),
+    )
+    project = proj_service.create_project(
+        db_session,
+        ProjectInput(name="Тур", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5)),
+    )
+    estimate = est_service.get_or_create_estimate(db_session, project)
+    est_service.add_model(db_session, estimate, project, model, 2)
+    kit = kit_service.create_kit(db_session, KitInput(name="Кейс света"))
+    est_service.add_kit_line(db_session, estimate, project, kit)
+    est_service.add_custom_line(
+        db_session, estimate, project, CustomLineInput(name="Доставка", unit_price=Decimal("50"))
+    )
+
+    html_ru, _ = builder.render_html(db_session, project, DocumentType.ESTIMATE, "ru")
+    assert "Комплекты" in html_ru and "Прочее" in html_ru
+
+    html_en, _ = builder.render_html(db_session, project, DocumentType.ESTIMATE, "en")
+    assert "Комплекты" not in html_en and "Прочее" not in html_en
+    assert "Kits" in html_en and "Other" in html_en
+
+    html_de, _ = builder.render_html(db_session, project, DocumentType.ESTIMATE, "de")
+    assert "Комплекты" not in html_de and "Прочее" not in html_de
+    assert "Sets" in html_de
+
+
 def test_render_estimate_html_de(db_session, project):
     html, fp = builder.render_html(db_session, project, DocumentType.ESTIMATE, "de")
     assert "Angebot" in html  # немецкая подпись «Смета»

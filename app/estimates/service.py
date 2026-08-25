@@ -218,32 +218,46 @@ class LineGroup:
     lines: list[EstimateLine]
 
 
-def grouped_lines(estimate: Estimate) -> list[LineGroup]:
-    """Сгруппировать строки по категориям; комплекты — в «Комплекты», произвольные —
-    в «Прочее» (ТЗ §16.6, структура «Комплект»)."""
+def grouped_lines(
+    estimate: Estimate,
+    *,
+    kit_label: str = KIT_GROUP_NAME,
+    custom_label: str = "Прочее",
+    no_category_label: str = "Без категории",
+) -> list[LineGroup]:
+    """Сгруппировать строки по категориям; комплекты — в ``kit_label``, произвольные —
+    в ``custom_label`` (ТЗ §16.6, структура «Комплект»).
+
+    Метки по умолчанию — русские (для веб-интерфейса сметы); PDF-рендер (документы
+    на en/de) передаёт локализованные метки явно (ТЗ §26.1). Группа определяется по
+    ``line.is_kit``/``is_custom``, а не по сохранённому тексту ``category_name`` —
+    у строк-комплектов там снимок ``KIT_GROUP_NAME`` (см. add_kit_line), который сам
+    по себе не переводится.
+    """
     groups: dict[object, LineGroup] = {}
     for line in sorted(estimate.lines, key=lambda ln: (ln.sort_order, ln.id)):
         if line.is_kit:
             key: object = "kit"
-            name = KIT_GROUP_NAME
+            name = kit_label
         elif line.is_custom:
             key = None
-            name = "Прочее"
+            name = custom_label
         else:
             key = line.category_id
-            name = line.category_name or "Без категории"
+            name = line.category_name or no_category_label
         if key not in groups:
             cat_id = line.category_id if isinstance(key, int) else None
             groups[key] = LineGroup(category_id=cat_id, category_name=name, lines=[])
         groups[key].lines.append(line)
 
-    # Комплекты — первыми, затем категории по имени, «Прочее» (custom) в конце.
-    def _order(g: LineGroup) -> tuple:
-        if g.category_name == KIT_GROUP_NAME:
+    # Комплекты — первыми, затем категории по имени, произвольные (custom) в конце.
+    def _order(item: tuple[object, LineGroup]) -> tuple:
+        key, g = item
+        if key == "kit":
             return (0, "")
         return (1 if g.category_id is None else 0, g.category_name)
 
-    return sorted(groups.values(), key=_order)
+    return [g for _, g in sorted(groups.items(), key=_order)]
 
 
 def sync_reservations(db: Session, project: Project, estimate: Estimate) -> None:

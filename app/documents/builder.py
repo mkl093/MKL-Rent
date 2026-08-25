@@ -100,6 +100,9 @@ LABELS = {
         "accessory": "Аксессуар",
         "additional": "Дополнительно",
         "no_category": "Без категории",
+        "kits": "Комплекты",
+        "other": "Прочее",
+        "kit": "комплект",
     },
     "en": {
         "estimate": "Estimate",
@@ -157,6 +160,9 @@ LABELS = {
         "accessory": "Accessory",
         "additional": "Additional",
         "no_category": "No category",
+        "kits": "Kits",
+        "other": "Other",
+        "kit": "kit",
     },
     "de": {
         "estimate": "Angebot",
@@ -214,6 +220,9 @@ LABELS = {
         "accessory": "Zubehör",
         "additional": "Sonstiges",
         "no_category": "Ohne Kategorie",
+        "kits": "Sets",
+        "other": "Sonstiges",
+        "kit": "Set",
     },
 }
 
@@ -252,7 +261,12 @@ def _estimate_render(
 ) -> tuple[str, str]:
     company = get_company_settings(db)
     estimate = get_or_create_estimate(db, project)
-    groups = grouped_lines(estimate)
+    groups = grouped_lines(
+        estimate,
+        kit_label=LABELS[lang]["kits"],
+        custom_label=LABELS[lang]["other"],
+        no_category_label=LABELS[lang]["no_category"],
+    )
     totals = estimate_totals(db, estimate, project)
 
     fingerprint = json.dumps(
@@ -320,6 +334,7 @@ def _packing_render(
     breakdown = compute_category_breakdown(
         packing.lines,
         custom_label=LABELS[lang]["additional"],
+        kit_label=LABELS[lang]["kits"],
         no_category_label=LABELS[lang]["no_category"],
     )
     accessories = accessory_totals(db, packing)
