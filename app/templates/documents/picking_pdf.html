@@ -51,7 +51,7 @@
     <tbody>
       {% set ns = namespace(group=None) %}
       {% for line, location, qty in rows %}
-        {% set gname = (L.packing if line.is_custom else (line.category_name or "—") ~ (" / " ~ line.subcategory_name if line.subcategory_name else "")) %}
+        {% set gname = (L.additional if line.is_custom else (line.category_name or "—") ~ (" / " ~ line.subcategory_name if line.subcategory_name else "")) %}
         {% if gname != ns.group %}{% set ns.group = gname %}
         <tr class="cat"><td colspan="3">{{ gname }}</td></tr>{% endif %}
         <tr>

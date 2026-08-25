@@ -98,6 +98,8 @@ LABELS = {
         "breakdown": "Итоги по категориям",
         "accessories": "Аксессуары (комплектация)",
         "accessory": "Аксессуар",
+        "additional": "Дополнительно",
+        "no_category": "Без категории",
     },
     "en": {
         "estimate": "Estimate",
@@ -153,6 +155,8 @@ LABELS = {
         "breakdown": "Totals by category",
         "accessories": "Accessories (kit)",
         "accessory": "Accessory",
+        "additional": "Additional",
+        "no_category": "No category",
     },
     "de": {
         "estimate": "Angebot",
@@ -208,6 +212,8 @@ LABELS = {
         "breakdown": "Summen nach Kategorie",
         "accessories": "Zubehör (Bestückung)",
         "accessory": "Zubehör",
+        "additional": "Sonstiges",
+        "no_category": "Ohne Kategorie",
     },
 }
 
@@ -311,7 +317,11 @@ def _packing_render(
     ordered = _packing_ordered_lines(packing)
     rows = [(ln, compute_line(ln)) for ln in ordered]
     totals = compute_totals(packing.lines)
-    breakdown = compute_category_breakdown(packing.lines)
+    breakdown = compute_category_breakdown(
+        packing.lines,
+        custom_label=LABELS[lang]["additional"],
+        no_category_label=LABELS[lang]["no_category"],
+    )
     accessories = accessory_totals(db, packing)
 
     # Перечень комплектации для строк-комплектов (структура «Комплект»).

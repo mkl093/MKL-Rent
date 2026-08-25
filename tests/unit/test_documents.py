@@ -275,6 +275,46 @@ def test_render_packing_html_localizes_packages_unit(db_session):
     assert "Kolli" in html_de
 
 
+def test_render_packing_html_localizes_additional_group(db_session):
+    """packing_pdf.html: группа доп. позиций («Дополнительно») переводится на en/de.
+
+    Regression: и заголовок группы в таблице строк, и строка в разбивке по
+    категориям снизу были захардкожены (заголовок группы — вообще неверной
+    меткой L.packing, разбивка — русским литералом в app.packing.calc).
+    """
+    from app.packing import service as packing_service
+    from app.packing.schemas import CustomPackingLine
+
+    cat = cat_service.create_category(db_session, "Звук")
+    model = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id, name="Колонка", accounting_type=AccountingType.QUANTITY, total_quantity=20
+        ),
+    )
+    project = proj_service.create_project(
+        db_session,
+        ProjectInput(name="Тур", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5)),
+    )
+    estimate = est_service.get_or_create_estimate(db_session, project)
+    est_service.add_model(db_session, estimate, project, model, 2)
+    packing = packing_service.create_from_estimate(db_session, project)
+    packing_service.add_custom_line(
+        db_session, packing, CustomPackingLine(name="Кабель-каналы", quantity=1)
+    )
+
+    html_ru, _ = builder.render_html(db_session, project, DocumentType.PACKING, "ru")
+    assert html_ru.count("Дополнительно") == 2  # заголовок группы строки + строка разбивки
+
+    html_en, _ = builder.render_html(db_session, project, DocumentType.PACKING, "en")
+    assert "Дополнительно" not in html_en
+    assert html_en.count("Additional") == 2
+
+    html_de, _ = builder.render_html(db_session, project, DocumentType.PACKING, "de")
+    assert "Дополнительно" not in html_de
+    assert html_de.count("Sonstiges") == 2
+
+
 def test_render_estimate_html_de(db_session, project):
     html, fp = builder.render_html(db_session, project, DocumentType.ESTIMATE, "de")
     assert "Angebot" in html  # немецкая подпись «Смета»

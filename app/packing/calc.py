@@ -152,16 +152,23 @@ class CategoryTotal:
     power_nominal_w: int
 
 
-def compute_category_breakdown(lines: list[PackingLine]) -> list[CategoryTotal]:
+def compute_category_breakdown(
+    lines: list[PackingLine],
+    *,
+    custom_label: str = "Дополнительно",
+    no_category_label: str = "Без категории",
+) -> list[CategoryTotal]:
     """Разбивка веса, объёма и энергопотребления по категориям.
 
-    Дополнительные позиции (без категории) собираются в группу «Дополнительно».
+    Дополнительные позиции (без категории) собираются в группу ``custom_label``.
     Порядок групп — по первому появлению строки, как при выводе документа.
+    Метки по умолчанию — русские (для веб-интерфейса packing-листа); PDF-рендер
+    (документы на en/de) передаёт локализованные метки явно (ТЗ §26.1).
     """
     order: list[str] = []
     acc: dict[str, dict] = {}
     for line in lines:
-        key = "Дополнительно" if line.is_custom else (line.category_name or "Без категории")
+        key = custom_label if line.is_custom else (line.category_name or no_category_label)
         if key not in acc:
             order.append(key)
             acc[key] = {
