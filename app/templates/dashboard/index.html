@@ -10,22 +10,28 @@
 
 <div class="row g-3">
   <div class="col-12 col-md-6 col-xl-3">
-    <div class="card h-100 shadow-sm"><div class="card-body">
-      <h2 class="h6 text-secondary">Активные брони</h2>
-      <p class="display-6 m-0">{{ active_booked|length }}</p>
-    </div></div>
+    <a href="/projects?filter=active" class="card h-100 shadow-sm text-decoration-none text-body">
+      <div class="card-body">
+        <h2 class="h6 text-secondary">Активные брони</h2>
+        <p class="display-6 m-0">{{ active_booked|length }}</p>
+      </div>
+    </a>
   </div>
   <div class="col-12 col-md-6 col-xl-3">
-    <div class="card h-100 shadow-sm {% if overdue_booked %}border-warning{% endif %}"><div class="card-body">
-      <h2 class="h6 text-secondary">Просроченные брони</h2>
-      <p class="display-6 m-0">{{ overdue_booked|length }}</p>
-    </div></div>
+    <a href="/projects?filter=overdue" class="card h-100 shadow-sm text-decoration-none text-body {% if overdue_booked %}border-warning{% endif %}">
+      <div class="card-body">
+        <h2 class="h6 text-secondary">Просроченные брони</h2>
+        <p class="display-6 m-0">{{ overdue_booked|length }}</p>
+      </div>
+    </a>
   </div>
   <div class="col-12 col-md-6 col-xl-3">
-    <div class="card h-100 shadow-sm {% if deficit_projects %}border-danger{% endif %}"><div class="card-body">
-      <h2 class="h6 text-secondary">Дефицит</h2>
-      <p class="display-6 m-0">{{ deficit_projects|length }}</p>
-    </div></div>
+    <a href="/projects?filter=deficit" class="card h-100 shadow-sm text-decoration-none text-body {% if deficit_projects %}border-danger{% endif %}">
+      <div class="card-body">
+        <h2 class="h6 text-secondary">Дефицит</h2>
+        <p class="display-6 m-0">{{ deficit_projects|length }}</p>
+      </div>
+    </a>
   </div>
   <div class="col-12 col-md-6 col-xl-3">
     <a href="/inventory/repair" class="card h-100 shadow-sm text-decoration-none text-body">

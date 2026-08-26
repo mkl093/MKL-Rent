@@ -141,16 +141,27 @@ def _input(
 def index(
     request: Request,
     archived: int = 0,
+    filter: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
+    status_filter = filter if filter in ("active", "overdue", "deficit") else None
+    titles = {
+        "active": "Активные брони",
+        "overdue": "Просроченные брони",
+        "deficit": "Проекты с дефицитом",
+    }
     return render(
         request,
         "projects/list.html",
         {
-            "page_title": "Проекты",
-            "projects": service.list_projects(db, archived=bool(archived)),
+            "page_title": titles.get(status_filter, "Проекты"),
+            "projects": service.list_projects(
+                db, archived=bool(archived), status_filter=status_filter
+            ),
             "archived": bool(archived),
+            "status_filter": status_filter,
+            "status_filter_title": titles.get(status_filter),
             "ProjectStatus": ProjectStatus,
         },
         db=db,

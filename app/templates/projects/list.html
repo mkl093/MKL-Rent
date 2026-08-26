@@ -1,12 +1,16 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-  <h1 class="h3 m-0">Проекты</h1>
+  <h1 class="h3 m-0">{{ status_filter_title or "Проекты" }}</h1>
   <div class="d-flex gap-2">
+    {% if status_filter %}
+    <a href="/projects" class="btn btn-outline-secondary">Все проекты</a>
+    {% else %}
     <a href="/projects/calendar" class="btn btn-outline-secondary">Календарь</a>
     <a href="/projects?archived={{ 0 if archived else 1 }}" class="btn btn-outline-secondary">
       {{ "Активные" if archived else "Архив" }}
     </a>
+    {% endif %}
     <a href="/projects/new" class="btn btn-primary">Создать проект</a>
   </div>
 </div>
@@ -39,7 +43,11 @@
   {% endfor %}
 </div>
 {% else %}
-<p class="text-secondary">{{ "Архив пуст." if archived else "Проектов пока нет." }}
-  {% if not archived %}<a href="/projects/new">Создайте первый</a>.{% endif %}</p>
+<p class="text-secondary">
+  {%- if status_filter %} Нет проектов в этой категории.
+  {%- elif archived %} Архив пуст.
+  {%- else %} Проектов пока нет. <a href="/projects/new">Создайте первый</a>.
+  {%- endif %}
+</p>
 {% endif %}
 {% endblock %}

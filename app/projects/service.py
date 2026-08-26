@@ -13,7 +13,7 @@ from app.inventory.models import EquipmentModel
 from app.numbering.models import DocType
 from app.numbering.service import next_number
 from app.projects.availability import compute_availability, ranges_overlap
-from app.projects.enums import ProjectStatus
+from app.projects.enums import RESERVING_STATUSES, ProjectStatus
 from app.projects.models import Project
 from app.projects.schemas import ProjectInput
 
@@ -64,8 +64,40 @@ def _validate_actual_dates(shipped: date | None, returned: date | None) -> None:
         raise ValidationError("Дата возврата не может быть раньше даты отгрузки")
 
 
-def list_projects(db: Session, archived: bool = False) -> list[Project]:
-    """Активные (черновик/забронирован) или архивные (завершён/отменён) проекты (ТЗ §13.6)."""
+def list_projects(
+    db: Session, archived: bool = False, status_filter: str | None = None
+) -> list[Project]:
+    """Активные (черновик/забронирован) или архивные (завершён/отменён) проекты (ТЗ §13.6).
+
+    status_filter (карточки главной страницы, ТЗ §5): "active" — резервирующие
+    с непрошедшей датой окончания; "overdue" — резервирующие с прошедшей датой
+    окончания; "deficit" — резервирующие проекты с нехваткой оборудования.
+    """
+    if status_filter in ("active", "overdue"):
+        today = utcnow().date()
+        stmt = select(Project).where(Project.status.in_(RESERVING_STATUSES))
+        if status_filter == "active":
+            stmt = stmt.where(
+                (Project.end_date.is_(None)) | (Project.end_date >= today)
+            ).order_by(Project.start_date)
+        else:
+            stmt = stmt.where(
+                Project.end_date.is_not(None), Project.end_date < today
+            ).order_by(Project.end_date)
+        return list(db.execute(stmt).scalars().all())
+
+    if status_filter == "deficit":
+        booked = (
+            db.execute(
+                select(Project)
+                .where(Project.status.in_(RESERVING_STATUSES))
+                .order_by(Project.start_date)
+            )
+            .scalars()
+            .all()
+        )
+        return [p for p in booked if project_deficits(db, p)]
+
     archived_statuses = [ProjectStatus.COMPLETED, ProjectStatus.CANCELLED]
     stmt = select(Project)
     if archived:
