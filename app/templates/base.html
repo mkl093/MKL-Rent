@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ page_title or "rental-inventory" }}{% endblock %}{% if company and company.company_name %} · {{ company.company_name }}{% endif %}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ static_url('favicon.svg') }}">
   <link rel="stylesheet" href="{{ static_url('vendor/bootstrap.min.css') }}">
   <link rel="stylesheet" href="{{ static_url('css/app.css') }}">
 </head>
