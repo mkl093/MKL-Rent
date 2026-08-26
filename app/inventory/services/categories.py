@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.inventory.models import Category, EquipmentModel, Subcategory
@@ -14,6 +15,10 @@ class InventoryError(Exception):
 
 class InUse(InventoryError):
     """Объект используется и не может быть удалён."""
+
+
+class DuplicateName(InventoryError):
+    """Такое название уже используется (в этой же категории)."""
 
 
 def list_categories(db: Session) -> list[Category]:
@@ -28,14 +33,22 @@ def list_categories(db: Session) -> list[Category]:
 def create_category(db: Session, name: str, sort_order: int = 0) -> Category:
     category = Category(name=name.strip(), sort_order=sort_order)
     db.add(category)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise DuplicateName("Категория с таким названием уже существует") from exc
     db.refresh(category)
     return category
 
 
 def rename_category(db: Session, category: Category, name: str) -> Category:
     category.name = name.strip()
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise DuplicateName("Категория с таким названием уже существует") from exc
     return category
 
 
@@ -57,14 +70,22 @@ def create_subcategory(
 ) -> Subcategory:
     sub = Subcategory(category_id=category.id, name=name.strip(), sort_order=sort_order)
     db.add(sub)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise DuplicateName("Подкатегория с таким названием уже есть в этой категории") from exc
     db.refresh(sub)
     return sub
 
 
 def rename_subcategory(db: Session, sub: Subcategory, name: str) -> Subcategory:
     sub.name = name.strip()
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise DuplicateName("Подкатегория с таким названием уже есть в этой категории") from exc
     return sub
 
 

@@ -636,8 +636,11 @@ def category_create(
     user: User = Depends(require_login),
 ):
     if _str(name):
-        cat_service.create_category(db, name)
-        flash(request, "Категория добавлена.", "success")
+        try:
+            cat_service.create_category(db, name)
+            flash(request, "Категория добавлена.", "success")
+        except cat_service.DuplicateName as exc:
+            flash(request, str(exc), "danger")
     return redirect("/inventory/categories")
 
 
@@ -651,8 +654,11 @@ def category_rename(
 ):
     category = db.get(cat_service.Category, category_id)
     if category and _str(name):
-        cat_service.rename_category(db, category, name)
-        flash(request, "Категория переименована.", "success")
+        try:
+            cat_service.rename_category(db, category, name)
+            flash(request, "Категория переименована.", "success")
+        except cat_service.DuplicateName as exc:
+            flash(request, str(exc), "danger")
     return redirect("/inventory/categories")
 
 
@@ -666,8 +672,11 @@ def subcategory_create(
 ):
     category = db.get(cat_service.Category, category_id)
     if category and _str(name):
-        cat_service.create_subcategory(db, category, name)
-        flash(request, "Подкатегория добавлена.", "success")
+        try:
+            cat_service.create_subcategory(db, category, name)
+            flash(request, "Подкатегория добавлена.", "success")
+        except cat_service.DuplicateName as exc:
+            flash(request, str(exc), "danger")
     return redirect("/inventory/categories")
 
 
@@ -698,8 +707,11 @@ def subcategory_rename(
 ):
     sub = db.get(cat_service.Subcategory, subcategory_id)
     if sub and _str(name):
-        cat_service.rename_subcategory(db, sub, name)
-        flash(request, "Подкатегория переименована.", "success")
+        try:
+            cat_service.rename_subcategory(db, sub, name)
+            flash(request, "Подкатегория переименована.", "success")
+        except cat_service.DuplicateName as exc:
+            flash(request, str(exc), "danger")
     return redirect("/inventory/categories")
 
 
@@ -746,8 +758,11 @@ def accessory_category_create(
     user: User = Depends(require_login),
 ):
     if _str(name):
-        acc_service.create_category(db, name)
-        flash(request, "Категория аксессуаров добавлена.", "success")
+        try:
+            acc_service.create_category(db, name)
+            flash(request, "Категория аксессуаров добавлена.", "success")
+        except cat_service.DuplicateName as exc:
+            flash(request, str(exc), "danger")
     return redirect("/inventory/accessories")
 
 
@@ -763,8 +778,11 @@ def accessory_category_rename(
 
     category = db.get(AccessoryCategory, category_id)
     if category and _str(name):
-        acc_service.rename_category(db, category, name)
-        flash(request, "Категория переименована.", "success")
+        try:
+            acc_service.rename_category(db, category, name)
+            flash(request, "Категория переименована.", "success")
+        except cat_service.DuplicateName as exc:
+            flash(request, str(exc), "danger")
     return redirect("/inventory/accessories")
 
 
@@ -799,8 +817,11 @@ def accessory_create(
 
     category = db.get(AccessoryCategory, category_id)
     if category and _str(name):
-        acc_service.create_accessory(db, category, name)
-        flash(request, "Аксессуар добавлен.", "success")
+        try:
+            acc_service.create_accessory(db, category, name)
+            flash(request, "Аксессуар добавлен.", "success")
+        except cat_service.DuplicateName as exc:
+            flash(request, str(exc), "danger")
     return redirect("/inventory/accessories")
 
 
@@ -814,8 +835,11 @@ def accessory_rename(
 ):
     accessory = db.get(Accessory, accessory_id)
     if accessory and _str(name):
-        acc_service.rename_accessory(db, accessory, name)
-        flash(request, "Аксессуар переименован.", "success")
+        try:
+            acc_service.rename_accessory(db, accessory, name)
+            flash(request, "Аксессуар переименован.", "success")
+        except cat_service.DuplicateName as exc:
+            flash(request, str(exc), "danger")
     return redirect("/inventory/accessories")
 
 

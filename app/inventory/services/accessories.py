@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.inventory.models import (
@@ -14,7 +15,7 @@ from app.inventory.models import (
     AccessoryCategory,
     EquipmentModelAccessory,
 )
-from app.inventory.services.categories import InUse
+from app.inventory.services.categories import DuplicateName, InUse
 
 
 def list_accessory_categories(db: Session) -> list[AccessoryCategory]:
@@ -41,14 +42,22 @@ def existing_ids(db: Session, ids: list[int]) -> set[int]:
 def create_category(db: Session, name: str, sort_order: int = 0) -> AccessoryCategory:
     category = AccessoryCategory(name=name.strip(), sort_order=sort_order)
     db.add(category)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise DuplicateName("Категория с таким названием уже существует") from exc
     db.refresh(category)
     return category
 
 
 def rename_category(db: Session, category: AccessoryCategory, name: str) -> AccessoryCategory:
     category.name = name.strip()
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise DuplicateName("Категория с таким названием уже существует") from exc
     return category
 
 
@@ -74,14 +83,22 @@ def create_accessory(
 ) -> Accessory:
     accessory = Accessory(category_id=category.id, name=name.strip(), sort_order=sort_order)
     db.add(accessory)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise DuplicateName("Аксессуар с таким названием уже есть в этой категории") from exc
     db.refresh(accessory)
     return accessory
 
 
 def rename_accessory(db: Session, accessory: Accessory, name: str) -> Accessory:
     accessory.name = name.strip()
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise DuplicateName("Аксессуар с таким названием уже есть в этой категории") from exc
     return accessory
 
 
