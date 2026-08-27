@@ -13,11 +13,31 @@
       <input type="hidden" name="archived" value="{{ 0 if model.is_archived else 1 }}">
       <button class="btn btn-outline-warning">{{ "Из архива" if model.is_archived else "В архив" }}</button>
     </form>
-    <form method="post" action="/inventory/models/{{ model.id }}/delete" class="m-0"
-          onsubmit="return confirm('Удалить модель безвозвратно?')">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="btn btn-outline-danger">Удалить</button>
-    </form>
+    <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#delete-model-modal">Удалить</button>
+  </div>
+</div>
+
+<!-- Модалка: удалить модель -->
+<div class="modal fade" id="delete-model-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="/inventory/models/{{ model.id }}/delete" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Удалить модель</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+        </div>
+        <div class="modal-body">
+          <p>Модель «{{ model.name }}» будет удалена безвозвратно вместе со всеми единицами.</p>
+          <label class="form-label small" for="delete-model-confirm-input">Чтобы подтвердить, введите <code>delete</code></label>
+          <input type="text" class="form-control" id="delete-model-confirm-input" autocomplete="off">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+          <button type="submit" class="btn btn-danger" id="delete-model-confirm-btn" disabled>Удалить</button>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 
@@ -335,4 +355,5 @@
 <script src="{{ static_url('vendor/zxing.min.js') }}"></script>
 <script src="{{ static_url('js/barcode-scan.js') }}"></script>
 <script src="{{ static_url('js/bulk-items.js') }}"></script>
+<script src="{{ static_url('js/delete-model-confirm.js') }}"></script>
 {% endblock %}
