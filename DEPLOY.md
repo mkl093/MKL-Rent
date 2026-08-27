@@ -95,6 +95,14 @@ git clone <repo-url> /opt/mkl-rent
 cd /opt/mkl-rent
 ```
 
+> ⚠️ Указывайте целевой каталог явно (`git clone <repo-url> /opt/mkl-rent`), а не
+> просто `git clone <repo-url>` из `/opt/mkl-rent` — иначе git создаст вложенный
+> `/opt/mkl-rent/MKL-Rent` (по имени репозитория), и все пути ниже (`BACKUP_PATH`,
+> `docker compose` и т.д.) сместятся на один уровень. Если каталог уже склонирован
+> с вложенностью — команды из этого документа выполняйте из фактического каталога
+> с `docker-compose.yml` (`cd /opt/mkl-rent/MKL-Rent` или где он на самом деле лежит),
+> переносить его необязательно.
+
 ### 3.2. Заполнить `.env`
 
 ```bash
@@ -299,6 +307,15 @@ docker compose up -d web scheduler nginx
 
 После восстановления при необходимости выполните `docker compose exec web alembic upgrade head`
 (если архив старее текущей схемы).
+
+> ⚠️ Если `pg_restore` падает с `unrecognized configuration parameter
+> "transaction_timeout"` — версия `pg_restore` в образе `web` новее сервера `db`
+> (эта GUC появилась в PostgreSQL 17). На актуальном образе клиент закреплён на
+> версии сервера (см. [Dockerfile](Dockerfile)); если ошибка всё же возникла —
+> пересоберите образ (`docker compose build web scheduler`) и повторите restore.
+> Обычно это единственная ошибка на весь дамп (`errors ignored on restore: 1`),
+> но скрипт `scripts.restore` прерывается до восстановления файлов `storage/` —
+> после исправления клиента прогоните restore заново целиком, не только БД.
 
 > 💡 PyCharm: **Database tool** можно подключить к PostgreSQL на VPS через SSH-туннель
 > (Tools → Deployment / SSH configuration) для инспекции или ручного `pg_dump`.
