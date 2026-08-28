@@ -8,10 +8,14 @@
   <link rel="stylesheet" href="{{ static_url('css/app.css') }}">
   <link rel="stylesheet" href="{{ static_url('css/guest.css') }}">
 </head>
+{% import "guest/_brand.html" as brand %}
 <body class="guest">
 {% if guest %}
   <div class="guest-topbar">
-    <a class="guest-brand" href="/guest/">{{ company.company_name if company and company.company_name else "Guest portal" }}</a>
+    <a class="guest-brand" href="/guest/">
+      {{ brand.logo("guest-brand-icon") }}
+      {{ company.company_name if company and company.company_name else "Guest portal" }}
+    </a>
     <div class="guest-spacer"></div>
     <span class="guest-client-name">{{ guest.display_name }}</span>
     <div class="guest-lang-toggle">

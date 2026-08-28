@@ -6,6 +6,10 @@
       <h1>{{ t("catalog_title") }}</h1>
       <div class="guest-hint">{{ t("catalog_hint_search") if can_search_dates else t("catalog_hint_view") }}</div>
     </div>
+    <div class="guest-view-toggle">
+      <a href="/guest/?view=grid{{ query_suffix }}" class="{{ 'active' if view == 'grid' }}">{{ t("view_grid") }}</a>
+      <a href="/guest/?view=table{{ query_suffix }}" class="{{ 'active' if view == 'table' }}">{{ t("view_table") }}</a>
+    </div>
   </div>
 
   <form method="get" action="/guest/" class="guest-toolbar">
@@ -27,7 +31,53 @@
     {% endif %}
   </form>
 
-  {% if rows %}
+  {% if not rows %}
+  <div class="guest-empty">{{ t("no_results") }}</div>
+
+  {% elif view == 'table' %}
+  <div class="guest-table-wrap">
+    {% for category_name, group in rows|groupby('model.category.name') %}
+    <details class="guest-cat-group" open>
+      <summary class="guest-cat-summary">
+        <span class="guest-cat-chevron" aria-hidden="true">▸</span>
+        <span class="guest-cat-name">{{ category_name }}</span>
+        <span class="guest-cat-count mono">{{ group|length }}</span>
+      </summary>
+      <div class="guest-table-scroll">
+        <table class="guest-table">
+          <thead>
+            <tr>
+              <th class="guest-table-thumb-col"></th>
+              <th>{{ t("model_name") }}</th>
+              <th>{{ t("manufacturer") }}</th>
+              <th class="guest-table-num-col">{{ t("available_for_period") if start and end and can_search_dates else t("in_stock") }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in group %}
+            <tr class="guest-table-row" onclick="location.href='/guest/models/{{ row.model.id }}{% if start and end %}?start={{ start }}&end={{ end }}{% endif %}'">
+              <td class="guest-table-thumb-col">
+                <div class="guest-table-thumb">
+                  {% if row.model.photo_path %}
+                  <img src="/guest/models/{{ row.model.id }}/photo" alt="{{ row.model.name }}">
+                  {% endif %}
+                </div>
+              </td>
+              <td>{{ row.model.name }}</td>
+              <td class="guest-muted">{{ row.model.manufacturer or "—" }}</td>
+              <td class="guest-table-num-col mono">
+                {% if row.available is not none %}{{ row.available }} / {{ row.total }}{% else %}{{ row.total }}{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+
+  {% else %}
   <div class="guest-grid">
     {% for row in rows %}
     <a class="guest-card" href="/guest/models/{{ row.model.id }}{% if start and end %}?start={{ start }}&end={{ end }}{% endif %}">
@@ -54,8 +104,6 @@
     </a>
     {% endfor %}
   </div>
-  {% else %}
-  <div class="guest-empty">{{ t("no_results") }}</div>
   {% endif %}
 </div>
 {% endblock %}

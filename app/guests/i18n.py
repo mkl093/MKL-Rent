@@ -33,6 +33,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Incorrect username or password.",
         "ru": "Неверный логин или пароль.",
     },
+    "error_missing_credentials": {
+        "en": "Please enter your username and password.",
+        "ru": "Введите логин и пароль.",
+    },
     "error_too_many_attempts": {
         "en": "Too many attempts. Please try again later.",
         "ru": "Слишком много попыток входа. Повторите позже.",
@@ -61,6 +65,9 @@ STRINGS: dict[str, dict[str, str]] = {
     "in_stock": {"en": "In stock", "ru": "На складе"},
     "free_of": {"en": "free of", "ru": "своб. из"},
     "no_results": {"en": "No equipment found.", "ru": "Оборудование не найдено."},
+    "view_grid": {"en": "Grid", "ru": "Плитка"},
+    "view_table": {"en": "Table", "ru": "Таблица"},
+    "model_name": {"en": "Model", "ru": "Модель"},
     "back_to_catalog": {"en": "Back to catalog", "ru": "Назад в каталог"},
     "manufacturer": {"en": "Manufacturer", "ru": "Производитель"},
     "unit_weight": {"en": "Unit weight (case excl.)", "ru": "Вес единицы (без кейса)"},

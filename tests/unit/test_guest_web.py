@@ -82,6 +82,23 @@ def test_guest_login_wrong_password(client, db_session, guest_login):
     assert "Incorrect username or password" in resp.text
 
 
+def test_guest_login_empty_fields_does_not_crash(client, db_session):
+    """Пустые логин/пароль раньше приводили к 422 от FastAPI вместо страницы с ошибкой."""
+    token = _csrf(client, "/guest/login")
+    resp = client.post(
+        "/guest/login",
+        data={"username": "", "password": "", "csrf_token": token},
+    )
+    assert resp.status_code == 200
+    assert "Please enter your username and password" in resp.text
+
+
+def test_guest_login_missing_fields_does_not_crash(client, db_session):
+    token = _csrf(client, "/guest/login")
+    resp = client.post("/guest/login", data={"csrf_token": token})
+    assert resp.status_code == 200
+
+
 def test_guest_login_success_redirects_to_catalog(client, db_session):
     guest_service.create_guest(db_session, "acme", "pass123", "Acme Events")
     token = _csrf(client, "/guest/login")

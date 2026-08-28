@@ -1,4 +1,5 @@
 {% extends "guest/base_guest.html" %}
+{% import "guest/_brand.html" as brand %}
 {% block content %}
 <div class="guest-login-wrap">
   <div class="guest-login-card">
@@ -9,7 +10,10 @@
       </div>
     </div>
 
-    <h1 class="guest-login-title">{{ company.company_name if company and company.company_name else "Guest portal" }}</h1>
+    <div class="guest-login-brand">
+      {{ brand.logo("guest-logo") }}
+      <h1 class="guest-login-title">{{ company.company_name if company and company.company_name else "Guest portal" }}</h1>
+    </div>
 
     <form method="post" action="/guest/login" novalidate>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

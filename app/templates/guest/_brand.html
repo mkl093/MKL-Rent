@@ -1,0 +1,1 @@
+{% macro logo(css_class="") %}{% if company and company.logo_path %}<img src="/guest/branding/logo" alt="{{ company.company_name or '' }}" class="{{ css_class }}">{% else %}<img src="{{ static_url('favicon.svg') }}" alt="" class="{{ css_class }}">{% endif %}{% endmacro %}

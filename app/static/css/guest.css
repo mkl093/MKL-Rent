@@ -51,7 +51,9 @@ body.guest {
   box-shadow: var(--shadow);
   padding: 32px 28px 26px;
 }
-.guest-login-title { text-align: center; font-size: 21px; margin: 18px 0 26px; }
+.guest-login-brand { display: flex; flex-direction: column; align-items: center; margin: 18px 0 26px; }
+.guest-login-brand .guest-logo { height: 48px; width: auto; max-width: 220px; object-fit: contain; margin-bottom: 12px; }
+.guest-login-title { text-align: center; font-size: 21px; margin: 0; }
 .guest-header-row { display: flex; align-items: center; justify-content: flex-end; }
 .guest-lang-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; background: var(--paper-sunken); }
 .guest-lang-toggle a {
@@ -74,7 +76,8 @@ body.guest {
 /* --- Шапка приложения --- */
 .guest-topbar { display: flex; align-items: center; gap: 16px; padding: 12px 24px; border-bottom: 1px solid var(--line); background: var(--paper-raised); position: sticky; top: 0; z-index: 5; flex-wrap: wrap; }
 .guest-topbar .guest-spacer { flex: 1; }
-.guest-brand { font-weight: 700; font-size: 14.5px; text-decoration: none; color: var(--ink); }
+.guest-brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14.5px; text-decoration: none; color: var(--ink); }
+.guest-brand-icon { height: 22px; width: 22px; object-fit: contain; border-radius: 4px; }
 .guest-client-name { font-size: 13px; color: var(--muted); }
 .guest-logout-btn { font-size: 13px; color: var(--muted); border: 1px solid var(--line); padding: 6px 11px; border-radius: 8px; background: var(--paper); cursor: pointer; }
 .guest-logout-btn:hover { border-color: #b23a2e; color: #b23a2e; }
@@ -83,6 +86,10 @@ body.guest {
 .guest-page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
 .guest-page-head h1 { font-size: 22px; }
 .guest-page-head .guest-hint { color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+.guest-view-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; background: var(--paper-sunken); flex: none; }
+.guest-view-toggle a { border: none; background: transparent; padding: 6px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 700; color: var(--muted); cursor: pointer; text-decoration: none; }
+.guest-view-toggle a.active { background: var(--paper-raised); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
 
 /* --- Панель поиска --- */
 .guest-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--paper-raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 20px; }
@@ -110,6 +117,36 @@ body.guest {
 .guest-avail-chip.ok { background: var(--ok-soft); color: var(--ok); }
 .guest-avail-chip.warn { background: var(--warn-soft); color: var(--warn); }
 .guest-empty { color: var(--muted); padding: 40px 0; text-align: center; }
+
+/* --- Табличный вид (группировка по категориям, сворачиваемые секции) --- */
+.guest-table-wrap { display: flex; flex-direction: column; gap: 12px; }
+.guest-cat-group { background: var(--paper-raised); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.guest-cat-summary {
+  list-style: none;
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; cursor: pointer; user-select: none;
+  background: var(--paper-sunken); font-weight: 700; font-size: 14px;
+}
+.guest-cat-summary::-webkit-details-marker { display: none; }
+.guest-cat-chevron { display: inline-block; transition: transform 0.12s; color: var(--muted); font-size: 12px; }
+details[open] > .guest-cat-summary .guest-cat-chevron { transform: rotate(90deg); }
+.guest-cat-name { flex: 1; }
+.guest-cat-count { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.guest-table-scroll { overflow-x: auto; }
+.guest-table { width: 100%; border-collapse: collapse; }
+.guest-table th {
+  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);
+  font-weight: 600; padding: 8px 16px; border-bottom: 1px solid var(--line);
+}
+.guest-table-num-col { text-align: right; }
+.guest-table-thumb-col { width: 52px; }
+.guest-table-row { cursor: pointer; }
+.guest-table-row:hover { background: var(--paper-sunken); }
+.guest-table td { padding: 8px 16px; border-bottom: 1px solid var(--line); font-size: 13.5px; vertical-align: middle; }
+.guest-table tbody tr:last-child td { border-bottom: none; }
+.guest-table-thumb { width: 36px; height: 36px; border-radius: 6px; background: var(--paper-sunken); overflow: hidden; }
+.guest-table-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.guest-muted { color: var(--muted); }
 
 /* --- Карточка модели --- */
 .guest-back-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); text-decoration: none; margin-bottom: 14px; }

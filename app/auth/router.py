@@ -30,14 +30,20 @@ def login_form(request: Request, db: Session = Depends(get_db)):
 @router.post("/login", dependencies=[Depends(verify_csrf)])
 def login_submit(
     request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
+    username: str = Form(""),
+    password: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    username = username.strip()
+    if not username or not password:
+        flash(request, "Введите логин и пароль.", "danger")
+        return render(
+            request, "auth/login.html", {"page_title": "Вход", "username": username}, db=db
+        )
     try:
         user = service.authenticate(
             db,
-            username.strip(),
+            username,
             password,
             ip_address=request.client.host if request.client else None,
         )
