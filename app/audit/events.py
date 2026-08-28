@@ -32,6 +32,7 @@ class EventType(enum.StrEnum):
     ASSIGNMENT_MANAGE = "assignment_manage"
     EQUIPMENT_MANUAL = "equipment_manual"
     EQUIPMENT_CERTIFICATE = "equipment_certificate"
+    INVENTORY_IMPORT = "inventory_import"
     VEHICLE_MANAGE = "vehicle_manage"
     TRANSPORT_ASSIGN = "transport_assign"
 
@@ -64,6 +65,7 @@ class EventType(enum.StrEnum):
             "assignment_manage": "Занятость сотрудника",
             "equipment_manual": "Мануал модели",
             "equipment_certificate": "Сертификат испытаний",
+            "inventory_import": "Импорт из Excel",
             "vehicle_manage": "Справочник машин",
             "transport_assign": "Распределение по транспорту",
         }[self.value]

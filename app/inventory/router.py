@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import io
+import re
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.audit.events import EventType
 from app.audit.service import log as audit_log
 from app.auth.models import User
+from app.backup import service as backup_service
 from app.config import get_settings
 from app.database import get_db
 from app.dependencies import redirect, render, require_login, verify_csrf
@@ -30,6 +33,7 @@ from app.inventory.services import accessories as acc_service
 from app.inventory.services import categories as cat_service
 from app.inventory.services import documents as doc_service
 from app.inventory.services import equipment as eq_service
+from app.inventory.services import excel_io
 from app.inventory.services import items as item_service
 from app.inventory.services import kits as kit_service
 from app.projects.availability import compute_availability, compute_planboard, occupancy_detail
@@ -1120,6 +1124,89 @@ def model_delete(
             return redirect("/inventory")
         except cat_service.InUse as exc:
             flash(request, str(exc), "danger")
+    return redirect(f"/inventory/models/{model_id}")
+
+
+_UNSAFE_EXPORT_CHARS = re.compile(r'[\\/:*?"<>|]')
+
+
+@router.get("/models/{model_id}/export")
+def model_export(
+    model_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    model = eq_service.get_model(db, model_id)
+    if model is None:
+        raise HTTPException(status_code=404)
+    wb = excel_io.build_workbook(db, model)
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    safe_name = _UNSAFE_EXPORT_CHARS.sub("_", model.name).strip() or "model"
+    filename = f"model_{model.id}_{safe_name}.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/models/{model_id}/import", dependencies=[Depends(verify_csrf)])
+async def model_import(
+    request: Request,
+    model_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    model = eq_service.get_model(db, model_id)
+    if model is None:
+        return redirect("/inventory")
+    if not file.filename:
+        flash(request, "Файл не выбран.", "warning")
+        return redirect(f"/inventory/models/{model_id}")
+
+    try:
+        backup_service.create_backup()
+        backup_service.apply_retention()
+    except backup_service.BackupError as exc:
+        flash(
+            request,
+            f"Импорт отменён: не удалось создать резервную копию перед импортом ({exc}).",
+            "danger",
+        )
+        return redirect(f"/inventory/models/{model_id}")
+
+    raw = await file.read()
+    try:
+        result = excel_io.import_workbook(db, model, raw, user.id)
+    except excel_io.ImportValidationError as exc:
+        shown = exc.errors[:15]
+        rest = len(exc.errors) - len(shown)
+        message = "Импорт отменён, ошибки: " + "; ".join(shown)
+        if rest > 0:
+            message += f"; и ещё {rest}"
+        flash(request, message, "danger")
+        return redirect(f"/inventory/models/{model_id}")
+
+    parts = []
+    if result.items_created:
+        parts.append(f"добавлено единиц: {result.items_created}")
+    if result.items_updated:
+        parts.append(f"обновлено единиц: {result.items_updated}")
+    if result.quantity_adjusted:
+        parts.append("изменён остаток")
+    summary = ("; " + ", ".join(parts)) if parts else ""
+    audit_log(
+        db,
+        user,
+        EventType.INVENTORY_IMPORT,
+        f"Импорт из Excel для «{model.name}»{summary}",
+        object_type="equipment_model",
+        object_id=model.id,
+    )
+    flash(request, "Импорт выполнен: параметры модели обновлены" + summary + ".", "success")
     return redirect(f"/inventory/models/{model_id}")
 
 

@@ -8,12 +8,38 @@
   <div class="d-flex flex-wrap gap-2">
     <a href="/inventory" class="btn btn-outline-secondary">К складу</a>
     <a href="/inventory/models/{{ model.id }}/edit" class="btn btn-outline-primary">Редактировать</a>
+    <a href="/inventory/models/{{ model.id }}/export" class="btn btn-outline-secondary">Экспорт в Excel</a>
+    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#import-model-modal">Импорт из Excel</button>
     <form method="post" action="/inventory/models/{{ model.id }}/archive" class="m-0">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="archived" value="{{ 0 if model.is_archived else 1 }}">
       <button class="btn btn-outline-warning">{{ "Из архива" if model.is_archived else "В архив" }}</button>
     </form>
     <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#delete-model-modal">Удалить</button>
+  </div>
+</div>
+
+<!-- Модалка: импорт из Excel -->
+<div class="modal fade" id="import-model-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="/inventory/models/{{ model.id }}/import" enctype="multipart/form-data" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Импорт из Excel</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-2">Загрузите файл, ранее выгруженный кнопкой «Экспорт в Excel» для этой же модели (по ID). Обновятся параметры модели и единицы оборудования; единицы, отсутствующие в файле, не удаляются.</p>
+          <p class="text-secondary small mb-3">Перед импортом автоматически создаётся резервная копия. Если в файле есть ошибки — импорт полностью отменяется.</p>
+          <input type="file" class="form-control" name="file" accept=".xlsx" required>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+          <button type="submit" class="btn btn-primary">Импортировать</button>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 

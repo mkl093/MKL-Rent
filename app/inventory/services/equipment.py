@@ -39,7 +39,7 @@ class ModelFilters:
     sort: str = "category"  # category | name | manufacturer
 
 
-def _apply_accessories(model: EquipmentModel, items: list[AccessoryQty]) -> None:
+def apply_accessories(model: EquipmentModel, items: list[AccessoryQty]) -> None:
     """Синхронизировать комплектацию модели с набором (accessory_id, quantity).
 
     Сверка «на месте» (обновить количество / удалить отсутствующие / добавить новые),
@@ -62,7 +62,7 @@ def _apply_accessories(model: EquipmentModel, items: list[AccessoryQty]) -> None
             )
 
 
-def _apply_packing(model: EquipmentModel, data: PackingRuleInput | None) -> None:
+def apply_packing(model: EquipmentModel, data: PackingRuleInput | None) -> None:
     if data is None:
         model.packing = None
         return
@@ -101,8 +101,8 @@ def create_model(db: Session, data: EquipmentModelCreate) -> EquipmentModel:
         power_peak_w=data.power_peak_w,
         power_nominal_w=data.power_nominal_w,
     )
-    _apply_packing(model, data.packing)
-    _apply_accessories(model, data.accessories)
+    apply_packing(model, data.packing)
+    apply_accessories(model, data.accessories)
     db.add(model)
     db.commit()
     db.refresh(model)
@@ -136,8 +136,8 @@ def update_model(db: Session, model: EquipmentModel, data: EquipmentModelUpdate)
     model.power_nominal_w = data.power_nominal_w
     # Остаток (число единиц) меняется отдельной операцией с историей (ТЗ §10),
     # поэтому total_quantity при редактировании модели не трогаем.
-    _apply_packing(model, data.packing)
-    _apply_accessories(model, data.accessories)
+    apply_packing(model, data.packing)
+    apply_accessories(model, data.accessories)
     db.commit()
     db.refresh(model)
     return model
