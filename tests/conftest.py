@@ -22,6 +22,7 @@ from app.auth import models as _auth_models  # noqa: F401
 from app.database import Base, get_db
 from app.documents import models as _documents_models  # noqa: F401
 from app.estimates import models as _estimates_models  # noqa: F401
+from app.guests import models as _guests_models  # noqa: F401
 from app.inventory import models as _inventory_models  # noqa: F401
 from app.numbering import models as _numbering_models  # noqa: F401
 from app.packing import models as _packing_models  # noqa: F401

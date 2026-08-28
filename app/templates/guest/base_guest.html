@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ page_title }}{% endblock %}{% if company and company.company_name %} · {{ company.company_name }}{% endif %}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ static_url('favicon.svg') }}">
+  <link rel="stylesheet" href="{{ static_url('css/app.css') }}">
+  <link rel="stylesheet" href="{{ static_url('css/guest.css') }}">
+</head>
+<body class="guest">
+{% if guest %}
+  <div class="guest-topbar">
+    <a class="guest-brand" href="/guest/">{{ company.company_name if company and company.company_name else "Guest portal" }}</a>
+    <div class="guest-spacer"></div>
+    <span class="guest-client-name">{{ guest.display_name }}</span>
+    <div class="guest-lang-toggle">
+      <a href="/guest/lang/en?next={{ request.url.path }}" class="{{ 'active' if lang == 'en' }}">EN</a>
+      <a href="/guest/lang/ru?next={{ request.url.path }}" class="{{ 'active' if lang == 'ru' }}">RU</a>
+    </div>
+    <form method="post" action="/guest/logout" class="m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="guest-logout-btn" type="submit">{{ t("log_out") }}</button>
+    </form>
+  </div>
+{% endif %}
+
+{% block content %}{% endblock %}
+
+{# Всегда на английском для гостей, независимо от выбранного языка интерфейса. #}
+<footer class="mkl-app-footer">Developed by MKL Labs</footer>
+</body>
+</html>

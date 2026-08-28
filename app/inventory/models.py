@@ -45,6 +45,9 @@ class Category(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Общий (не по-аккаунтно) переключатель: модели категории не видны ни
+    # одному гостевому аккаунту (гостевой портал — app/guests).
+    hidden_from_guests: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     subcategories: Mapped[list[Subcategory]] = relationship(
         back_populates="category",

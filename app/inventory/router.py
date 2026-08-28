@@ -666,6 +666,27 @@ def category_rename(
     return redirect("/inventory/categories")
 
 
+@router.post("/categories/{category_id}/hide-from-guests", dependencies=[Depends(verify_csrf)])
+def category_set_guest_visibility(
+    request: Request,
+    category_id: int,
+    hidden: int = Form(0),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    """Скрыть/показать категорию в гостевом портале (общий список — app/guests)."""
+    category = db.get(cat_service.Category, category_id)
+    if category:
+        category.hidden_from_guests = bool(hidden)
+        db.commit()
+        flash(
+            request,
+            "Категория скрыта от гостей." if hidden else "Категория снова видна гостям.",
+            "info",
+        )
+    return redirect("/inventory/categories")
+
+
 @router.post("/categories/{category_id}/subcategories", dependencies=[Depends(verify_csrf)])
 def subcategory_create(
     request: Request,

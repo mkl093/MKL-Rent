@@ -1,0 +1,61 @@
+{% extends "guest/base_guest.html" %}
+{% block content %}
+<div class="guest-content">
+  <div class="guest-page-head">
+    <div>
+      <h1>{{ t("catalog_title") }}</h1>
+      <div class="guest-hint">{{ t("catalog_hint_search") if can_search_dates else t("catalog_hint_view") }}</div>
+    </div>
+  </div>
+
+  <form method="get" action="/guest/" class="guest-toolbar">
+    <div class="guest-search-input">
+      <input type="text" name="q" value="{{ q }}" placeholder="{{ t('search_placeholder') }}">
+    </div>
+    {% if can_search_dates %}
+    <div class="guest-date-field">
+      <label>{{ t("date_from") }}</label>
+      <input type="date" name="start" value="{{ start }}" lang="{{ date_locale }}">
+    </div>
+    <div class="guest-date-field">
+      <label>{{ t("date_to") }}</label>
+      <input type="date" name="end" value="{{ end }}" lang="{{ date_locale }}">
+    </div>
+    <button type="submit" class="guest-btn-check">{{ t("check_availability") }}</button>
+    {% else %}
+    <button type="submit" class="guest-btn-check">{{ t("search_button") }}</button>
+    {% endif %}
+  </form>
+
+  {% if rows %}
+  <div class="guest-grid">
+    {% for row in rows %}
+    <a class="guest-card" href="/guest/models/{{ row.model.id }}{% if start and end %}?start={{ start }}&end={{ end }}{% endif %}">
+      <div class="guest-thumb">
+        {% if row.model.photo_path %}
+        <img src="/guest/models/{{ row.model.id }}/photo" alt="{{ row.model.name }}">
+        {% else %}
+        <span>{{ t("no_photo") }}</span>
+        {% endif %}
+      </div>
+      <div class="guest-body">
+        <div class="guest-name">{{ row.model.name }}</div>
+        {% if row.model.manufacturer %}<div class="guest-maker">{{ row.model.manufacturer }}</div>{% endif %}
+        <div class="guest-stats">
+          {% if row.available is not none %}
+          <span class="guest-stat-num mono">{{ row.available }} / {{ row.total }}</span>
+          <span class="guest-avail-chip {{ 'ok' if row.available > 0 else 'warn' }}">{{ row.available }} {{ t("free_of") }} {{ row.total }}</span>
+          {% else %}
+          <span class="guest-stat-num mono">{{ row.total }}</span>
+          <span class="guest-stat-label">{{ t("in_stock") }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="guest-empty">{{ t("no_results") }}</div>
+  {% endif %}
+</div>
+{% endblock %}

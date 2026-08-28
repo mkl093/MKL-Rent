@@ -1,0 +1,130 @@
+/* Гостевой портал (app/guests) — отдельная визуальная идентичность от админки
+ * персонала (та использует Bootstrap). Здесь не подключается bootstrap.min.css,
+ * поэтому классы вроде .card/.btn-primary ниже — свои, не bootstrap-овские.
+ * Шрифты — системный стек (проект не грузит веб-шрифты ни в одном разделе). */
+
+:root {
+  --ink: #191a1d;
+  --paper: #f5f3ee;
+  --paper-raised: #ffffff;
+  --paper-sunken: #ece8df;
+  --line: #ddd8cf;
+  --muted: #6b6a63;
+  --accent: #1f6f78;
+  --accent-strong: #14515a;
+  --accent-soft: #e3eeee;
+  --ok: #3f8f5f;
+  --ok-soft: #e3f1e7;
+  --warn: #b9862c;
+  --warn-soft: #f6ecd9;
+  --shadow: 0 1px 2px rgba(25, 26, 29, 0.06), 0 8px 24px -12px rgba(25, 26, 29, 0.18);
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+body.guest {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.guest h1, .guest h2 { font-weight: 700; letter-spacing: -0.01em; margin: 0; }
+.guest .mono { font-variant-numeric: tabular-nums; }
+
+/* --- Логин --- */
+.guest-login-wrap {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 20px;
+  background: radial-gradient(1200px 500px at 15% -10%, var(--accent-soft), transparent 60%), var(--paper);
+}
+.guest-login-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 32px 28px 26px;
+}
+.guest-login-title { text-align: center; font-size: 21px; margin: 18px 0 26px; }
+.guest-header-row { display: flex; align-items: center; justify-content: flex-end; }
+.guest-lang-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; background: var(--paper-sunken); }
+.guest-lang-toggle a {
+  border: none; background: transparent; padding: 5px 11px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer; text-decoration: none;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+.guest-lang-toggle a.active { background: var(--paper-raised); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+
+.guest-field { margin-top: 16px; }
+.guest-field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+.guest-field input { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font-size: 14.5px; }
+.guest-field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+
+.guest-btn-primary { margin-top: 22px; width: 100%; padding: 11px 14px; background: var(--accent); color: #fff; border: none; border-radius: 8px; font-weight: 700; font-size: 14.5px; cursor: pointer; }
+.guest-btn-primary:hover { background: var(--accent-strong); }
+.guest-foot { margin-top: 18px; font-size: 12.5px; color: var(--muted); text-align: center; }
+.guest-alert { margin-top: 16px; padding: 10px 12px; border-radius: 8px; background: var(--warn-soft); color: var(--warn); font-size: 13.5px; }
+
+/* --- Шапка приложения --- */
+.guest-topbar { display: flex; align-items: center; gap: 16px; padding: 12px 24px; border-bottom: 1px solid var(--line); background: var(--paper-raised); position: sticky; top: 0; z-index: 5; flex-wrap: wrap; }
+.guest-topbar .guest-spacer { flex: 1; }
+.guest-brand { font-weight: 700; font-size: 14.5px; text-decoration: none; color: var(--ink); }
+.guest-client-name { font-size: 13px; color: var(--muted); }
+.guest-logout-btn { font-size: 13px; color: var(--muted); border: 1px solid var(--line); padding: 6px 11px; border-radius: 8px; background: var(--paper); cursor: pointer; }
+.guest-logout-btn:hover { border-color: #b23a2e; color: #b23a2e; }
+
+.guest-content { padding: 22px 24px 60px; max-width: 1180px; margin: 0 auto; width: 100%; }
+.guest-page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.guest-page-head h1 { font-size: 22px; }
+.guest-page-head .guest-hint { color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+/* --- Панель поиска --- */
+.guest-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--paper-raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 20px; }
+.guest-toolbar form { display: contents; }
+.guest-search-input { flex: 1 1 220px; }
+.guest-search-input input { width: 100%; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font-size: 14px; }
+.guest-date-field { display: flex; align-items: center; gap: 6px; }
+.guest-date-field label { font-size: 11.5px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.guest-date-field input { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font-family: ui-monospace, monospace; font-size: 13px; }
+.guest-btn-check { padding: 9px 16px; border-radius: 8px; border: none; background: var(--ink); color: var(--paper); font-weight: 700; font-size: 13.5px; cursor: pointer; white-space: nowrap; }
+
+/* --- Каталог --- */
+.guest-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+.guest-card { background: var(--paper-raised); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; text-decoration: none; color: inherit; transition: transform 0.12s; }
+.guest-card:hover { transform: translateY(-2px); }
+.guest-card .guest-thumb { aspect-ratio: 4 / 3; background: var(--paper-sunken); display: grid; place-items: center; color: var(--muted); border-bottom: 1px solid var(--line); overflow: hidden; }
+.guest-card .guest-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.guest-card .guest-body { padding: 13px 14px 14px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.guest-card .guest-name { font-weight: 700; font-size: 15px; }
+.guest-card .guest-maker { font-size: 12.5px; color: var(--muted); }
+.guest-card .guest-stats { margin-top: auto; padding-top: 8px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }
+.guest-stat-num { font-family: ui-monospace, monospace; font-weight: 600; font-size: 14px; }
+.guest-stat-label { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.guest-avail-chip { font: 700 11px/1 ui-monospace, monospace; padding: 5px 9px; border-radius: 999px; }
+.guest-avail-chip.ok { background: var(--ok-soft); color: var(--ok); }
+.guest-avail-chip.warn { background: var(--warn-soft); color: var(--warn); }
+.guest-empty { color: var(--muted); padding: 40px 0; text-align: center; }
+
+/* --- Карточка модели --- */
+.guest-back-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); text-decoration: none; margin-bottom: 14px; }
+.guest-back-link:hover { color: var(--ink); }
+.guest-detail-wrap { display: grid; grid-template-columns: 1.1fr 1.4fr; gap: 28px; align-items: start; }
+@media (max-width: 820px) { .guest-detail-wrap { grid-template-columns: 1fr; } }
+.guest-detail-photo { aspect-ratio: 4 / 3; background: var(--paper-sunken); border: 1px solid var(--line); border-radius: var(--radius); display: grid; place-items: center; color: var(--muted); overflow: hidden; }
+.guest-detail-photo img { width: 100%; height: 100%; object-fit: cover; }
+.guest-detail-title { font-size: 24px; margin-bottom: 4px; }
+.guest-detail-maker { color: var(--muted); font-size: 14px; margin-bottom: 18px; }
+.guest-spec-table { width: 100%; border-collapse: collapse; }
+.guest-spec-table tr { border-bottom: 1px solid var(--line); }
+.guest-spec-table tr:last-child { border-bottom: none; }
+.guest-spec-table th { text-align: left; padding: 10px 0; font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; width: 44%; }
+.guest-spec-table td { padding: 10px 0; font-family: ui-monospace, monospace; font-size: 14px; text-align: right; }
+.guest-avail-box { margin-top: 20px; padding: 16px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--paper-raised); }
+.guest-avail-box .guest-row { display: flex; justify-content: space-between; align-items: center; }
+.guest-avail-box .guest-big-num { font-family: ui-monospace, monospace; font-size: 28px; font-weight: 600; }

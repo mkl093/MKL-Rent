@@ -35,6 +35,7 @@ class EventType(enum.StrEnum):
     INVENTORY_IMPORT = "inventory_import"
     VEHICLE_MANAGE = "vehicle_manage"
     TRANSPORT_ASSIGN = "transport_assign"
+    GUEST_MANAGE = "guest_manage"
 
     @property
     def label(self) -> str:
@@ -68,4 +69,5 @@ class EventType(enum.StrEnum):
             "inventory_import": "Импорт из Excel",
             "vehicle_manage": "Справочник машин",
             "transport_assign": "Распределение по транспорту",
+            "guest_manage": "Управление гостевым доступом",
         }[self.value]

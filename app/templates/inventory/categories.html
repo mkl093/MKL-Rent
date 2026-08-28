@@ -21,6 +21,13 @@
       <div class="col"><input class="form-control form-control-sm fw-semibold" name="name" value="{{ c.name }}" required aria-label="Название категории"></div>
       <div class="col-auto"><button class="btn btn-sm btn-outline-primary">Переименовать</button></div>
     </form>
+    <form method="post" action="/inventory/categories/{{ c.id }}/hide-from-guests" class="m-0"
+          title="Модели этой категории не видны ни одному гостевому аккаунту">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="hidden" value="{{ 0 if c.hidden_from_guests else 1 }}">
+      <button class="btn btn-sm {{ 'btn-secondary' if c.hidden_from_guests else 'btn-outline-secondary' }}">
+        {{ "Скрыто от гостей" if c.hidden_from_guests else "Скрыть от гостей" }}</button>
+    </form>
     <form method="post" action="/inventory/categories/{{ c.id }}/delete" class="m-0"
           onsubmit="return confirm('Удалить категорию «{{ c.name }}»?')">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

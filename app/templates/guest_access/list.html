@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 m-0">Гостевой доступ</h1>
+  <a href="/inventory/categories" class="btn btn-outline-secondary">Скрыть категории от гостей →</a>
+</div>
+
+<div class="card mb-4"><div class="card-header">Новый гостевой аккаунт</div><div class="card-body">
+  <form method="post" action="/guest-access" class="row g-2 align-items-end">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="col-12 col-md-3"><label class="form-label small mb-0">Клиент</label>
+      <input class="form-control" name="display_name" placeholder="Название компании" required></div>
+    <div class="col-12 col-md-3"><label class="form-label small mb-0">Логин</label>
+      <input class="form-control" name="username" required></div>
+    <div class="col-12 col-md-3"><label class="form-label small mb-0">Пароль</label>
+      <input class="form-control" name="password" type="password" required></div>
+    <div class="col-12 col-md-2"><label class="form-label small mb-0">Уровень</label>
+      <select class="form-select" name="access_level">
+        <option value="1">1 — Просмотр</option>
+        <option value="2">2 — + Поиск на даты</option>
+      </select>
+    </div>
+    <div class="col-auto"><button class="btn btn-primary">Создать</button></div>
+  </form>
+</div></div>
+
+<div class="table-responsive">
+  <table class="table align-middle">
+    <thead><tr><th>Клиент</th><th>Логин</th><th>Уровень</th><th>Состояние</th><th>Последний вход</th><th class="text-end">Действия</th></tr></thead>
+    <tbody>
+      {% for g in guests %}
+      <tr>
+        <td class="fw-semibold">{{ g.display_name }}</td>
+        <td class="text-secondary">{{ g.username }}</td>
+        <td>
+          <form method="post" action="/guest-access/{{ g.id }}/level" class="d-flex gap-1 m-0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <select class="form-select form-select-sm" name="access_level" style="width:auto" onchange="this.form.requestSubmit()">
+              <option value="1" {{ "selected" if g.access_level == 1 }}>1 — Просмотр</option>
+              <option value="2" {{ "selected" if g.access_level == 2 }}>2 — + Поиск на даты</option>
+            </select>
+          </form>
+        </td>
+        <td>
+          {% if g.is_blocked %}<span class="badge text-bg-dark">заблокирован</span>
+          {% else %}<span class="badge text-bg-success">активен</span>{% endif %}
+          {% if g.locked_until %}<span class="badge text-bg-warning" title="Блокировка по попыткам входа">попытки входа</span>{% endif %}
+        </td>
+        <td class="text-secondary small">{{ format_datetime(g.last_login_at) if g.last_login_at else "—" }}</td>
+        <td>
+          <div class="d-flex flex-wrap gap-1 justify-content-end">
+            <form method="post" action="/guest-access/{{ g.id }}/password" class="d-flex gap-1 m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input class="form-control form-control-sm" name="password" type="password" placeholder="Новый пароль" required style="width:9rem">
+              <button class="btn btn-sm btn-outline-secondary">Сбросить пароль</button>
+            </form>
+            {% if g.locked_until %}
+            <form method="post" action="/guest-access/{{ g.id }}/unlock" class="m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-sm btn-outline-warning">Снять блок попыток</button>
+            </form>
+            {% endif %}
+            <form method="post" action="/guest-access/{{ g.id }}/block" class="m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="blocked" value="{{ 0 if g.is_blocked else 1 }}">
+              <button class="btn btn-sm btn-outline-{{ 'success' if g.is_blocked else 'dark' }}">
+                {{ "Разблокировать" if g.is_blocked else "Заблокировать" }}</button>
+            </form>
+            <form method="post" action="/guest-access/{{ g.id }}/delete" class="m-0"
+                  onsubmit="return confirm('Удалить гостевой аккаунт «{{ g.display_name }}»?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-sm btn-outline-danger">Удалить</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-secondary">Гостевых аккаунтов пока нет.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

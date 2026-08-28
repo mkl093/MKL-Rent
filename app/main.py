@@ -23,6 +23,8 @@ from app.database import get_db
 from app.dependencies import LoginRequired, require_login
 from app.documents import models as _documents_models  # noqa: F401
 from app.estimates import models as _estimates_models  # noqa: F401
+from app.guests import models as _guests_models  # noqa: F401
+from app.guests.dependencies import GuestLoginRequired
 from app.inventory import models as _inventory_models  # noqa: F401
 from app.numbering import models as _numbering_models  # noqa: F401
 from app.packing import models as _packing_models  # noqa: F401
@@ -105,6 +107,12 @@ def create_app() -> FastAPI:
     async def _login_required_handler(request: Request, exc: LoginRequired) -> RedirectResponse:
         return RedirectResponse(url="/login", status_code=303)
 
+    @app.exception_handler(GuestLoginRequired)
+    async def _guest_login_required_handler(
+        request: Request, exc: GuestLoginRequired
+    ) -> RedirectResponse:
+        return RedirectResponse(url="/guest/login", status_code=303)
+
     @app.get("/healthz", include_in_schema=False)
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
@@ -116,6 +124,8 @@ def create_app() -> FastAPI:
     from app.dashboard.router import router as dashboard_router
     from app.documents.router import router as documents_router
     from app.estimates.router import router as estimates_router
+    from app.guests.admin_router import router as guest_admin_router
+    from app.guests.router import router as guest_router
     from app.inventory.router import router as inventory_router
     from app.packing.router import router as packing_router
     from app.projects.router import router as projects_router
@@ -141,6 +151,8 @@ def create_app() -> FastAPI:
     app.include_router(users_router)
     app.include_router(audit_router)
     app.include_router(backup_router)
+    app.include_router(guest_router)
+    app.include_router(guest_admin_router)
 
     return app
 

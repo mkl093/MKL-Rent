@@ -1,0 +1,57 @@
+{% extends "guest/base_guest.html" %}
+{% block content %}
+<div class="guest-content">
+  <a class="guest-back-link" href="/guest/">← {{ t("back_to_catalog") }}</a>
+
+  <div class="guest-detail-wrap">
+    <div class="guest-detail-photo">
+      {% if model.photo_path %}
+      <img src="/guest/models/{{ model.id }}/photo" alt="{{ model.name }}">
+      {% else %}
+      <span>{{ t("no_photo") }}</span>
+      {% endif %}
+    </div>
+
+    <div>
+      <h2 class="guest-detail-title">{{ model.name }}</h2>
+      {% if model.manufacturer %}<div class="guest-detail-maker">{{ t("manufacturer") }} — {{ model.manufacturer }}</div>{% endif %}
+
+      <table class="guest-spec-table">
+        {% if model.manufacturer %}<tr><th>{{ t("manufacturer") }}</th><td>{{ model.manufacturer }}</td></tr>{% endif %}
+        <tr><th>{{ t("unit_weight") }}</th><td>{{ "%.3f"|format(model.weight_kg) }} kg</td></tr>
+        {% if model.has_power %}
+        <tr><th>{{ t("power_nominal") }}</th><td>{{ model.power_nominal_w }} W</td></tr>
+        <tr><th>{{ t("power_peak") }}</th><td>{{ model.power_peak_w }} W</td></tr>
+        {% endif %}
+        <tr><th>{{ t("category") }}</th><td>{{ model.category.name }}{% if model.subcategory %} / {{ model.subcategory.name }}{% endif %}</td></tr>
+      </table>
+
+      {% if can_search_dates %}
+      <form method="get" action="/guest/models/{{ model.id }}" class="guest-toolbar" style="margin-top:20px;">
+        <div class="guest-date-field">
+          <label>{{ t("date_from") }}</label>
+          <input type="date" name="start" value="{{ start }}" lang="{{ date_locale }}">
+        </div>
+        <div class="guest-date-field">
+          <label>{{ t("date_to") }}</label>
+          <input type="date" name="end" value="{{ end }}" lang="{{ date_locale }}">
+        </div>
+        <button type="submit" class="guest-btn-check">{{ t("check_availability") }}</button>
+      </form>
+      {% endif %}
+
+      <div class="guest-avail-box">
+        <div class="guest-row">
+          <div>
+            <div class="guest-stat-label">{{ t("available_for_period") if available is not none else t("total_at_warehouse") }}{% if available is not none %} {{ start }} – {{ end }}{% endif %}</div>
+            <div class="guest-big-num">
+              {% if available is not none %}{{ available }}<span style="font-size:15px;color:var(--muted);font-weight:500;"> / {{ total }} {{ t("total_at_warehouse")|lower }}</span>
+              {% else %}{{ total }}{% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

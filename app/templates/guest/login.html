@@ -1,0 +1,39 @@
+{% extends "guest/base_guest.html" %}
+{% block content %}
+<div class="guest-login-wrap">
+  <div class="guest-login-card">
+    <div class="guest-header-row">
+      <div class="guest-lang-toggle">
+        <a href="/guest/lang/en?next=/guest/login" class="{{ 'active' if lang == 'en' }}">EN</a>
+        <a href="/guest/lang/ru?next=/guest/login" class="{{ 'active' if lang == 'ru' }}">RU</a>
+      </div>
+    </div>
+
+    <h1 class="guest-login-title">{{ company.company_name if company and company.company_name else "Guest portal" }}</h1>
+
+    <form method="post" action="/guest/login" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="guest-field">
+        <label for="guest-username">{{ t("field_username") }}</label>
+        <input type="text" id="guest-username" name="username" value="{{ username or '' }}"
+               autocomplete="username" autofocus required>
+      </div>
+      <div class="guest-field">
+        <label for="guest-password">{{ t("field_password") }}</label>
+        <input type="password" id="guest-password" name="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="guest-btn-primary">{{ t("sign_in") }}</button>
+    </form>
+
+    {% if error %}<div class="guest-alert">{{ error }}</div>{% endif %}
+
+    <div class="guest-foot">
+      {% if company and company.company_name %}
+      {{ t("login_foot_named", company=company.company_name) }}
+      {% else %}
+      {{ t("login_foot_generic") }}
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
