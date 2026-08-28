@@ -63,7 +63,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "check_availability": {"en": "Check availability", "ru": "Проверить наличие"},
     "search_button": {"en": "Search", "ru": "Найти"},
     "in_stock": {"en": "In stock", "ru": "На складе"},
-    "free_of": {"en": "free of", "ru": "своб. из"},
     "no_results": {"en": "No equipment found.", "ru": "Оборудование не найдено."},
     "view_grid": {"en": "Grid", "ru": "Плитка"},
     "view_table": {"en": "Table", "ru": "Таблица"},

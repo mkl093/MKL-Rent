@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.dependencies import redirect, render, verify_csrf
 from app.guests import catalog as catalog_service
+from app.guests import icons as icons_service  # noqa: F401 — регистрирует Jinja-глобалы значков
 from app.guests import service as guest_service
 from app.guests.dependencies import GUEST_SESSION_KEY, get_current_guest, require_guest_login
 from app.guests.i18n import date_input_locale, get_lang, set_lang, translator
@@ -167,20 +168,25 @@ def catalog_page(
     can_search_dates = guest.access_level >= GUEST_LEVEL_AVAILABILITY
     view = view if view in ("grid", "table") else "grid"
 
-    period = _parse_period(start, end) if can_search_dates else None
+    models = catalog_service.visible_models(db, q)
 
-    rows = []
-    for model in catalog_service.visible_models(db, q):
-        available = None
-        if period:
-            available = catalog_service.available_for_period(db, model, *period)
-        rows.append(
+    # Остаток/доступность по каждой модели нужны только табличному виду —
+    # плитка показывает лишь категории, без этих (недешёвых на большом складе)
+    # запросов на модель. Фото моделей на списках не запрашиваются вовсе —
+    # только на карточке модели (см. model_photo ниже).
+    rows = None
+    if view == "table":
+        period = _parse_period(start, end) if can_search_dates else None
+        rows = [
             {
                 "model": model,
                 "total": catalog_service.total_stock(db, model),
-                "available": available,
+                "available": (
+                    catalog_service.available_for_period(db, model, *period) if period else None
+                ),
             }
-        )
+            for model in models
+        ]
 
     # Сохраняем поиск/даты в ссылках переключения вида (grid/table).
     preserved_params = {k: v for k, v in (("q", q), ("start", start), ("end", end)) if v}
@@ -195,6 +201,7 @@ def catalog_page(
             "lang": lang,
             "date_locale": date_input_locale(lang),
             "guest": guest,
+            "models": models,
             "rows": rows,
             "q": q or "",
             "start": start or "",

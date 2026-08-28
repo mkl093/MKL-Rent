@@ -130,7 +130,7 @@ def test_catalog_hides_archived_and_guest_hidden_categories(client, db_session, 
     db_session.commit()
 
     guest_login(client, db_session)
-    body = client.get("/guest/").text
+    body = client.get("/guest/", params={"view": "table"}).text
 
     assert model_a.name in body
     assert model_b.name not in body
@@ -152,7 +152,7 @@ def test_catalog_search_filters_by_name(client, db_session, guest_login):
         )
 
     guest_login(client, db_session)
-    body = client.get("/guest/", params={"q": "Прожектор"}).text
+    body = client.get("/guest/", params={"q": "Прожектор", "view": "table"}).text
 
     assert "Прожектор ML-1" in body
     assert "Пульт DMX" not in body
@@ -165,7 +165,9 @@ def test_level1_has_no_date_search_and_ignores_date_params(client, db_session, g
     _cat, model = _make_model(db_session, "Свет", "Прожектор", quantity=5)
     guest_login(client, db_session, level=GUEST_LEVEL_VIEW)
 
-    body = client.get("/guest/", params={"start": "2026-09-01", "end": "2026-09-05"}).text
+    body = client.get(
+        "/guest/", params={"start": "2026-09-01", "end": "2026-09-05", "view": "table"}
+    ).text
 
     # Дата-поля не отрисованы вообще — уровень не раскрывается клиенту.
     assert 'name="start"' not in body
@@ -176,7 +178,9 @@ def test_level2_shows_availability_for_period(client, db_session, guest_login):
     _cat, model = _make_model(db_session, "Свет", "Прожектор", quantity=5)
     guest_login(client, db_session, level=GUEST_LEVEL_AVAILABILITY)
 
-    body = client.get("/guest/", params={"start": "2026-09-01", "end": "2026-09-05"}).text
+    body = client.get(
+        "/guest/", params={"start": "2026-09-01", "end": "2026-09-05", "view": "table"}
+    ).text
 
     assert 'name="start"' in body
     assert "5 / 5" in body  # ничего не забронировано — всё свободно
@@ -196,7 +200,9 @@ def test_level2_deficit_shows_zero_not_negative(client, db_session, guest_login)
     db_session.commit()
 
     guest_login(client, db_session, level=GUEST_LEVEL_AVAILABILITY)
-    body = client.get("/guest/", params={"start": "2026-09-01", "end": "2026-09-05"}).text
+    body = client.get(
+        "/guest/", params={"start": "2026-09-01", "end": "2026-09-05", "view": "table"}
+    ).text
 
     assert "-3" not in body
     assert "0 / 5" in body
@@ -211,7 +217,34 @@ def test_no_level_wording_ever_shown_to_guest(client, db_session, guest_login):
     assert "level" not in body.lower()
 
 
-# --- Фото ---------------------------------------------------------------
+# --- Плитка / таблица / фото ---------------------------------------------
+
+
+def test_grid_view_shows_categories_not_models(client, db_session, guest_login):
+    """Плитка — это обзор категорий (для больших складов), не карточки моделей."""
+    _make_model(db_session, "Свет", "Прожектор ML-1")
+    guest_login(client, db_session)
+    body = client.get("/guest/").text  # view по умолчанию — grid
+
+    assert "Свет" in body
+    assert "Прожектор ML-1" not in body
+
+
+def test_lists_never_request_real_photos(client, db_session, guest_login):
+    """Фото модели грузится только на карточке модели — не на плитке и не в таблице
+    (у большого склада куча фото на одной странице ощутимо тормозила загрузку)."""
+    _cat, model = _make_model(db_session, "Свет", "Прожектор")
+    model.photo_path = "models/whatever.jpg"
+    db_session.commit()
+
+    guest_login(client, db_session)
+    grid_body = client.get("/guest/").text
+    table_body = client.get("/guest/", params={"view": "table"}).text
+    detail_body = client.get(f"/guest/models/{model.id}").text
+
+    assert "/photo" not in grid_body
+    assert "/photo" not in table_body
+    assert f"/guest/models/{model.id}/photo" in detail_body
 
 
 def test_photo_endpoint_hidden_for_guest_hidden_category(client, db_session, guest_login):

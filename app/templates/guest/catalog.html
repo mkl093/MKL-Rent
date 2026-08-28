@@ -31,13 +31,13 @@
     {% endif %}
   </form>
 
-  {% if not rows %}
+  {% if not models %}
   <div class="guest-empty">{{ t("no_results") }}</div>
 
   {% elif view == 'table' %}
   <div class="guest-table-wrap">
     {% for category_name, group in rows|groupby('model.category.name') %}
-    <details class="guest-cat-group" open>
+    <details class="guest-cat-group" id="cat-{{ loop.index }}" open>
       <summary class="guest-cat-summary">
         <span class="guest-cat-chevron" aria-hidden="true">▸</span>
         <span class="guest-cat-name">{{ category_name }}</span>
@@ -57,11 +57,7 @@
             {% for row in group %}
             <tr class="guest-table-row" onclick="location.href='/guest/models/{{ row.model.id }}{% if start and end %}?start={{ start }}&end={{ end }}{% endif %}'">
               <td class="guest-table-thumb-col">
-                <div class="guest-table-thumb">
-                  {% if row.model.photo_path %}
-                  <img src="/guest/models/{{ row.model.id }}/photo" alt="{{ row.model.name }}">
-                  {% endif %}
-                </div>
+                <div class="guest-table-thumb guest-mono-badge" style="background:{{ guest_monogram_color(row.model.name) }}">{{ guest_monogram_letters(row.model.name) }}</div>
               </td>
               <td>{{ row.model.name }}</td>
               <td class="guest-muted">{{ row.model.manufacturer or "—" }}</td>
@@ -78,29 +74,12 @@
   </div>
 
   {% else %}
-  <div class="guest-grid">
-    {% for row in rows %}
-    <a class="guest-card" href="/guest/models/{{ row.model.id }}{% if start and end %}?start={{ start }}&end={{ end }}{% endif %}">
-      <div class="guest-thumb">
-        {% if row.model.photo_path %}
-        <img src="/guest/models/{{ row.model.id }}/photo" alt="{{ row.model.name }}">
-        {% else %}
-        <span>{{ t("no_photo") }}</span>
-        {% endif %}
-      </div>
-      <div class="guest-body">
-        <div class="guest-name">{{ row.model.name }}</div>
-        {% if row.model.manufacturer %}<div class="guest-maker">{{ row.model.manufacturer }}</div>{% endif %}
-        <div class="guest-stats">
-          {% if row.available is not none %}
-          <span class="guest-stat-num mono">{{ row.available }} / {{ row.total }}</span>
-          <span class="guest-avail-chip {{ 'ok' if row.available > 0 else 'warn' }}">{{ row.available }} {{ t("free_of") }} {{ row.total }}</span>
-          {% else %}
-          <span class="guest-stat-num mono">{{ row.total }}</span>
-          <span class="guest-stat-label">{{ t("in_stock") }}</span>
-          {% endif %}
-        </div>
-      </div>
+  <div class="guest-cat-grid">
+    {% for category_name, group in models|groupby('category.name') %}
+    <a class="guest-cat-tile" href="/guest/?view=table{{ query_suffix }}#cat-{{ loop.index }}">
+      <div class="guest-cat-tile-icon guest-mono-badge" style="background:{{ guest_monogram_color(category_name) }}">{{ guest_monogram_letters(category_name) }}</div>
+      <div class="guest-cat-tile-name">{{ category_name }}</div>
+      <div class="guest-cat-tile-count mono">{{ group|length }}</div>
     </a>
     {% endfor %}
   </div>
