@@ -28,6 +28,17 @@
   </div>
 </form>
 
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {% if not only_added %}active{% endif %}"
+       href="/projects/{{ project.id }}/estimate/add?q={{ q|urlencode }}&category_id={{ filters.category_id or '' }}">Весь каталог</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if only_added %}active{% endif %}"
+       href="/projects/{{ project.id }}/estimate/add?only=added&q={{ q|urlencode }}&category_id={{ filters.category_id or '' }}">В смете{% if model_in_estimate or kit_in_estimate %} ({{ (model_in_estimate|length) + (kit_in_estimate|length) }}){% endif %}</a>
+  </li>
+</ul>
+
 <form method="post" action="/projects/{{ project.id }}/estimate/add">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="d-flex flex-wrap gap-3 align-items-center mb-2">
@@ -51,7 +62,7 @@
         {% for k in kits %}
         {% set ka = kit_availability.get(k.id) %}
         {% set in_est = k.id in kit_in_estimate %}
-        <tr>
+        <tr {% if in_est %}class="table-warning"{% endif %}>
           <td><input class="form-check-input" type="checkbox" name="selectkit_{{ k.id }}" value="1" {% if in_est %}disabled title="Уже в смете"{% endif %}></td>
           <td><a href="/inventory/kits/{{ k.id }}" target="_blank">{{ k.name }}</a>{% if in_est %} <span class="badge text-bg-secondary">в смете</span>{% endif %}</td>
           <td class="small text-secondary">{{ k.items|length }} ед.</td>
@@ -76,10 +87,11 @@
       <tbody>
         {% for m in models %}
         {% set av = availability.get(m.id) %}
-        <tr>
+        {% set in_est_qty = model_in_estimate.get(m.id) %}
+        <tr {% if in_est_qty %}class="table-warning"{% endif %}>
           <td><input class="form-check-input" type="checkbox" name="select_{{ m.id }}" value="1"></td>
           <td style="width:44px">{% if m.photo_path %}<img src="/media/{{ m.photo_path }}" width="36" height="36" class="rounded object-fit-cover" alt="">{% endif %}</td>
-          <td><a href="/inventory/models/{{ m.id }}" target="_blank">{{ m.name }}</a></td>
+          <td><a href="/inventory/models/{{ m.id }}" target="_blank">{{ m.name }}</a>{% if in_est_qty %} <span class="badge text-bg-warning text-dark">в смете: {{ in_est_qty }}</span>{% endif %}</td>
           <td>{{ m.manufacturer or "—" }}</td>
           <td>{{ m.accounting_type.label }}</td>
           <td>{{ m.packing.packing_type.label if m.has_packing else "—" }}</td>

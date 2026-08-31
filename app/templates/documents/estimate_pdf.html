@@ -77,10 +77,9 @@
 
   <table class="totals">
     <tr><td>{{ L.total }}</td><td class="num">{{ fmt_money(totals.subtotal) }}</td></tr>
-    {% if totals.has_discount %}
     <tr><td>{{ L.discount }} ({{ fmt_percent(totals.discount_percent) }})</td>
         <td class="num">−{{ fmt_money(totals.discount_amount) }}</td></tr>
-    {% endif %}
+    <tr><td>{{ L.after_discount }}</td><td class="num">{{ fmt_money(totals.after_discount) }}</td></tr>
     <tr><td>{{ L.vat }} ({{ fmt_percent(totals.vat_percent) }})</td>
         <td class="num">{{ fmt_money(totals.vat_amount) }}</td></tr>
     <tr class="grand"><td>{{ L.grand_total }}</td><td class="num">{{ fmt_money(totals.total) }}</td></tr>

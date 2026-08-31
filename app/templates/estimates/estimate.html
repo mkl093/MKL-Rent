@@ -138,11 +138,9 @@
         </form>
         {% endif %}
         <table class="table table-sm m-0">
-          <tr><td>Подытог</td><td class="text-end">{{ '%.2f'|format(totals.subtotal) }} €</td></tr>
-          {% if totals.has_discount %}
+          <tr><td>Подытог (до скидки)</td><td class="text-end">{{ '%.2f'|format(totals.subtotal) }} €</td></tr>
           <tr><td>Скидка ({{ totals.discount_percent }}%)</td><td class="text-end">−{{ '%.2f'|format(totals.discount_amount) }} €</td></tr>
-          <tr><td>После скидки</td><td class="text-end">{{ '%.2f'|format(totals.after_discount) }} €</td></tr>
-          {% endif %}
+          <tr><td>После скидки (без VAT)</td><td class="text-end">{{ '%.2f'|format(totals.after_discount) }} €</td></tr>
           <tr><td>VAT ({{ totals.vat_percent }}%)</td><td class="text-end">{{ '%.2f'|format(totals.vat_amount) }} €</td></tr>
           <tr class="fw-bold border-top"><td>Итого</td><td class="text-end">{{ '%.2f'|format(totals.total) }} €</td></tr>
         </table>

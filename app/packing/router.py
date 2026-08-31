@@ -211,6 +211,7 @@ def add_picker(
     q: str | None = None,
     category_id: str | None = None,
     subcategory_id: str | None = None,
+    only: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
@@ -228,6 +229,15 @@ def add_picker(
     models = eq_service.list_models(db, filters)
     kits = kit_service.list_kits(db)
     kit_in_packing = {ln.kit_id for ln in packing.lines if ln.kit_id is not None}
+    model_in_packing: dict[int, int] = {}
+    for ln in packing.lines:
+        if ln.model_id is not None:
+            model_in_packing[ln.model_id] = model_in_packing.get(ln.model_id, 0) + ln.planned_quantity
+
+    only_added = only == "added"
+    if only_added:
+        models = [m for m in models if m.id in model_in_packing]
+        kits = [k for k in kits if k.id in kit_in_packing]
 
     availability = {}
     kit_availability = {}
@@ -251,6 +261,8 @@ def add_picker(
             "models": models,
             "kits": kits,
             "kit_in_packing": kit_in_packing,
+            "model_in_packing": model_in_packing,
+            "only_added": only_added,
             "availability": availability,
             "kit_availability": kit_availability,
             "categories": cat_service.list_categories(db),
