@@ -534,10 +534,15 @@ class ScanOutcome:
 def scan(
     db: Session, packing: PackingList, barcode: str, *, allow_over: bool = False
 ) -> ScanOutcome:
-    """Отсканировать штрих-код и сразу назначить экземпляр в нужную строку (ТЗ §22).
+    """Отсканировать штрих-код и сразу засчитать экземпляр в нужную строку (ТЗ §22).
 
-    Строка определяется по модели экземпляра. Проверки и вставка — в транзакции;
-    уникальный индекс (строка, экземпляр) защищает от конкурентного добавления.
+    Строка определяется по модели экземпляра — независимо от того, серийная она
+    или количественная: количественное оборудование тоже можно сканировать (по
+    решению пользователя), просто у него факт — число (line.quantity), а не
+    список экземпляров. Экземпляр в любом случае фиксируется в
+    packing_serial_items — штрих-код/S/N нужен для carnet даже у количественных
+    моделей. Проверки и вставка — в транзакции; уникальный индекс (строка,
+    экземпляр) защищает от конкурентного/повторного добавления.
     """
     barcode = barcode.strip()
     item = db.execute(
@@ -549,7 +554,7 @@ def scan(
     if item is None:
         return ScanOutcome(SerialResult.NOT_FOUND, barcode)
 
-    line = next((ln for ln in packing.lines if ln.is_serial and ln.model_id == item.model_id), None)
+    line = next((ln for ln in packing.lines if not ln.is_custom and ln.model_id == item.model_id), None)
     if line is None:
         return ScanOutcome(SerialResult.WRONG_MODEL, barcode, model_name=item.model.name)
 
@@ -588,6 +593,8 @@ def scan(
 
     si = PackingSerialItem(item_id=item.id, barcode=item.barcode, serial_number=item.serial_number)
     line.serial_items.append(si)
+    if not line.is_serial:
+        line.quantity += 1
     if line.has_packing:
         line.packed_quantity += 1
     try:
@@ -616,12 +623,16 @@ def scan(
 
 
 def scan_add_new_model(db: Session, packing: PackingList, barcode: str) -> ScanOutcome:
-    """Подтверждённое добавление новой строки плана по сканированию (ТЗ §22).
+    """Подтверждённое (или массовое) добавление новой строки плана по сканированию (ТЗ §22).
 
     Вызывается, когда пользователь сканирует экземпляр модели, которой ещё нет
-    в packing-листе, и явно подтверждает создание новой строки (WRONG_MODEL →
-    кнопка «Добавить»). План новой строки = 1, экземпляр сразу назначается
-    фактом — план и факт совпадают, «сверх плана» здесь не требуется.
+    в packing-листе — как для серийного, так и для количественного оборудования
+    (сканирование количественного разрешено пользователем, см. чат). Для новой
+    строки план=факт=1 — add_model() для количественной модели уже выставляет
+    факт=план по умолчанию, поэтому счётчик здесь не наращиваем повторно, только
+    фиксируем экземпляр в packing_serial_items (штрих-код нужен для carnet). Для
+    строки, уже существующей на момент вызова (гонка параллельных сканов), факт
+    наращиваем на 1, как и в scan().
     """
     barcode = barcode.strip()
     item = db.execute(
@@ -632,10 +643,6 @@ def scan_add_new_model(db: Session, packing: PackingList, barcode: str) -> ScanO
     ).scalars().first()
     if item is None:
         return ScanOutcome(SerialResult.NOT_FOUND, barcode)
-    if item.model.accounting_type != AccountingType.SERIAL:
-        # Количественное оборудование не сканируется (ТЗ §40 п.3) — новую строку
-        # по штрих-коду для него не заводим.
-        return ScanOutcome(SerialResult.WRONG_MODEL, barcode, model_name=item.model.name)
     if not item.is_usable:
         return ScanOutcome(SerialResult.BLOCKED, barcode, model_name=item.model.name)
 
@@ -651,14 +658,20 @@ def scan_add_new_model(db: Session, packing: PackingList, barcode: str) -> ScanO
             fact=line.fact_quantity,
         )
 
-    line = next((ln for ln in packing.lines if ln.is_serial and ln.model_id == item.model_id), None)
-    if line is None:
+    line = next((ln for ln in packing.lines if not ln.is_custom and ln.model_id == item.model_id), None)
+    is_new_line = line is None
+    if is_new_line:
         line = add_model(db, packing, item.model, 1)
 
     si = PackingSerialItem(item_id=item.id, barcode=item.barcode, serial_number=item.serial_number)
     line.serial_items.append(si)
-    if line.has_packing:
-        line.packed_quantity += 1
+    if line.is_serial:
+        if line.has_packing:
+            line.packed_quantity += 1
+    elif not is_new_line:
+        line.quantity += 1
+        if line.has_packing:
+            line.packed_quantity += 1
     try:
         db.commit()
     except IntegrityError:  # конкурентное добавление того же экземпляра (ТЗ §22)

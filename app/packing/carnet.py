@@ -49,10 +49,10 @@ def _serial_text(barcodes: list[str]) -> str:
 
 
 def _model_line_row(line: PackingLine, model: EquipmentModel | None, qty: int) -> CarnetRow:
-    if line.is_serial:
-        serial_text = _serial_text([si.barcode for si in line.serial_items])
-    else:
-        serial_text = "NSN"
+    # Количественное оборудование, добавленное/дособранное сканом, тоже несёт
+    # штрих-коды в packing_serial_items — используем их и здесь, не только у
+    # серийных строк (line.is_serial=False не значит «без штрих-кодов»).
+    serial_text = _serial_text([si.barcode for si in line.serial_items])
     desc = line.name
     if model and model.manufacturer:
         desc += f", {model.manufacturer}"

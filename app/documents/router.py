@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import io
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.audit.events import EventType
@@ -17,6 +18,8 @@ from app.database import get_db
 from app.dependencies import redirect, render, require_login, verify_csrf
 from app.documents import builder
 from app.documents.enums import DocumentType, Language
+from app.packing import carnet
+from app.packing.service import get_packing
 from app.projects.service import get_project
 from app.templating import flash
 
@@ -41,9 +44,36 @@ def documents_page(
             "page_title": "Документы",
             "project": project,
             "statuses": builder.status(db, project),
+            "carnet_available": get_packing(db, project) is not None,
         },
         db=db,
         user=user,
+    )
+
+
+@router.get("/carnet")
+def carnet_export(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    """Экспорт паккинг-листа в формате ATA Carnet General List (Excel)."""
+    project = get_project(db, project_id)
+    if project is None:
+        raise HTTPException(status_code=404)
+    packing = get_packing(db, project)
+    if packing is None:
+        raise HTTPException(status_code=404)
+
+    rows = carnet.build_rows(db, packing)
+    wb = carnet.build_workbook(project, packing, rows)
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="carnet_{packing.number}.xlsx"'},
     )
 
 
