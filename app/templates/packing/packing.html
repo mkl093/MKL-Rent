@@ -47,6 +47,51 @@
 </div>
 {% endif %}
 
+{% if estimate_sync_items %}
+<div class="alert alert-info d-flex flex-wrap justify-content-between align-items-center gap-2">
+  <div>Факт packing-листа расходится со сметой ({{ estimate_sync_items|length }} поз.).
+    {% for it in estimate_sync_items %}<div class="small">{{ it.name }}: смета {{ it.estimate_quantity }} → факт {{ it.fact_quantity }}{% if it.is_new %} (новая строка){% endif %}</div>{% endfor %}
+  </div>
+  {% if editable %}
+  <button type="button" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#estimate-sync-modal">Обновить смету по факту</button>
+  {% endif %}
+</div>
+
+<div class="modal fade" id="estimate-sync-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ base }}/estimate-sync" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Обновить смету по факту</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+        </div>
+        <div class="modal-body">
+          <p>Отметьте позиции, которые нужно перенести в смету по факту packing-листа. Действие меняет стоимость сметы.</p>
+          <div class="mb-2">
+            {% for it in estimate_sync_items %}
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="items" value="{{ it.key }}"
+                     id="estimate-sync-item-{{ loop.index }}" checked>
+              <label class="form-check-label small" for="estimate-sync-item-{{ loop.index }}">
+                {{ it.name }}: {{ it.estimate_quantity }} → {{ it.fact_quantity }}{% if it.is_new %} (новая строка){% endif %}
+              </label>
+            </div>
+            {% endfor %}
+          </div>
+          <label class="form-label small" for="estimate-sync-confirm-input">Чтобы подтвердить, введите <code>update</code></label>
+          <input type="text" class="form-control" id="estimate-sync-confirm-input" autocomplete="off">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+          <button type="submit" class="btn btn-warning" id="estimate-sync-confirm-btn" disabled>Обновить смету</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% if not editable %}<div class="alert alert-info">Проект в архиве — packing-лист только для просмотра.</div>{% endif %}
 
 {# --- Строки по группам (ТЗ §17.3) --- #}
@@ -266,4 +311,10 @@
     {% endif %}
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% if estimate_sync_items %}
+<script src="{{ static_url('js/estimate-sync-confirm.js') }}"></script>
+{% endif %}
 {% endblock %}

@@ -454,6 +454,118 @@ def test_custom_estimate_line_skip_packing_checkbox(env):
     assert not any(ln.name == "Доставка" for ln in packing.lines)
 
 
+# --- Обновление сметы по факту packing-листа (обратная синхронизация) ---
+
+
+def test_estimate_sync_updates_existing_lines(env):
+    """Факт packing-листа (меньше/больше плана) переносится в количество строки сметы."""
+    db, project, qty_model, serial_model = env
+    packing = service.create_from_estimate(db, project)
+
+    qty_line = next(ln for ln in packing.lines if ln.model_id == qty_model.id)
+    service.update_quantity_line(db, qty_line, fact_quantity=7, packed_quantity=0, comment=None)
+
+    serial_line = next(ln for ln in packing.lines if ln.model_id == serial_model.id)
+    item_service.create_item(db, serial_model, EquipmentItemInput(barcode="ES1"), user_id=None)
+    service.add_serial_item(db, serial_line, "ES1")
+
+    items = service.estimate_discrepancies(db, project, packing)
+    assert any(
+        it.model_id == qty_model.id and it.estimate_quantity == 10 and it.fact_quantity == 7
+        for it in items
+    )
+    assert any(
+        it.model_id == serial_model.id and it.estimate_quantity == 2 and it.fact_quantity == 1
+        for it in items
+    )
+
+    service.apply_estimate_sync(db, project, packing, {it.key for it in items})
+    estimate = est_service.get_estimate(db, project)
+    qty_est_line = next(ln for ln in estimate.lines if ln.model_id == qty_model.id)
+    serial_est_line = next(ln for ln in estimate.lines if ln.model_id == serial_model.id)
+    assert qty_est_line.quantity == 7
+    assert serial_est_line.quantity == 1
+    assert not service.estimate_discrepancies(db, project, packing)
+
+
+def test_estimate_sync_applies_only_selected_items(env):
+    """Не отмеченные пользователем позиции синхронизация не трогает (экспорт не всегда весь)."""
+    db, project, qty_model, serial_model = env
+    packing = service.create_from_estimate(db, project)
+
+    qty_line = next(ln for ln in packing.lines if ln.model_id == qty_model.id)
+    service.update_quantity_line(db, qty_line, fact_quantity=7, packed_quantity=0, comment=None)
+
+    serial_line = next(ln for ln in packing.lines if ln.model_id == serial_model.id)
+    item_service.create_item(db, serial_model, EquipmentItemInput(barcode="ES2"), user_id=None)
+    service.add_serial_item(db, serial_line, "ES2")
+
+    items = service.estimate_discrepancies(db, project, packing)
+    qty_item = next(it for it in items if it.model_id == qty_model.id)
+
+    applied = service.apply_estimate_sync(db, project, packing, {qty_item.key})
+    assert len(applied) == 1
+    assert applied[0].model_id == qty_model.id
+
+    estimate = est_service.get_estimate(db, project)
+    qty_est_line = next(ln for ln in estimate.lines if ln.model_id == qty_model.id)
+    serial_est_line = next(ln for ln in estimate.lines if ln.model_id == serial_model.id)
+    assert qty_est_line.quantity == 7
+    assert serial_est_line.quantity == 2  # не отмечена — осталась прежней
+
+    remaining = service.estimate_discrepancies(db, project, packing)
+    assert len(remaining) == 1
+    assert remaining[0].model_id == serial_model.id
+
+
+def test_estimate_sync_creates_new_line_for_manual_addition(env):
+    """Модель, добавленная в packing вручную (сверх сметы), создаёт новую строку сметы."""
+    db, project, qty_model, serial_model = env
+    packing = service.create_from_estimate(db, project)
+    other = eq_service.create_model(
+        db,
+        EquipmentModelCreate(
+            category_id=qty_model.category_id,
+            name="Ручная модель",
+            accounting_type=AccountingType.QUANTITY,
+            total_quantity=5,
+        ),
+    )
+    service.add_model(db, packing, other, 3)
+
+    items = service.estimate_discrepancies(db, project, packing)
+    new_item = next(it for it in items if it.model_id == other.id)
+    assert new_item.is_new
+    assert new_item.fact_quantity == 3
+
+    service.apply_estimate_sync(db, project, packing, {it.key for it in items})
+    estimate = est_service.get_estimate(db, project)
+    est_line = next(ln for ln in estimate.lines if ln.model_id == other.id)
+    assert est_line.quantity == 3
+
+
+def test_estimate_sync_ignores_lines_without_packing_counterpart(env):
+    """Строка сметы без соответствующей позиции в packing-листе синхронизацией не трогается."""
+    db, project, qty_model, serial_model = env
+    packing = service.create_from_estimate(db, project)
+    estimate = est_service.get_estimate(db, project)
+    other = eq_service.create_model(
+        db,
+        EquipmentModelCreate(
+            category_id=qty_model.category_id,
+            name="Не в packing",
+            accounting_type=AccountingType.QUANTITY,
+            total_quantity=5,
+        ),
+    )
+    # other добавлена в смету уже после создания packing-листа — в packing её нет.
+    est_service.add_model(db, estimate, project, other, 4)
+    assert not any(ln.model_id == other.id for ln in packing.lines)
+
+    items = service.estimate_discrepancies(db, project, packing)
+    assert not any(it.model_id == other.id for it in items)
+
+
 # --- Интеграция с удалением проекта (ТЗ §13.7) --------------------------
 
 

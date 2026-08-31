@@ -14,6 +14,7 @@ from app.audit.service import log as audit_log
 from app.auth.models import User
 from app.database import get_db
 from app.dependencies import redirect, render, require_login, verify_csrf
+from app.estimates.service import get_estimate
 from app.inventory.enums import AccountingType, ItemStatus
 from app.inventory.models import EquipmentItem
 from app.inventory.services import categories as cat_service
@@ -136,6 +137,7 @@ def packing_page(
             "sync_removals_with_fact": [
                 ln for ln in service.sync_removals(db, project, packing) if ln.fact_quantity > 0
             ],
+            "estimate_sync_items": service.estimate_discrepancies(db, project, packing),
             "undercomplete": service.is_undercomplete(packing),
             "editable": editable,
             "PackingStatus": PackingStatus,
@@ -202,6 +204,39 @@ def packing_sync(
         object_id=packing.id,
     )
     flash(request, "План синхронизирован со сметой.", "success")
+    return redirect(f"/projects/{project_id}/packing")
+
+
+@router.post("/estimate-sync", dependencies=[Depends(verify_csrf)])
+async def packing_estimate_sync(
+    request: Request,
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    project, packing, editable = _load(db, project_id, require_editable=True)
+    if project is None or packing is None or not editable:
+        return redirect(f"/projects/{project_id}/packing")
+    form = await request.form()
+    selected_keys = set(form.getlist("items"))
+    if not selected_keys:
+        flash(request, "Не отмечено ни одной позиции для переноса в смету.", "warning")
+        return redirect(f"/projects/{project_id}/packing")
+    items = service.apply_estimate_sync(db, project, packing, selected_keys)
+    if items:
+        estimate = get_estimate(db, project)
+        audit_log(
+            db,
+            user,
+            EventType.ESTIMATE_CHANGE,
+            f"Смета {estimate.number if estimate else project.number}: количества обновлены"
+            f" по факту packing-листа {packing.number} — позиций {len(items)}",
+            object_type="estimate",
+            object_id=estimate.id if estimate else None,
+        )
+        flash(request, f"Смета обновлена по факту packing-листа: позиций {len(items)}.", "success")
+    else:
+        flash(request, "Расхождений нет — смета уже соответствует факту.", "info")
     return redirect(f"/projects/{project_id}/packing")
 
 

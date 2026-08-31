@@ -11,7 +11,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.estimates.models import EstimateLine
+from app.estimates.service import add_model as estimate_add_model
 from app.estimates.service import get_estimate
+from app.estimates.service import sync_reservations as estimate_sync_reservations
 from app.inventory.enums import AccountingType
 from app.inventory.models import EquipmentItem, EquipmentModel, Kit
 from app.inventory.services import kits as kit_service
@@ -364,6 +366,118 @@ def apply_sync(db: Session, project: Project, packing: PackingList, *, confirm_d
             line.quantity = est_line.quantity
 
     db.commit()
+
+
+# --- Обновление сметы по факту packing-листа (обратная синхронизация) ---
+
+
+@dataclass
+class EstimateSyncItem:
+    """Расхождение количества строки сметы с фактом packing-листа."""
+
+    estimate_line_id: int | None
+    model_id: int | None
+    name: str
+    estimate_quantity: int
+    fact_quantity: int
+    is_new: bool = False
+
+    @property
+    def key(self) -> str:
+        """Стабильный идентификатор позиции для чекбоксов выбора в форме подтверждения."""
+        return f"new:{self.model_id}" if self.is_new else f"line:{self.estimate_line_id}"
+
+
+def estimate_discrepancies(
+    db: Session, project: Project, packing: PackingList
+) -> list[EstimateSyncItem]:
+    """Расхождения количества в смете с фактом packing-листа.
+
+    В отличие от discrepancies() (смета → план packing-листа), здесь источник —
+    факт: сколько реально отсканировано/указано (line.fact_quantity). Складские
+    модели сравниваются по сумме факта всех их строк; произвольные — только те,
+    что созданы из сметы (estimate_line_id). Комплекты не участвуют — их
+    количество в смете всегда 1 («Комплект»). Позиции сметы без соответствующей
+    строки в packing-листе не считаются расхождением — packing может быть ещё
+    не собран.
+    """
+    estimate = get_estimate(db, project)
+    if estimate is None:
+        return []
+
+    fact_by_model: dict[int, int] = {}
+    for ln in packing.lines:
+        if not ln.is_custom and ln.model_id is not None:
+            fact_by_model[ln.model_id] = fact_by_model.get(ln.model_id, 0) + ln.fact_quantity
+
+    est_by_model = {
+        ln.model_id: ln
+        for ln in estimate.lines
+        if not ln.is_custom and not ln.is_kit and ln.model_id is not None
+    }
+
+    result: list[EstimateSyncItem] = []
+    for model_id, fact in fact_by_model.items():
+        line = est_by_model.get(model_id)
+        if line is None:
+            if fact > 0:
+                model = db.get(EquipmentModel, model_id)
+                if model is not None:
+                    result.append(EstimateSyncItem(None, model_id, model.name, 0, fact, is_new=True))
+        elif line.quantity != fact:
+            result.append(EstimateSyncItem(line.id, model_id, line.name, line.quantity, fact))
+
+    custom_by_est_id = {
+        ln.estimate_line_id: ln
+        for ln in packing.lines
+        if ln.is_custom and ln.estimate_line_id is not None
+    }
+    for est_line in estimate.lines:
+        if not est_line.is_custom:
+            continue
+        pl = custom_by_est_id.get(est_line.id)
+        if pl is not None and est_line.quantity != pl.fact_quantity:
+            result.append(
+                EstimateSyncItem(est_line.id, None, est_line.name, est_line.quantity, pl.fact_quantity)
+            )
+
+    return result
+
+
+def apply_estimate_sync(
+    db: Session, project: Project, packing: PackingList, selected_keys: set[str]
+) -> list[EstimateSyncItem]:
+    """Обновить количества сметы по факту packing-листа — только для отмеченных позиций.
+
+    Заменяет количество расходящихся строк сметы фактом; для моделей, добавленных
+    в packing-лист (вручную или сканом) сверх сметы, создаёт новые строки сметы.
+    Позиции сметы без соответствующей строки в packing-листе не трогает. Экспорт
+    в смету идёт не всегда по всем позициям — применяются только те, чей
+    EstimateSyncItem.key присутствует в selected_keys (отмечены пользователем
+    в форме подтверждения).
+    """
+    items = [it for it in estimate_discrepancies(db, project, packing) if it.key in selected_keys]
+    if not items:
+        return items
+
+    estimate = get_estimate(db, project)
+    if estimate is None:
+        return items
+
+    by_id = {ln.id: ln for ln in estimate.lines}
+    for item in items:
+        if item.is_new:
+            model = db.get(EquipmentModel, item.model_id)
+            if model is not None:
+                estimate_add_model(db, estimate, project, model, item.fact_quantity, merge=False)
+        else:
+            line = by_id.get(item.estimate_line_id)
+            if line is not None:
+                line.quantity = item.fact_quantity
+
+    db.commit()
+    estimate_sync_reservations(db, project, estimate)
+    return items
 
 
 # --- Строки -------------------------------------------------------------
