@@ -20,6 +20,11 @@ class EventType(enum.StrEnum):
     PACKING_STATUS = "packing_status"
     PACKING_SCAN = "packing_scan"
     PACKING_SCAN_UNDO = "packing_scan_undo"
+    RETURN_CREATE = "return_create"
+    RETURN_SCAN = "return_scan"
+    RETURN_SCAN_UNDO = "return_scan_undo"
+    RETURN_CONDITION = "return_condition"
+    RETURN_STATUS = "return_status"
     INVENTORY_MODEL = "inventory_model"
     INVENTORY_QTY = "inventory_qty"
     INVENTORY_ITEM_STATUS = "inventory_item_status"
@@ -54,6 +59,11 @@ class EventType(enum.StrEnum):
             "packing_status": "Статус packing-листа",
             "packing_scan": "Комплектация (сканирование/добавление)",
             "packing_scan_undo": "Отмена сканирования",
+            "return_create": "Оформлен возврат",
+            "return_scan": "Приёмка (сканирование)",
+            "return_scan_undo": "Отмена сканирования приёмки",
+            "return_condition": "Состояние принятого экземпляра",
+            "return_status": "Статус приёмки",
             "inventory_model": "Модель оборудования",
             "inventory_qty": "Изменение остатка",
             "inventory_item_status": "Статус экземпляра",

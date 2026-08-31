@@ -27,6 +27,7 @@ from app.inventory import models as _inventory_models  # noqa: F401
 from app.numbering import models as _numbering_models  # noqa: F401
 from app.packing import models as _packing_models  # noqa: F401
 from app.projects import models as _projects_models  # noqa: F401
+from app.returns import models as _returns_models  # noqa: F401
 from app.settings import models as _settings_models  # noqa: F401
 from app.staff import models as _staff_models  # noqa: F401
 from app.transport import models as _transport_models  # noqa: F401

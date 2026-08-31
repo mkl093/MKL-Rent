@@ -1,29 +1,22 @@
 {% extends "base.html" %}
-{% set base = "/projects/%s/packing"|format(project.id) %}
+{% set base = "/projects/%s/returns"|format(project.id) %}
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-  <h1 class="h4 m-0">Сканирование · {{ packing.number }}</h1>
-  <a href="{{ base }}" class="btn btn-outline-secondary btn-sm">К packing-листу</a>
+  <h1 class="h4 m-0">Приёмка · {{ ret.number }}</h1>
+  <a href="{{ base }}" class="btn btn-outline-secondary btn-sm">К обзору</a>
 </div>
 
 <div class="card mb-2"><div class="card-body py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
-  <div>Прогресс: <span class="fs-5 fw-bold" id="progress">{{ total_fact }}</span> / {{ total_planned }}</div>
-  <div class="d-flex gap-3 align-items-center">
-    <div class="form-check m-0">
-      <input class="form-check-input" type="checkbox" id="allowOver">
-      <label class="form-check-label small" for="allowOver">Сверх плана</label>
-    </div>
-    <div class="form-check form-switch m-0">
-      <input class="form-check-input" type="checkbox" id="soundOn" checked>
-      <label class="form-check-label small" for="soundOn">Звук</label>
-    </div>
+  <div>Принято: <span class="fs-5 fw-bold" id="progress">{{ total_fact }}</span> / {{ total_expected }}</div>
+  <div class="form-check form-switch m-0">
+    <input class="form-check-input" type="checkbox" id="soundOn" checked>
+    <label class="form-check-label small" for="soundOn">Звук</label>
   </div>
 </div></div>
 
-{# Крупное визуальное подтверждение (ТЗ §22) #}
 <div id="banner" class="alert alert-secondary text-center py-4 mb-2" role="status" aria-live="assertive">
   <div class="fs-4 fw-bold" id="bannerTitle">Готов к сканированию</div>
-  <div id="bannerSub" class="small text-secondary">Наведите камеру на штрих-код или QR-дубликат (держите телефон на расстоянии ~15-20 см от кода) или введите штрих-код сканером</div>
+  <div id="bannerSub" class="small text-secondary">Наведите камеру на штрих-код возвращаемой единицы или введите штрих-код сканером</div>
 </div>
 
 {% if editable %}
@@ -43,6 +36,9 @@
   <button class="btn btn-outline-danger" id="undoBtn" type="button">Отменить последнее</button>
 </div>
 <div id="reader" class="mkl-scan-container mb-3"></div>
+
+<div class="small text-secondary mb-1">Последние сканы</div>
+<div id="feed" class="d-flex flex-column gap-1 mb-3"></div>
 {% else %}
 <div class="alert alert-info">Проект в архиве — сканирование недоступно.</div>
 {% endif %}
@@ -60,10 +56,9 @@
   const bSub = document.getElementById("bannerSub");
   const progress = document.getElementById("progress");
   const input = document.getElementById("barcode");
-  const allowOver = document.getElementById("allowOver");
   const soundOn = document.getElementById("soundOn");
+  const feed = document.getElementById("feed");
 
-  // Звук через WebAudio — без файлов (ТЗ §22, можно отключить).
   let actx = null;
   function beep(freq, dur, type) {
     if (!soundOn.checked) return;
@@ -82,20 +77,60 @@
   const warnSound = () => beep(520, 0.25, "square");
   const errSound = () => beep(200, 0.35, "sawtooth");
 
-  // localStorage: запоминаем настройку звука
-  soundOn.checked = localStorage.getItem("scanSound") !== "0";
-  soundOn.addEventListener("change", () => localStorage.setItem("scanSound", soundOn.checked ? "1" : "0"));
+  soundOn.checked = localStorage.getItem("returnScanSound") !== "0";
+  soundOn.addEventListener("change", () => localStorage.setItem("returnScanSound", soundOn.checked ? "1" : "0"));
 
   function show(kind, title, sub) {
-    const map = { ok: "alert-success", over: "alert-warning", err: "alert-danger", info: "alert-secondary" };
+    const map = { ok: "alert-success", warn: "alert-warning", err: "alert-danger", info: "alert-secondary" };
     banner.className = "alert text-center py-4 mb-2 " + map[kind];
     bTitle.textContent = title;
     bSub.textContent = sub || "";
   }
 
-  // Антидребезг остаётся здесь (не только в MklScan): submitScan — общая точка
-  // входа и для камеры, и для USB/BT-сканера-клавиатуры (ТЗ §21.3), а
-  // антидребезг в barcode-scan.js защищает только путь камеры.
+  const CONDITION_LABELS = { ok: "ОК", defect: "Есть дефект", repair: "В ремонт" };
+  const CONDITION_BADGE = { ok: "success", defect: "danger", repair: "warning" };
+
+  function feedItem(serialItemId, model, barcode) {
+    const row = document.createElement("div");
+    row.className = "d-flex align-items-center justify-content-between bg-body-tertiary rounded p-2";
+    row.dataset.si = serialItemId;
+    row.innerHTML =
+      '<div><div class="fw-semibold small">' + model + '</div>' +
+      '<div class="text-secondary" style="font-size:.75rem">' + barcode + '</div></div>' +
+      '<div class="d-flex align-items-center gap-2">' +
+      '<span class="badge text-bg-success cond-badge">ОК</span>' +
+      '<button type="button" class="btn btn-sm btn-outline-warning flag-btn" title="Отметить проблему">⚠</button>' +
+      '</div>' +
+      '<div class="cond-panel d-none w-100 mt-2 pt-2 border-top">' +
+      '<div class="btn-group btn-group-sm mb-1" role="group">' +
+      '<button type="button" class="btn btn-outline-success" data-c="ok">ОК</button>' +
+      '<button type="button" class="btn btn-outline-danger" data-c="defect">Дефект</button>' +
+      '<button type="button" class="btn btn-outline-warning" data-c="repair">Ремонт</button>' +
+      '</div>' +
+      '<input type="text" class="form-control form-control-sm cond-comment" placeholder="Комментарий">' +
+      '</div>';
+    row.classList.add("flex-wrap");
+    feed.prepend(row);
+
+    const badge = row.querySelector(".cond-badge");
+    const panel = row.querySelector(".cond-panel");
+    row.querySelector(".flag-btn").addEventListener("click", () => panel.classList.toggle("d-none"));
+    row.querySelectorAll("[data-c]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const c = btn.dataset.c;
+        const comment = row.querySelector(".cond-comment").value;
+        const body = new URLSearchParams();
+        body.set("condition", c);
+        body.set("comment", comment);
+        body.set("csrf_token", csrf);
+        await fetch(base + "/serial/" + serialItemId + "/condition", { method: "POST", body });
+        badge.textContent = CONDITION_LABELS[c];
+        badge.className = "badge text-bg-" + CONDITION_BADGE[c] + " cond-badge";
+        panel.classList.add("d-none");
+      });
+    });
+  }
+
   let lastCode = "", lastTime = 0;
   async function submitScan(code) {
     code = (code || "").trim();
@@ -106,13 +141,11 @@
 
     const body = new URLSearchParams();
     body.set("barcode", code);
-    body.set("allow_over", allowOver.checked ? "1" : "0");
     body.set("csrf_token", csrf);
     let r;
     try {
       r = await fetch(base + "/scan", { method: "POST", body });
     } catch (e) {
-      // Потеря связи (ТЗ §22): не засчитываем, предлагаем повтор
       show("err", "Нет связи", "Повторите сканирование");
       errSound();
       return;
@@ -120,14 +153,18 @@
     const d = await r.json();
     if (d.ok) {
       progress.textContent = d.total_fact;
-      if (d.over) { show("over", "Сверх плана: " + d.model, d.barcode); warnSound(); }
-      else { show("ok", d.model, d.barcode + " · " + d.fact + "/" + d.planned); okSound(); }
+      show("ok", d.model, d.barcode + " · " + d.fact + "/" + d.expected);
+      okSound();
+      feedItem(d.serial_item_id, d.model, d.barcode);
+    } else if (d.result === "already") {
+      show("warn", "Уже принято", d.barcode + " · " + d.model);
+      warnSound();
+    } else if (d.result === "not_in_list") {
+      show("warn", "Не выдавалось по этому проекту", d.model ? d.model + " · " + d.barcode : d.barcode);
+      warnSound();
     } else {
-      if (d.result === "over_plan") {
-        show("over", "Сверх плана — включите «Сверх плана»", d.barcode); warnSound();
-      } else {
-        show("err", d.message, d.barcode || ""); errSound();
-      }
+      show("err", d.message, d.barcode || "");
+      errSound();
     }
     input.value = ""; input.focus();
   }
@@ -141,12 +178,14 @@
     const body = new URLSearchParams(); body.set("csrf_token", csrf);
     const r = await fetch(base + "/scan/undo", { method: "POST", body });
     const d = await r.json();
-    if (d.ok) { progress.textContent = d.total_fact; show("info", "Отменено", d.message); }
-    else { show("err", d.message); }
+    if (d.ok) {
+      progress.textContent = d.total_fact;
+      show("info", "Отменено", d.message);
+      if (feed.firstChild) feed.removeChild(feed.firstChild);
+    } else { show("err", d.message); }
     input.focus();
   });
 
-  // Камера — поддержка iOS Safari / Android Chrome (ТЗ §21.3, §24)
   const reader = document.getElementById("reader");
   let scanner = null, camOn = false;
   const camBtn = document.getElementById("camToggle");

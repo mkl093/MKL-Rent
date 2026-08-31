@@ -64,6 +64,18 @@ def _validate_actual_dates(shipped: date | None, returned: date | None) -> None:
         raise ValidationError("Дата возврата не может быть раньше даты отгрузки")
 
 
+def _validate_returned(db: Session, project: Project) -> None:
+    """Завершение проекта требует принятого возврата, если он был оформлен (ТЗ §56.6).
+
+    Если лист приёмки не создавался (packing-лист не вели), гейт не срабатывает —
+    иначе он блокировал бы проекты, не использующие эту часть процесса.
+    """
+    from app.returns.service import project_has_return, project_return_received
+
+    if project_has_return(db, project.id) and not project_return_received(db, project.id):
+        raise ValidationError("Сначала оформите возврат оборудования")
+
+
 def list_projects(
     db: Session, archived: bool = False, status_filter: str | None = None
 ) -> list[Project]:
@@ -415,6 +427,8 @@ def set_status(db: Session, project: Project, status: ProjectStatus) -> Project:
         project.shipped_date = _today()
     if status == ProjectStatus.COMPLETED and project.returned_date is None:
         project.returned_date = _today()
+    if status == ProjectStatus.COMPLETED:
+        _validate_returned(db, project)
     project.status = status
     db.commit()
     db.refresh(project)

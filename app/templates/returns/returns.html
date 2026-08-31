@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block content %}
+{% set base = "/projects/%s/returns"|format(project.id) %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h1 class="h3 m-0">Возврат {{ ret.number }}
+      <span class="badge text-bg-{{ ret.status.badge }} align-middle">{{ ret.status.label }}</span></h1>
+    <div class="text-secondary"><a href="/projects/{{ project.id }}">{{ project.number }} · {{ project.name }}</a></div>
+  </div>
+  <div class="d-flex gap-2">
+    {% if editable %}<a href="{{ base }}/scan" class="btn btn-primary">Сканировать</a>{% endif %}
+    <a href="/projects/{{ project.id }}/packing" class="btn btn-outline-secondary">Packing-лист</a>
+    <a href="/projects/{{ project.id }}" class="btn btn-outline-secondary">К проекту</a>
+  </div>
+</div>
+
+{% if not editable %}<div class="alert alert-info">Проект в архиве — приёмка только для просмотра.</div>{% endif %}
+{% if not ret.lines %}<div class="alert alert-secondary">Строк нет — packing-лист был пуст. Можно сразу завершить приёмку.</div>{% endif %}
+
+{% set ns = namespace(group=None) %}
+{% for line in ordered %}
+  {% set gname = (line.category_name or "Без категории") ~ (" / " ~ line.subcategory_name if line.subcategory_name else "") %}
+  {% if gname != ns.group %}
+    {% if not loop.first %}</div></div>{% endif %}
+    {% set ns.group = gname %}
+    <div class="card mb-3"><div class="card-header fw-semibold">{{ gname }}</div>
+    <div class="card-body py-2">
+  {% endif %}
+
+  <div class="border-bottom py-2">
+    <div class="d-flex flex-wrap justify-content-between gap-2">
+      <div class="fw-semibold">
+        {% if line.is_kit %}<a href="/inventory/kits/{{ line.kit_id }}">{{ line.name }}</a> <span class="badge text-bg-info">комплект</span>
+        {% elif line.model_id %}<a href="/inventory/models/{{ line.model_id }}">{{ line.name }}</a>{% else %}{{ line.name }}{% endif %}
+        {% if line.missing_quantity > 0 %}<span class="badge text-bg-danger">недостача −{{ line.missing_quantity }}</span>{% endif %}
+      </div>
+      <div class="text-secondary small">ожидается {{ line.expected_quantity }} · принято {{ line.fact_quantity }}</div>
+    </div>
+
+    {% if line.is_serial %}
+    <div class="d-flex flex-wrap gap-1 my-1">
+      {% for si in line.serial_items %}
+      {% if si.is_returned %}
+      <span class="badge text-bg-{{ si.condition.badge }} border">
+        <code>{{ si.barcode }}</code> {{ si.condition.label }}
+      </span>
+      {% else %}
+      <span class="badge text-bg-secondary border">
+        <code>{{ si.barcode }}</code> не возвращено
+      </span>
+      {% endif %}
+      {% endfor %}
+    </div>
+    {% if editable %}
+    <div class="small text-secondary">Состояние отмечается на экране сканирования.</div>
+    {% endif %}
+    {% else %}
+    {% if editable %}
+    <form method="post" action="{{ base }}/lines/{{ line.id }}/quantity" class="row g-1 mt-1 align-items-center">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="col-auto"><label class="small">Принято</label>
+        <input class="form-control form-control-sm" name="returned_quantity" inputmode="numeric" value="{{ line.returned_quantity }}" style="width:6rem"></div>
+      <div class="col"><label class="small">Комментарий</label>
+        <input class="form-control form-control-sm" name="comment" value="{{ line.comment or '' }}"></div>
+      <div class="col-auto align-self-end"><button class="btn btn-sm btn-outline-primary">Сохранить</button></div>
+    </form>
+    {% endif %}
+    {% endif %}
+  </div>
+{% else %}
+{% endfor %}
+{% if ordered %}</div></div>{% endif %}
+
+{% if editable %}
+<div class="card"><div class="card-header">Статус приёмки</div><div class="card-body">
+  <form method="post" action="{{ base }}/status">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="d-flex gap-2 mb-2">
+      {% for st in ReturnStatus %}
+      <button class="btn btn-sm {{ 'btn-success' if st == ReturnStatus.RECEIVED else 'btn-outline-secondary' }}"
+              name="status" value="{{ st.value }}">{{ st.label }}</button>
+      {% endfor %}
+    </div>
+    {% if incomplete %}
+    <div class="alert alert-warning small mb-2">Недостача. Для «Принято» отметьте подтверждение и укажите причину.</div>
+    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="confirm_incomplete" value="1" id="ci">
+      <label class="form-check-label" for="ci">Подтверждаю недостачу</label></div>
+    <input class="form-control form-control-sm" name="shortage_comment" placeholder="Причина недостачи"
+           value="{{ ret.shortage_comment or '' }}">
+    {% endif %}
+  </form>
+</div></div>
+{% endif %}
+{% endblock %}

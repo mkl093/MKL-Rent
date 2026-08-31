@@ -19,10 +19,11 @@ class DocType(enum.StrEnum):
     PROJECT = "project"
     ESTIMATE = "estimate"
     PACKING = "packing"
+    RETURN = "return"
 
     @property
     def prefix(self) -> str:
-        return {"project": "PRJ", "estimate": "EST", "packing": "PL"}[self.value]
+        return {"project": "PRJ", "estimate": "EST", "packing": "PL", "return": "RET"}[self.value]
 
 
 class SequenceCounter(Base):

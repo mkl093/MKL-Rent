@@ -542,7 +542,11 @@ def project_status(
         return redirect(f"/projects/{project.id}")
     old_status = project.status
     old_dates = (project.shipped_date, project.returned_date)
-    service.set_status(db, project, new_status)
+    try:
+        service.set_status(db, project, new_status)
+    except service.ValidationError as exc:
+        flash(request, str(exc), "danger")
+        return redirect(f"/projects/{project.id}")
     audit_log(
         db,
         user,
