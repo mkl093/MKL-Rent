@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import io
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -20,7 +21,7 @@ from app.inventory.services import categories as cat_service
 from app.inventory.services import equipment as eq_service
 from app.inventory.services import items as item_service
 from app.inventory.services import kits as kit_service
-from app.packing import service
+from app.packing import carnet, service
 from app.packing.calc import compute_line
 from app.packing.enums import PackingStatus
 from app.packing.schemas import CustomPackingLine
@@ -203,6 +204,29 @@ def packing_sync(
     )
     flash(request, "План синхронизирован со сметой.", "success")
     return redirect(f"/projects/{project_id}/packing")
+
+
+@router.get("/carnet")
+def carnet_export(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    """Экспорт паккинг-листа в формате ATA Carnet General List (Excel)."""
+    project, packing, _ = _load(db, project_id)
+    if project is None or packing is None:
+        raise HTTPException(status_code=404)
+
+    rows = carnet.build_rows(db, packing)
+    wb = carnet.build_workbook(project, packing, rows)
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="carnet_{packing.number}.xlsx"'},
+    )
 
 
 @router.get("/add")

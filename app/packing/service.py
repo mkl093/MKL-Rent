@@ -632,6 +632,10 @@ def scan_add_new_model(db: Session, packing: PackingList, barcode: str) -> ScanO
     ).scalars().first()
     if item is None:
         return ScanOutcome(SerialResult.NOT_FOUND, barcode)
+    if item.model.accounting_type != AccountingType.SERIAL:
+        # Количественное оборудование не сканируется (ТЗ §40 п.3) — новую строку
+        # по штрих-коду для него не заводим.
+        return ScanOutcome(SerialResult.WRONG_MODEL, barcode, model_name=item.model.name)
     if not item.is_usable:
         return ScanOutcome(SerialResult.BLOCKED, barcode, model_name=item.model.name)
 
