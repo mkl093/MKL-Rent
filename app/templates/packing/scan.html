@@ -17,6 +17,10 @@
       <input class="form-check-input" type="checkbox" id="soundOn" checked>
       <label class="form-check-label small" for="soundOn">Звук</label>
     </div>
+    <div class="form-check form-switch m-0">
+      <input class="form-check-input" type="checkbox" id="bulkMode">
+      <label class="form-check-label small" for="bulkMode">Массовое добавление</label>
+    </div>
   </div>
 </div></div>
 
@@ -68,9 +72,13 @@
   const input = document.getElementById("barcode");
   const allowOver = document.getElementById("allowOver");
   const soundOn = document.getElementById("soundOn");
+  const bulkMode = document.getElementById("bulkMode");
   const confirmWrap = document.getElementById("confirmAddWrap");
   const confirmBtn = document.getElementById("confirmAddBtn");
   let pendingBarcode = null;
+
+  // Режим массового добавления не запоминаем между визитами — включать
+  // осознанно на сессию сканирования (защита от случайного автосоздания).
 
   // Звук через WebAudio — без файлов (ТЗ §22, можно отключить).
   let actx = null;
@@ -143,10 +151,14 @@
         hideConfirm();
         show("over", "Сверх плана — включите «Сверх плана»", d.barcode); warnSound();
       } else if (d.result === "wrong_model") {
-        pendingBarcode = d.barcode;
-        confirmWrap.classList.remove("d-none");
-        show("info", "Нет в списке: " + d.model, d.barcode + " — нажмите «Добавить», чтобы завести новую позицию");
-        warnSound();
+        if (bulkMode.checked) {
+          addAsNewModel(d.barcode);
+        } else {
+          pendingBarcode = d.barcode;
+          confirmWrap.classList.remove("d-none");
+          show("info", "Нет в списке: " + d.model, d.barcode + " — нажмите «Добавить», чтобы завести новую позицию");
+          warnSound();
+        }
       } else {
         hideConfirm();
         show("err", d.message, d.barcode || ""); errSound();
@@ -160,9 +172,7 @@
     submitScan(input.value);
   });
 
-  confirmBtn.addEventListener("click", async () => {
-    if (!pendingBarcode) return;
-    const code = pendingBarcode;
+  async function addAsNewModel(code) {
     hideConfirm();
     const body = new URLSearchParams();
     body.set("barcode", code);
@@ -184,6 +194,11 @@
       show("err", d.message, d.barcode || ""); errSound();
     }
     input.focus();
+  }
+
+  confirmBtn.addEventListener("click", () => {
+    if (!pendingBarcode) return;
+    addAsNewModel(pendingBarcode);
   });
 
   document.getElementById("undoBtn").addEventListener("click", async () => {
