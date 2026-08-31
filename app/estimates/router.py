@@ -17,6 +17,7 @@ from app.estimates.schemas import CustomLineInput, LineUpdate
 from app.inventory.enums import AccountingType
 from app.inventory.services import categories as cat_service
 from app.inventory.services import equipment as eq_service
+from app.inventory.services import items as item_service
 from app.inventory.services import kits as kit_service
 from app.projects.availability import compute_availability, compute_kit_availability
 from app.projects.service import get_project
@@ -92,6 +93,7 @@ def add_picker(
     category_id: str | None = None,
     subcategory_id: str | None = None,
     only: str | None = None,
+    barcode: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
@@ -105,13 +107,25 @@ def add_picker(
         subcategory_id=_opt_id(subcategory_id),
         archived=False,
     )
-    models = eq_service.list_models(db, filters)
     kits = kit_service.list_kits(db)
     kit_in_estimate = {ln.kit_id for ln in estimate.lines if ln.kit_id is not None}
     model_in_estimate: dict[int, int] = {}
     for ln in estimate.lines:
         if ln.model_id is not None:
             model_in_estimate[ln.model_id] = model_in_estimate.get(ln.model_id, 0) + ln.quantity
+
+    scanned_model_id = None
+    if barcode:
+        item = item_service.find_by_barcode(db, barcode)
+        if item is None:
+            flash(request, f"Штрих-код «{barcode.strip()}» не найден.", "warning")
+            models = eq_service.list_models(db, filters)
+        else:
+            models = [item.model]
+            kits = []
+            scanned_model_id = item.model_id
+    else:
+        models = eq_service.list_models(db, filters)
 
     only_added = only == "added"
     if only_added:
@@ -147,6 +161,7 @@ def add_picker(
             "categories": cat_service.list_categories(db),
             "filters": filters,
             "q": q or "",
+            "scanned_model_id": scanned_model_id,
             "AccountingType": AccountingType,
         },
         db=db,

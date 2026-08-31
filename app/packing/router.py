@@ -18,6 +18,7 @@ from app.inventory.enums import AccountingType, ItemStatus
 from app.inventory.models import EquipmentItem
 from app.inventory.services import categories as cat_service
 from app.inventory.services import equipment as eq_service
+from app.inventory.services import items as item_service
 from app.inventory.services import kits as kit_service
 from app.packing import service
 from app.packing.calc import compute_line
@@ -212,6 +213,7 @@ def add_picker(
     category_id: str | None = None,
     subcategory_id: str | None = None,
     only: str | None = None,
+    barcode: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
@@ -226,13 +228,25 @@ def add_picker(
         subcategory_id=_opt_id(subcategory_id),
         archived=False,
     )
-    models = eq_service.list_models(db, filters)
     kits = kit_service.list_kits(db)
     kit_in_packing = {ln.kit_id for ln in packing.lines if ln.kit_id is not None}
     model_in_packing: dict[int, int] = {}
     for ln in packing.lines:
         if ln.model_id is not None:
             model_in_packing[ln.model_id] = model_in_packing.get(ln.model_id, 0) + ln.planned_quantity
+
+    scanned_model_id = None
+    if barcode:
+        item = item_service.find_by_barcode(db, barcode)
+        if item is None:
+            flash(request, f"Штрих-код «{barcode.strip()}» не найден.", "warning")
+            models = eq_service.list_models(db, filters)
+        else:
+            models = [item.model]
+            kits = []
+            scanned_model_id = item.model_id
+    else:
+        models = eq_service.list_models(db, filters)
 
     only_added = only == "added"
     if only_added:
@@ -268,6 +282,7 @@ def add_picker(
             "categories": cat_service.list_categories(db),
             "filters": filters,
             "q": q or "",
+            "scanned_model_id": scanned_model_id,
             "editable": editable,
             "AccountingType": AccountingType,
         },
@@ -571,6 +586,51 @@ def scan_submit(
             "ok": outcome.ok,
             "result": outcome.result.value,
             "over": outcome.result == service.SerialResult.OVER_PLAN,
+            "message": _SCAN_MESSAGES[outcome.result],
+            "barcode": outcome.barcode,
+            "model": outcome.model_name,
+            "planned": outcome.planned,
+            "fact": outcome.fact,
+            "total_planned": sum(ln.planned_quantity for ln in serial_lines),
+            "total_fact": sum(ln.fact_quantity for ln in serial_lines),
+        }
+    )
+
+
+@router.post("/scan/add-model", dependencies=[Depends(verify_csrf)])
+def scan_add_model(
+    request: Request,
+    project_id: int,
+    barcode: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    """Подтверждённое добавление новой строки плана по сканированию (WRONG_MODEL → «Добавить»)."""
+    project, packing, editable = _load(db, project_id, require_editable=True)
+    if project is None or packing is None or not editable:
+        return JSONResponse({"ok": False, "message": "Недоступно"}, status_code=400)
+
+    outcome = service.scan_add_new_model(db, packing, barcode)
+    if outcome.ok and outcome.serial_item_id:
+        request.session["last_scan"] = {
+            "project_id": project_id,
+            "line_id": outcome.line_id,
+            "serial_item_id": outcome.serial_item_id,
+        }
+        audit_log(
+            db,
+            user,
+            EventType.PACKING_SCAN,
+            f"Packing {packing.number}: новая позиция по сканированию {outcome.barcode}"
+            f" — {outcome.model_name}",
+            object_type="packing_list",
+            object_id=packing.id,
+        )
+    serial_lines = [ln for ln in packing.lines if ln.is_serial]
+    return JSONResponse(
+        {
+            "ok": outcome.ok,
+            "result": outcome.result.value,
             "message": _SCAN_MESSAGES[outcome.result],
             "barcode": outcome.barcode,
             "model": outcome.model_name,

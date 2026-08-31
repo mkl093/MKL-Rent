@@ -28,6 +28,18 @@
   </div>
 </form>
 
+<form method="get" action="/projects/{{ project.id }}/packing/add" id="barcodeForm" class="card card-body mb-3" autocomplete="off">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-8">
+      <label class="form-label" for="barcode">Найти по штрих-коду экземпляра</label>
+      <input class="form-control" id="barcode" name="barcode" inputmode="text" placeholder="Отсканируйте или введите штрих-код">
+    </div>
+    <div class="col-6 col-md-2"><button class="btn btn-outline-primary w-100" type="submit">Найти</button></div>
+    <div class="col-6 col-md-2"><button class="btn btn-outline-secondary w-100" id="camToggle" type="button">Камера</button></div>
+  </div>
+  <div id="reader" class="mkl-scan-container mt-2 d-none"></div>
+</form>
+
 <ul class="nav nav-tabs mb-3">
   <li class="nav-item">
     <a class="nav-link {% if not only_added %}active{% endif %}"
@@ -79,15 +91,16 @@
         {% for m in models %}
         {% set av = availability.get(m.id) %}
         {% set in_p_qty = model_in_packing.get(m.id) %}
-        <tr {% if in_p_qty %}class="table-warning"{% endif %}>
-          <td><input class="form-check-input" type="checkbox" name="select_{{ m.id }}" value="1"></td>
+        {% set is_scanned = scanned_model_id == m.id %}
+        <tr {% if is_scanned %}class="table-info"{% elif in_p_qty %}class="table-warning"{% endif %}>
+          <td><input class="form-check-input" type="checkbox" name="select_{{ m.id }}" value="1" {% if is_scanned %}checked{% endif %}></td>
           <td style="width:44px">{% if m.photo_path %}<img src="/media/{{ m.photo_path }}" width="36" height="36" class="rounded object-fit-cover" alt="">{% endif %}</td>
-          <td><a href="/inventory/models/{{ m.id }}" target="_blank">{{ m.name }}</a>{% if in_p_qty %} <span class="badge text-bg-warning text-dark">в листе: {{ in_p_qty }}</span>{% endif %}</td>
+          <td><a href="/inventory/models/{{ m.id }}" target="_blank">{{ m.name }}</a>{% if is_scanned %} <span class="badge text-bg-info text-dark">по штрих-коду</span>{% endif %}{% if in_p_qty %} <span class="badge text-bg-warning text-dark">в листе: {{ in_p_qty }}</span>{% endif %}</td>
           <td>{{ m.manufacturer or "—" }}</td>
           <td>{{ m.accounting_type.label }}</td>
           <td>{{ m.packing.packing_type.label if m.has_packing else "—" }}</td>
           <td class="text-end {% if av and av.available <= 0 %}text-danger fw-semibold{% endif %}">{{ av.available if av is not none else "—" }}</td>
-          <td class="text-end"><input class="form-control form-control-sm text-end" name="qty_{{ m.id }}" inputmode="numeric" value="1" style="width:4.5rem"></td>
+          <td class="text-end"><input class="form-control form-control-sm text-end" name="qty_{{ m.id }}" inputmode="numeric" value="1" style="width:4.5rem" {% if is_scanned %}id="scannedQty" autofocus{% endif %}></td>
         </tr>
         {% endfor %}
       </tbody>
@@ -97,4 +110,52 @@
   <p class="text-secondary">Моделей не найдено.</p>
   {% endif %}
 </form>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ static_url('vendor/zxing.min.js') }}"></script>
+<script src="{{ static_url('js/barcode-scan.js') }}"></script>
+<script>
+(function () {
+  const form = document.getElementById("barcodeForm");
+  const input = document.getElementById("barcode");
+  const reader = document.getElementById("reader");
+  const camBtn = document.getElementById("camToggle");
+  let scanner = null, camOn = false, submitted = false;
+
+  function resetUi() {
+    scanner = null; camOn = false;
+    camBtn.textContent = "Камера";
+    reader.classList.add("d-none");
+  }
+
+  camBtn.addEventListener("click", async () => {
+    if (camOn) {
+      if (scanner) scanner.stop();
+      resetUi();
+      return;
+    }
+    reader.classList.remove("d-none");
+    try {
+      scanner = await window.MklScan.start(reader, {
+        formats: ["code_128", "code_39", "code_93", "codabar", "itf", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"],
+        onDecode: (text) => {
+          if (submitted) return;
+          submitted = true;
+          input.value = text;
+          scanner.stop();
+          form.submit();
+        },
+        onEnded: resetUi,
+      });
+      camOn = true; camBtn.textContent = "Выключить камеру";
+    } catch (e) {
+      resetUi();
+    }
+  });
+
+  const scannedQty = document.getElementById("scannedQty");
+  if (scannedQty) { scannedQty.focus(); scannedQty.select(); }
+})();
+</script>
 {% endblock %}

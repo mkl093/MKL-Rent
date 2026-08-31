@@ -615,6 +615,71 @@ def scan(
     )
 
 
+def scan_add_new_model(db: Session, packing: PackingList, barcode: str) -> ScanOutcome:
+    """Подтверждённое добавление новой строки плана по сканированию (ТЗ §22).
+
+    Вызывается, когда пользователь сканирует экземпляр модели, которой ещё нет
+    в packing-листе, и явно подтверждает создание новой строки (WRONG_MODEL →
+    кнопка «Добавить»). План новой строки = 1, экземпляр сразу назначается
+    фактом — план и факт совпадают, «сверх плана» здесь не требуется.
+    """
+    barcode = barcode.strip()
+    item = db.execute(
+        select(EquipmentItem)
+        .where(_sql_normalized_barcode(EquipmentItem.barcode) == normalize_barcode(barcode))
+        .order_by(EquipmentItem.id)
+        .limit(1)
+    ).scalars().first()
+    if item is None:
+        return ScanOutcome(SerialResult.NOT_FOUND, barcode)
+    if not item.is_usable:
+        return ScanOutcome(SerialResult.BLOCKED, barcode, model_name=item.model.name)
+
+    already = any(si.item_id == item.id for L in packing.lines for si in L.serial_items)
+    if already:
+        line = next(L for L in packing.lines if any(si.item_id == item.id for si in L.serial_items))
+        return ScanOutcome(
+            SerialResult.DUPLICATE,
+            barcode,
+            line_id=line.id,
+            model_name=line.name,
+            planned=line.planned_quantity,
+            fact=line.fact_quantity,
+        )
+
+    line = next((ln for ln in packing.lines if ln.is_serial and ln.model_id == item.model_id), None)
+    if line is None:
+        line = add_model(db, packing, item.model, 1)
+
+    si = PackingSerialItem(item_id=item.id, barcode=item.barcode, serial_number=item.serial_number)
+    line.serial_items.append(si)
+    if line.has_packing:
+        line.packed_quantity += 1
+    try:
+        db.commit()
+    except IntegrityError:  # конкурентное добавление того же экземпляра (ТЗ §22)
+        db.rollback()
+        db.refresh(line)
+        return ScanOutcome(
+            SerialResult.DUPLICATE,
+            barcode,
+            line_id=line.id,
+            model_name=line.name,
+            planned=line.planned_quantity,
+            fact=line.fact_quantity,
+        )
+    db.refresh(line)
+    return ScanOutcome(
+        SerialResult.OK,
+        barcode,
+        line_id=line.id,
+        serial_item_id=si.id,
+        model_name=line.name,
+        planned=line.planned_quantity,
+        fact=line.fact_quantity,
+    )
+
+
 def add_custom_line(db: Session, packing: PackingList, data: CustomPackingLine) -> PackingLine:
     """Дополнительная позиция: вес/объём учитываются, бронь — нет (ТЗ §17.9)."""
     sort_order = max((ln.sort_order for ln in packing.lines), default=0) + 1
