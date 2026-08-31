@@ -24,6 +24,8 @@ class EventType(enum.StrEnum):
     RETURN_SCAN = "return_scan"
     RETURN_SCAN_UNDO = "return_scan_undo"
     RETURN_CONDITION = "return_condition"
+    RETURN_SUBSTITUTE = "return_substitute"
+    RETURN_ACCEPT_ALL = "return_accept_all"
     RETURN_STATUS = "return_status"
     INVENTORY_MODEL = "inventory_model"
     INVENTORY_QTY = "inventory_qty"
@@ -63,6 +65,8 @@ class EventType(enum.StrEnum):
             "return_scan": "Приёмка (сканирование)",
             "return_scan_undo": "Отмена сканирования приёмки",
             "return_condition": "Состояние принятого экземпляра",
+            "return_substitute": "Замена единицы при приёмке",
+            "return_accept_all": "Приёмка пачкой",
             "return_status": "Статус приёмки",
             "inventory_model": "Модель оборудования",
             "inventory_qty": "Изменение остатка",

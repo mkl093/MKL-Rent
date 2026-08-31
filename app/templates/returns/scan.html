@@ -17,6 +17,7 @@
 <div id="banner" class="alert alert-secondary text-center py-4 mb-2" role="status" aria-live="assertive">
   <div class="fs-4 fw-bold" id="bannerTitle">Готов к сканированию</div>
   <div id="bannerSub" class="small text-secondary">Наведите камеру на штрих-код возвращаемой единицы или введите штрих-код сканером</div>
+  <button type="button" id="substituteBtn" class="btn btn-warning btn-sm mt-2 d-none">Это замена</button>
 </div>
 
 {% if editable %}
@@ -54,6 +55,7 @@
   const banner = document.getElementById("banner");
   const bTitle = document.getElementById("bannerTitle");
   const bSub = document.getElementById("bannerSub");
+  const substituteBtn = document.getElementById("substituteBtn");
   const progress = document.getElementById("progress");
   const input = document.getElementById("barcode");
   const soundOn = document.getElementById("soundOn");
@@ -85,6 +87,7 @@
     banner.className = "alert text-center py-4 mb-2 " + map[kind];
     bTitle.textContent = title;
     bSub.textContent = sub || "";
+    substituteBtn.classList.add("d-none");
   }
 
   const CONDITION_LABELS = { ok: "ОК", defect: "Есть дефект", repair: "В ремонт" };
@@ -159,6 +162,11 @@
     } else if (d.result === "already") {
       show("warn", "Уже принято", d.barcode + " · " + d.model);
       warnSound();
+    } else if (d.result === "substitute_candidate") {
+      show("warn", d.model, "ожидался " + d.pending_barcode + ", отсканирован " + d.barcode);
+      warnSound();
+      substituteBtn.classList.remove("d-none");
+      substituteBtn.onclick = () => confirmSubstitute(d.pending_serial_item_id, d.barcode);
     } else if (d.result === "not_in_list") {
       show("warn", "Не выдавалось по этому проекту", d.model ? d.model + " · " + d.barcode : d.barcode);
       warnSound();
@@ -167,6 +175,25 @@
       errSound();
     }
     input.value = ""; input.focus();
+  }
+
+  async function confirmSubstitute(pendingSerialItemId, barcode) {
+    const body = new URLSearchParams();
+    body.set("pending_serial_item_id", pendingSerialItemId);
+    body.set("barcode", barcode);
+    body.set("csrf_token", csrf);
+    const r = await fetch(base + "/serial/substitute", { method: "POST", body });
+    const d = await r.json();
+    if (d.ok) {
+      progress.textContent = d.total_fact;
+      show("ok", d.model, d.barcode + " · " + d.fact + "/" + d.expected);
+      okSound();
+      feedItem(d.serial_item_id, d.model, d.barcode);
+    } else {
+      show("err", d.message, d.barcode || "");
+      errSound();
+    }
+    input.focus();
   }
 
   document.getElementById("scanForm").addEventListener("submit", (e) => {

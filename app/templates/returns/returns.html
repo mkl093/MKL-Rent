@@ -38,12 +38,28 @@
     </div>
 
     {% if line.is_serial %}
-    <div class="d-flex flex-wrap gap-1 my-1">
+    <div class="d-flex flex-wrap gap-1 align-items-start my-1">
       {% for si in line.serial_items %}
       {% if si.is_returned %}
-      <span class="badge text-bg-{{ si.condition.badge }} border">
-        <code>{{ si.barcode }}</code> {{ si.condition.label }}
-      </span>
+      <details class="d-inline-block">
+        <summary class="badge text-bg-{{ si.condition.badge }} border" style="cursor:pointer;list-style:none">
+          <code>{{ si.barcode }}</code> {{ si.condition.label }}
+        </summary>
+        {% if editable %}
+        <form method="post" action="{{ base }}/serial/{{ si.id }}/condition"
+              class="d-flex flex-wrap gap-1 align-items-center mt-1 mb-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="btn-group btn-group-sm" role="group">
+            {% for c in ReturnCondition %}
+            <button class="btn btn-outline-{{ c.badge }} {{ 'active' if c == si.condition }}"
+                    name="condition" value="{{ c.value }}">{{ c.label }}</button>
+            {% endfor %}
+          </div>
+          <input class="form-control form-control-sm" style="width:10rem" name="comment"
+                 placeholder="Комментарий" value="{{ si.condition_comment or '' }}">
+        </form>
+        {% endif %}
+      </details>
       {% else %}
       <span class="badge text-bg-secondary border">
         <code>{{ si.barcode }}</code> не возвращено
@@ -51,8 +67,12 @@
       {% endif %}
       {% endfor %}
     </div>
-    {% if editable %}
-    <div class="small text-secondary">Состояние отмечается на экране сканирования.</div>
+    {% if editable and line.missing_quantity > 0 %}
+    <form method="post" action="{{ base }}/lines/{{ line.id }}/accept_all" class="mt-1"
+          onsubmit="return confirm('Принять все {{ line.missing_quantity }} шт. без сканирования?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-sm btn-outline-success">Принять всё ({{ line.missing_quantity }})</button>
+    </form>
     {% endif %}
     {% else %}
     {% if editable %}

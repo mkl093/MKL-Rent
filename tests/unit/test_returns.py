@@ -107,11 +107,26 @@ def test_scan_flow(env):
     assert service.scan(db, ret, "NOPE").result == service.ScanResult.NOT_FOUND
 
 
-def test_scan_item_not_on_manifest(env):
+def test_scan_wrong_model_not_in_list(env):
     db, project, qty_model, serial_model, packing = env
-    # Третий экземпляр той же модели существует, но не был выдан по packing-листу.
+    other_model = eq_service.create_model(
+        db,
+        EquipmentModelCreate(
+            category_id=qty_model.category_id, name="Прожектор", accounting_type=AccountingType.SERIAL
+        ),
+    )
+    item_service.create_item(db, other_model, EquipmentItemInput(barcode="X1"), user_id=None)
+    ret = service.create_from_packing(db, project)
+    assert service.scan(db, ret, "X1").result == service.ScanResult.NOT_IN_LIST
+
+
+def test_scan_same_model_extra_unit_all_pending_returned(env):
+    """Если все ожидаемые единицы модели уже приняты, лишний штрихкод — не по листу, не замена."""
+    db, project, qty_model, serial_model, packing = env
     item_service.create_item(db, serial_model, EquipmentItemInput(barcode="S3"), user_id=None)
     ret = service.create_from_packing(db, project)
+    service.scan(db, ret, "S1")
+    service.scan(db, ret, "S2")
     assert service.scan(db, ret, "S3").result == service.ScanResult.NOT_IN_LIST
 
 
@@ -122,6 +137,56 @@ def test_undo_scan(env):
     service.undo_scan(db, ret, outcome.serial_item_id)
     line = next(ln for ln in ret.lines if ln.model_id == serial_model.id)
     assert line.fact_quantity == 0
+
+
+def test_accept_all_marks_all_pending(env):
+    """Приёмка пачкой (рэк из нескольких модулей) — без поштучного сканирования (ТЗ §56.3)."""
+    db, project, qty_model, serial_model, packing = env
+    ret = service.create_from_packing(db, project)
+    line = next(ln for ln in ret.lines if ln.model_id == serial_model.id)
+
+    service.scan(db, ret, "S1")  # одна единица уже принята вручную
+    count = service.accept_all(db, line)
+    assert count == 1  # приняли только оставшуюся S2
+    assert line.fact_quantity == 2
+    assert all(si.condition == ReturnCondition.OK for si in line.serial_items)
+
+    # Повторный вызов идемпотентен — принимать уже нечего.
+    assert service.accept_all(db, line) == 0
+    assert line.fact_quantity == 2
+
+
+def test_scan_substitute_flow(env):
+    """Физически привезли не ту единицу той же модели — подмена на погрузке (ТЗ §56.3)."""
+    db, project, qty_model, serial_model, packing = env
+    item_service.create_item(db, serial_model, EquipmentItemInput(barcode="S3"), user_id=None)
+    ret = service.create_from_packing(db, project)
+
+    outcome = service.scan(db, ret, "S3")
+    assert outcome.result == service.ScanResult.SUBSTITUTE_CANDIDATE
+    assert outcome.pending_barcode in ("S1", "S2")
+    pending_id = outcome.pending_serial_item_id
+
+    confirmed = service.confirm_substitute(db, ret, pending_id, "S3")
+    assert confirmed.result == service.ScanResult.OK
+    assert confirmed.barcode == "S3"
+
+    line = next(ln for ln in ret.lines if ln.model_id == serial_model.id)
+    barcodes = {si.barcode for si in line.serial_items}
+    assert barcodes == {"S3", "S2"} or barcodes == {"S1", "S3"}
+    assert line.fact_quantity == 1
+    # S1 (или S2, смотря что заменили) больше не в листе как «не возвращено» —
+    # он просто исчез из ожидания, потому что физически не уезжал.
+    assert outcome.pending_barcode not in barcodes
+
+    # Замена не должна ложно списать в дефект единицу, которая никуда не уезжала.
+    service.scan(db, ret, "S2" if outcome.pending_barcode == "S1" else "S1")
+    service.update_quantity_line(db, next(ln for ln in ret.lines if ln.model_id == qty_model.id), 10, None)
+    service.set_status(db, ret, ReturnStatus.RECEIVED, project_number=project.number)
+    substituted_out = next(
+        it for it in eq_service.get_model(db, serial_model.id).items if it.barcode == outcome.pending_barcode
+    )
+    assert substituted_out.status == ItemStatus.ACTIVE
 
 
 # --- Статусы и недостача (ТЗ §56.2, §56.5) -------------------------------

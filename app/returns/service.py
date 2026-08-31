@@ -144,9 +144,26 @@ def set_condition(
     db.commit()
 
 
+def accept_all(db: Session, line: ReturnLine) -> int:
+    """Принять пачкой все ещё не возвращённые единицы серийной строки (ТЗ §56.3).
+
+    Для оборудования, которое физически едет и разгружается одним блоком (рэк из
+    нескольких модулей), избавляет от поштучного сканирования. Состояние — «ОК» по
+    умолчанию, как и у обычного скана; идемпотентно — уже принятые не трогает.
+    """
+    if not line.is_serial:
+        raise ReturnError("Пачкой принимаются только серийные строки")
+    pending = [si for si in line.serial_items if not si.is_returned]
+    for si in pending:
+        si.is_returned = True
+    db.commit()
+    return len(pending)
+
+
 class ScanResult(enum.Enum):
     OK = "ok"
     ALREADY = "already"  # уже принят
+    SUBSTITUTE_CANDIDATE = "substitute_candidate"  # другая единица той же модели (ТЗ §56.3)
     NOT_IN_LIST = "not_in_list"  # штрихкод не выдавался по этому проекту (ТЗ §56.3)
     NOT_FOUND = "not_found"
 
@@ -160,6 +177,8 @@ class ScanOutcome:
     model_name: str | None = None
     expected: int = 0
     fact: int = 0
+    pending_serial_item_id: int | None = None
+    pending_barcode: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -211,7 +230,70 @@ def scan(db: Session, ret: ReturnList, barcode: str) -> ScanOutcome:
                     fact=line.fact_quantity,
                 )
 
+    # Та же модель, но другой конкретный экземпляр: похоже на замену на погрузке —
+    # физически уехал не тот, что был отсканирован в packing-лист (ТЗ §56.3).
+    for line in ret.lines:
+        if line.is_serial and line.model_id == item.model_id:
+            pending = next((si for si in line.serial_items if not si.is_returned), None)
+            if pending is not None:
+                return ScanOutcome(
+                    ScanResult.SUBSTITUTE_CANDIDATE,
+                    barcode,
+                    line_id=line.id,
+                    model_name=line.name,
+                    expected=line.expected_quantity,
+                    fact=line.fact_quantity,
+                    pending_serial_item_id=pending.id,
+                    pending_barcode=pending.barcode,
+                )
+
     return ScanOutcome(ScanResult.NOT_IN_LIST, barcode, model_name=item.model.name)
+
+
+def confirm_substitute(
+    db: Session, ret: ReturnList, pending_serial_item_id: int, barcode: str
+) -> ScanOutcome:
+    """Подтвердить замену: переподставить реально принятый экземпляр (ТЗ §56.3).
+
+    Ожидаемая строка (`pending_serial_item_id`) остаётся физически «на складе» —
+    её штрихкод/экземпляр просто заменяются на то, что реально приехало, план/факт
+    остаются согласованы без ложной недостачи или дефекта у изначально ожидавшейся
+    единицы (см. apply_item_statuses).
+    """
+    barcode = barcode.strip()
+    from app.inventory.models import EquipmentItem
+
+    pending = get_serial_item(db, ret, pending_serial_item_id)
+    if pending is None or pending.is_returned:
+        return ScanOutcome(ScanResult.NOT_IN_LIST, barcode)
+
+    item = db.execute(
+        select(EquipmentItem)
+        .where(_sql_normalized_barcode(EquipmentItem.barcode) == normalize_barcode(barcode))
+        .order_by(EquipmentItem.id)
+        .limit(1)
+    ).scalars().first()
+    if item is None:
+        return ScanOutcome(ScanResult.NOT_FOUND, barcode)
+
+    old_barcode = pending.barcode
+    pending.item_id = item.id
+    pending.barcode = item.barcode
+    pending.serial_number = item.serial_number
+    pending.is_returned = True
+    db.commit()
+    line = pending.line
+    db.refresh(line)
+    return ScanOutcome(
+        ScanResult.OK,
+        item.barcode,
+        line_id=line.id,
+        serial_item_id=pending.id,
+        model_name=line.name,
+        expected=line.expected_quantity,
+        fact=line.fact_quantity,
+        pending_barcode=old_barcode,
+    )
 
 
 def undo_scan(db: Session, ret: ReturnList, serial_item_id: int) -> None:

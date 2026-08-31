@@ -131,6 +131,35 @@ def line_quantity(
     return redirect(f"/projects/{project_id}/returns")
 
 
+@router.post("/lines/{line_id}/accept_all", dependencies=[Depends(verify_csrf)])
+def line_accept_all(
+    request: Request,
+    project_id: int,
+    line_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    """Принять пачкой всю серийную строку без сканирования (ТЗ §56.3)."""
+    project, ret, editable = _load(db, project_id, require_editable=True)
+    if ret is not None and editable:
+        line = service.get_line(db, ret, line_id)
+        if line is not None and line.is_serial:
+            count = service.accept_all(db, line)
+            if count:
+                audit_log(
+                    db,
+                    user,
+                    EventType.RETURN_ACCEPT_ALL,
+                    f"Возврат {ret.number}: строка «{line.name}» принята пачкой — {count} шт.",
+                    object_type="return_list",
+                    object_id=ret.id,
+                )
+                flash(request, f"Принято пачкой: {count} шт.", "success")
+            else:
+                flash(request, "Нечего принимать — все единицы уже приняты.", "info")
+    return redirect(f"/projects/{project_id}/returns")
+
+
 @router.post("/serial/{si_id}/condition", dependencies=[Depends(verify_csrf)])
 def serial_condition(
     request: Request,
@@ -167,6 +196,7 @@ def serial_condition(
 _SCAN_MESSAGES = {
     service.ScanResult.OK: "Принято",
     service.ScanResult.ALREADY: "Уже принято",
+    service.ScanResult.SUBSTITUTE_CANDIDATE: "Другая единица той же модели",
     service.ScanResult.NOT_IN_LIST: "Не выдавалось по этому проекту",
     service.ScanResult.NOT_FOUND: "Штрих-код не найден",
 }
@@ -225,6 +255,54 @@ def scan_submit(
             user,
             EventType.RETURN_SCAN,
             f"Возврат {ret.number}: приём {outcome.barcode} — {outcome.model_name}",
+            object_type="return_list",
+            object_id=ret.id,
+        )
+    serial_lines = [ln for ln in ret.lines if ln.is_serial]
+    return JSONResponse(
+        {
+            "ok": outcome.ok,
+            "result": outcome.result.value,
+            "message": _SCAN_MESSAGES[outcome.result],
+            "barcode": outcome.barcode,
+            "model": outcome.model_name,
+            "serial_item_id": outcome.serial_item_id,
+            "expected": outcome.expected,
+            "fact": outcome.fact,
+            "pending_serial_item_id": outcome.pending_serial_item_id,
+            "pending_barcode": outcome.pending_barcode,
+            "total_expected": sum(ln.expected_quantity for ln in serial_lines),
+            "total_fact": sum(ln.fact_quantity for ln in serial_lines),
+        }
+    )
+
+
+@router.post("/serial/substitute", dependencies=[Depends(verify_csrf)])
+def serial_substitute(
+    request: Request,
+    project_id: int,
+    pending_serial_item_id: int = Form(...),
+    barcode: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    """Подтвердить замену единицы при приёмке (ТЗ §56.3)."""
+    project, ret, editable = _load(db, project_id, require_editable=True)
+    if project is None or ret is None or not editable:
+        return JSONResponse({"ok": False, "message": "Недоступно"}, status_code=400)
+
+    outcome = service.confirm_substitute(db, ret, pending_serial_item_id, barcode)
+    if outcome.ok:
+        request.session["last_return_scan"] = {
+            "project_id": project_id,
+            "serial_item_id": outcome.serial_item_id,
+        }
+        audit_log(
+            db,
+            user,
+            EventType.RETURN_SUBSTITUTE,
+            f"Возврат {ret.number}: замена — ожидался {outcome.pending_barcode}, "
+            f"принят {outcome.barcode} ({outcome.model_name})",
             object_type="return_list",
             object_id=ret.id,
         )
