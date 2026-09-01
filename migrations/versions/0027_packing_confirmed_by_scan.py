@@ -26,7 +26,7 @@ def upgrade() -> None:
     with op.batch_alter_table("packing_serial_items") as batch_op:
         batch_op.add_column(
             sa.Column(
-                "confirmed_by_scan", sa.Boolean(), nullable=False, server_default="1"
+                "confirmed_by_scan", sa.Boolean(), nullable=False, server_default=sa.true()
             )
         )
 
