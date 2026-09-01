@@ -559,6 +559,8 @@ _SCAN_MESSAGES = {
     service.SerialResult.WRONG_MODEL: "Модели нет в packing-листе",
     service.SerialResult.BLOCKED: "Экземпляр в ремонте или списан",
     service.SerialResult.NOT_FOUND: "Штрих-код не найден",
+    service.SerialResult.ACCESSORY_KIT_CONFIRMED: "Кейс подтверждён",
+    service.SerialResult.ACCESSORY_KIT_NOT_IN_LIST: "Комплект аксессуаров не в этом packing-листе",
 }
 
 _REMOVE_MESSAGES = {
@@ -624,6 +626,16 @@ def scan_submit(
             user,
             EventType.PACKING_SCAN,
             f"Packing {packing.number}: сканирование {outcome.barcode}{over}"
+            f" — {outcome.model_name}",
+            object_type="packing_list",
+            object_id=packing.id,
+        )
+    elif outcome.result == service.SerialResult.ACCESSORY_KIT_CONFIRMED:
+        audit_log(
+            db,
+            user,
+            EventType.PACKING_SCAN,
+            f"Packing {packing.number}: скан кейса кабелярки {outcome.barcode}"
             f" — {outcome.model_name}",
             object_type="packing_list",
             object_id=packing.id,

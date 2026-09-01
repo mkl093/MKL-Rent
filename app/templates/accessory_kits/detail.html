@@ -16,6 +16,14 @@
         <button class="btn btn-outline-primary">Добавить в смету</button>
       </form>
       {% endif %}
+      {% if in_packing %}
+      <span class="btn btn-outline-success disabled">В packing-листе</span>
+      {% elif packing_exists %}
+      <form method="post" action="/projects/{{ project.id }}/accessory-kits/{{ kit.id }}/add-to-packing" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn btn-outline-primary">Добавить в packing-лист</button>
+      </form>
+      {% endif %}
       <form method="post" action="/projects/{{ project.id }}/accessory-kits/{{ kit.id }}/delete" class="m-0"
             onsubmit="return confirm('Удалить комплект аксессуаров?')">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

@@ -51,7 +51,9 @@ def env(db_session):
         db, ProjectInput(name="Тур", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5))
     )
     estimate = est_service.get_or_create_estimate(db, project)
-    kit = ak_service.create_kit(db, project, AccessoryKitInput(name="Кабелярка FOH"))
+    kit = ak_service.create_kit(
+        db, project, AccessoryKitInput(name="Кабелярка FOH", barcode="CASE-001")
+    )
     ak_service.add_model_line(db, project, kit, model, 4)
     ak_service.add_custom_line(db, project, kit, CustomAccessoryKitLine(name="Скотч", quantity=2))
     est_service.add_accessory_kit_line(db, estimate, project, kit)
@@ -140,3 +142,73 @@ def test_returns_page_renders_checklist_and_updates_via_web(auth_client, db_sess
     db.refresh(cable_line)
     assert cable_line.returned_quantity == 3
     assert "недостача" in auth_client.get(base).text
+
+
+def test_scan_case_barcode_marks_kit_returned(env):
+    """Сканирование штрих-кода кейса кабелярки отмечает возврат кейса целиком (ТЗ §56.3)."""
+    db, project, model, kit, packing = env
+    ret = return_service.create_from_packing(db, project)
+    line = next(ln for ln in ret.lines if ln.accessory_kit_id == kit.id)
+    assert line.returned_quantity == 0
+
+    outcome = return_service.scan(db, ret, "CASE-001")
+    assert outcome.ok
+    assert outcome.is_accessory_kit
+    assert outcome.line_id == line.id
+    db.refresh(line)
+    assert line.returned_quantity == line.expected_quantity == 1
+
+    # Повторный скан — уже принято, не задваивается.
+    again = return_service.scan(db, ret, "CASE-001")
+    assert not again.ok
+    assert again.result == return_service.ScanResult.ALREADY
+
+
+def test_scan_case_barcode_unknown_kit_not_in_list(env):
+    db, project, model, kit, packing = env
+    ret = return_service.create_from_packing(db, project)
+
+    other_kit = ak_service.create_kit(
+        db, project, AccessoryKitInput(name="Другая кабелярка", barcode="CASE-999")
+    )
+    outcome = return_service.scan(db, ret, "CASE-999")
+    assert not outcome.ok
+    assert outcome.result == return_service.ScanResult.NOT_IN_LIST
+    assert outcome.model_name == other_kit.name
+
+
+def test_undo_kit_scan_reverts_return(env):
+    db, project, model, kit, packing = env
+    ret = return_service.create_from_packing(db, project)
+    line = next(ln for ln in ret.lines if ln.accessory_kit_id == kit.id)
+
+    return_service.scan(db, ret, "CASE-001")
+    db.refresh(line)
+    assert line.returned_quantity == 1
+
+    return_service.undo_kit_scan(db, ret, line.id)
+    db.refresh(line)
+    assert line.returned_quantity == 0
+
+
+def test_web_scan_and_undo_case_barcode(auth_client, db_session, env):
+    db, project, model, kit, packing = env
+    ret = return_service.create_from_packing(db, project)
+    line = next(ln for ln in ret.lines if ln.accessory_kit_id == kit.id)
+
+    scan_base = f"/projects/{project.id}/returns"
+    token = _csrf(auth_client, f"{scan_base}/scan")
+    resp = auth_client.post(
+        f"{scan_base}/scan", data={"barcode": "CASE-001", "csrf_token": token}
+    )
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["is_accessory_kit"] is True
+    db.refresh(line)
+    assert line.returned_quantity == 1
+
+    undo_token = _csrf(auth_client, scan_base)
+    resp = auth_client.post(f"{scan_base}/scan/undo", data={"csrf_token": undo_token})
+    assert resp.json()["ok"] is True
+    db.refresh(line)
+    assert line.returned_quantity == 0

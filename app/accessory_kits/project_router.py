@@ -160,6 +160,11 @@ def detail(
         filters = eq_service.ModelFilters(query=q, archived=False)
         models = eq_service.list_models(db, filters)[:20]
 
+    from app.packing import service as packing_service
+
+    packing = packing_service.get_packing(db, project)
+    in_packing = packing is not None and any(ln.accessory_kit_id == kit.id for ln in packing.lines)
+
     return render(
         request,
         "accessory_kits/detail.html",
@@ -171,6 +176,8 @@ def detail(
             "content_weight": service.content_weight(kit),
             "total_weight": service.total_weight(kit),
             "in_estimate": service.is_in_estimate(db, kit.id),
+            "packing_exists": packing is not None,
+            "in_packing": in_packing,
             "models": models,
             "q": q or "",
             "KitWeightMode": KitWeightMode,
@@ -287,6 +294,41 @@ def add_to_estimate(
         flash(request, f"«{kit.name}» добавлен в смету.", "success")
     else:
         flash(request, f"«{kit.name}» уже в смете.", "info")
+    return redirect(f"/projects/{project_id}/accessory-kits/{kit_id}")
+
+
+@router.post("/{kit_id}/add-to-packing", dependencies=[Depends(verify_csrf)])
+def add_to_packing(
+    request: Request,
+    project_id: int,
+    kit_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    """Добавить комплект аксессуаров сразу в packing-лист, минуя смету."""
+    from app.packing import service as packing_service
+
+    project, editable = _load(db, project_id)
+    if project is None or not editable:
+        return redirect(f"/projects/{project_id}/accessory-kits")
+    kit = service.get_kit(db, project, kit_id)
+    if kit is None:
+        return redirect(f"/projects/{project_id}/accessory-kits")
+    packing = packing_service.get_packing(db, project)
+    if packing is None:
+        flash(request, "Сначала создайте packing-лист проекта.", "warning")
+        return redirect(f"/projects/{project_id}/accessory-kits/{kit_id}")
+
+    line = packing_service.add_accessory_kit(db, packing, kit)
+    if line is not None:
+        audit_log(
+            db, user, EventType.PACKING_ADD,
+            f"Packing {packing.number}: добавлен комплект аксессуаров «{kit.name}» напрямую",
+            object_type="packing_list", object_id=packing.id,
+        )
+        flash(request, f"«{kit.name}» добавлен в packing-лист.", "success")
+    else:
+        flash(request, f"«{kit.name}» уже в packing-листе.", "info")
     return redirect(f"/projects/{project_id}/accessory-kits/{kit_id}")
 
 

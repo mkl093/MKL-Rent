@@ -93,10 +93,18 @@
   const CONDITION_LABELS = { ok: "ОК", defect: "Есть дефект", repair: "В ремонт" };
   const CONDITION_BADGE = { ok: "success", defect: "danger", repair: "warning" };
 
-  function feedItem(serialItemId, model, barcode) {
+  function feedItem(serialItemId, model, barcode, isAccessoryKit) {
     const row = document.createElement("div");
-    row.className = "d-flex align-items-center justify-content-between bg-body-tertiary rounded p-2";
+    row.className = "d-flex align-items-center justify-content-between bg-body-tertiary rounded p-2 flex-wrap";
     row.dataset.si = serialItemId;
+    if (isAccessoryKit) {
+      row.innerHTML =
+        '<div><div class="fw-semibold small">' + model + '</div>' +
+        '<div class="text-secondary" style="font-size:.75rem">' + barcode + '</div></div>' +
+        '<span class="badge text-bg-info">кейс</span>';
+      feed.prepend(row);
+      return;
+    }
     row.innerHTML =
       '<div><div class="fw-semibold small">' + model + '</div>' +
       '<div class="text-secondary" style="font-size:.75rem">' + barcode + '</div></div>' +
@@ -158,7 +166,7 @@
       progress.textContent = d.total_fact;
       show("ok", d.model, d.barcode + " · " + d.fact + "/" + d.expected);
       okSound();
-      feedItem(d.serial_item_id, d.model, d.barcode);
+      feedItem(d.serial_item_id, d.model, d.barcode, d.is_accessory_kit);
     } else if (d.result === "already") {
       show("warn", "Уже принято", d.barcode + " · " + d.model);
       warnSound();

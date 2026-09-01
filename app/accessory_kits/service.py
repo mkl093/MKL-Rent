@@ -78,6 +78,24 @@ def get(db: Session, kit_id: int) -> AccessoryKit | None:
     return db.execute(stmt).scalar_one_or_none()
 
 
+def find_by_barcode(db: Session, barcode: str) -> AccessoryKit | None:
+    """Комплект по штрих-коду кейса — для сканирования на погрузке/возврате (ТЗ §22, §56.3).
+
+    Штрих-код уникален глобально (см. AccessoryKit.barcode), поэтому поиск не
+    требует привязки к проекту — вызывающий код сам проверяет, что найденный
+    комплект относится к текущему packing-листу/листу приёмки.
+    """
+    barcode = (barcode or "").strip()
+    if not barcode:
+        return None
+    stmt = (
+        select(AccessoryKit)
+        .options(selectinload(AccessoryKit.lines))
+        .where(_sql_normalized_barcode(AccessoryKit.barcode) == normalize_barcode(barcode))
+    )
+    return db.execute(stmt).scalar_one_or_none()
+
+
 def _check_barcode(db: Session, barcode: str | None, *, exclude_id: int | None = None) -> None:
     if not barcode:
         return

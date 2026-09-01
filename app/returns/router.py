@@ -266,10 +266,12 @@ def scan_submit(
 
     outcome = service.scan(db, ret, barcode)
     if outcome.ok:
-        request.session["last_return_scan"] = {
-            "project_id": project_id,
-            "serial_item_id": outcome.serial_item_id,
-        }
+        session_payload = {"project_id": project_id}
+        if outcome.is_accessory_kit:
+            session_payload["kit_line_id"] = outcome.line_id
+        else:
+            session_payload["serial_item_id"] = outcome.serial_item_id
+        request.session["last_return_scan"] = session_payload
         audit_log(
             db,
             user,
@@ -287,6 +289,7 @@ def scan_submit(
             "barcode": outcome.barcode,
             "model": outcome.model_name,
             "serial_item_id": outcome.serial_item_id,
+            "is_accessory_kit": outcome.is_accessory_kit,
             "expected": outcome.expected,
             "fact": outcome.fact,
             "pending_serial_item_id": outcome.pending_serial_item_id,
@@ -354,7 +357,10 @@ def scan_undo(
     project, ret, editable = _load(db, project_id, require_editable=True)
     if not last or last.get("project_id") != project_id or ret is None or not editable:
         return JSONResponse({"ok": False, "message": "Нечего отменять"})
-    service.undo_scan(db, ret, last["serial_item_id"])
+    if "kit_line_id" in last:
+        service.undo_kit_scan(db, ret, last["kit_line_id"])
+    else:
+        service.undo_scan(db, ret, last["serial_item_id"])
     audit_log(
         db,
         user,

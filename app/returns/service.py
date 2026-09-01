@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.accessory_kits import service as accessory_kit_service
+from app.accessory_kits.models import AccessoryKit
 from app.inventory.enums import ItemStatus
 from app.inventory.services import items as item_service
 from app.inventory.services.items import _sql_normalized_barcode, normalize_barcode
@@ -216,10 +217,59 @@ class ScanOutcome:
     fact: int = 0
     pending_serial_item_id: int | None = None
     pending_barcode: str | None = None
+    # Скан относится к строке-комплекту аксессуаров (кейс целиком, ТЗ §56.3) —
+    # в отличие от serial_item_id, у такой строки нет единицы для сверки условия
+    # (см. accessory_kit_lines/чек-лист содержимого), поэтому отмечается отдельно.
+    is_accessory_kit: bool = False
 
     @property
     def ok(self) -> bool:
         return self.result == ScanResult.OK
+
+
+def _scan_accessory_kit_return(
+    db: Session, ret: ReturnList, kit: AccessoryKit, barcode: str
+) -> ScanOutcome:
+    """Отметить возврат кейса кабелярки целиком по штрих-коду (ТЗ §56.3).
+
+    Кейс — количественная строка (не серийная): скан сразу выставляет
+    returned_quantity = expected_quantity, а не переключает флаг одного
+    экземпляра. Содержимое кейса сверяется отдельно чек-листом
+    (accessory_kit_lines) — этот скан его не трогает.
+    """
+    line = next((ln for ln in ret.lines if ln.accessory_kit_id == kit.id), None)
+    if line is None:
+        return ScanOutcome(ScanResult.NOT_IN_LIST, barcode, model_name=kit.name)
+    if line.returned_quantity >= line.expected_quantity:
+        return ScanOutcome(
+            ScanResult.ALREADY,
+            barcode,
+            line_id=line.id,
+            model_name=line.name,
+            expected=line.expected_quantity,
+            fact=line.fact_quantity,
+            is_accessory_kit=True,
+        )
+    line.returned_quantity = line.expected_quantity
+    db.commit()
+    db.refresh(line)
+    return ScanOutcome(
+        ScanResult.OK,
+        barcode,
+        line_id=line.id,
+        model_name=line.name,
+        expected=line.expected_quantity,
+        fact=line.fact_quantity,
+        is_accessory_kit=True,
+    )
+
+
+def undo_kit_scan(db: Session, ret: ReturnList, line_id: int) -> None:
+    """Отменить последний скан кейса кабелярки (ТЗ §56.3) — вернуть строку к «не возвращено»."""
+    line = get_line(db, ret, line_id)
+    if line is not None and line.accessory_kit_id is not None:
+        line.returned_quantity = 0
+        db.commit()
 
 
 def scan(db: Session, ret: ReturnList, barcode: str) -> ScanOutcome:
@@ -239,6 +289,9 @@ def scan(db: Session, ret: ReturnList, barcode: str) -> ScanOutcome:
         .limit(1)
     ).scalars().first()
     if item is None:
+        kit = accessory_kit_service.find_by_barcode(db, barcode)
+        if kit is not None:
+            return _scan_accessory_kit_return(db, ret, kit, barcode)
         return ScanOutcome(ScanResult.NOT_FOUND, barcode)
 
     for line in ret.lines:

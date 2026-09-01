@@ -606,6 +606,25 @@ def add_kit(db: Session, packing: PackingList, kit: Kit) -> PackingLine | None:
     return line
 
 
+def add_accessory_kit(db: Session, packing: PackingList, kit: AccessoryKit) -> PackingLine | None:
+    """Добавить комплект аксессуаров в packing-лист вручную, минуя смету.
+
+    Кнопка на странице комплекта (см. app.accessory_kits.project_router) — для случаев,
+    когда кабелярку собирают прямо в packing-листе, не заводя её в смету. Комплект —
+    одна позиция; повторно тот же комплект не добавляется (is_manual защищает строку
+    от удаления при последующей синхронизации со сметой).
+    """
+    if any(ln.accessory_kit_id == kit.id for ln in packing.lines):
+        return None
+    sort_order = max((ln.sort_order for ln in packing.lines), default=0) + 1
+    line = _new_line_from_accessory_kit(kit, sort_order)
+    line.is_manual = True
+    packing.lines.append(line)
+    db.commit()
+    db.refresh(line)
+    return line
+
+
 def get_line(db: Session, packing: PackingList, line_id: int) -> PackingLine | None:
     return next((ln for ln in packing.lines if ln.id == line_id), None)
 
@@ -657,6 +676,12 @@ class SerialResult(enum.Enum):
     WRONG_MODEL = "wrong_model"
     BLOCKED = "blocked"  # списан/в ремонте (ТЗ §22)
     NOT_FOUND = "not_found"
+    # Скан штрих-кода кейса кабелярки (ТЗ §22) — комплект и так в плане/факте
+    # значится собранным (см. _new_line_from_accessory_kit), поэтому скан не
+    # меняет количество, а лишь фиксирует факт сканирования конкретного кейса
+    # (аудит-лог) — по решению пользователя.
+    ACCESSORY_KIT_CONFIRMED = "accessory_kit_confirmed"
+    ACCESSORY_KIT_NOT_IN_LIST = "accessory_kit_not_in_list"
 
 
 def add_serial_item(
@@ -773,7 +798,26 @@ class ScanOutcome:
     @property
     def ok(self) -> bool:
         """Экземпляр фактически добавлен (OK или подтверждённый сверх плана)."""
-        return self.result == SerialResult.OK or self.serial_item_id is not None
+        return (
+            self.result == SerialResult.OK
+            or self.result == SerialResult.ACCESSORY_KIT_CONFIRMED
+            or self.serial_item_id is not None
+        )
+
+
+def _scan_accessory_kit(packing: PackingList, kit: AccessoryKit, barcode: str) -> ScanOutcome:
+    """Подтвердить скан штрих-кода кейса кабелярки (ТЗ §22, см. SerialResult)."""
+    line = next((ln for ln in packing.lines if ln.accessory_kit_id == kit.id), None)
+    if line is None:
+        return ScanOutcome(SerialResult.ACCESSORY_KIT_NOT_IN_LIST, barcode, model_name=kit.name)
+    return ScanOutcome(
+        SerialResult.ACCESSORY_KIT_CONFIRMED,
+        barcode,
+        line_id=line.id,
+        model_name=line.name,
+        planned=line.planned_quantity,
+        fact=line.fact_quantity,
+    )
 
 
 def scan(
@@ -797,6 +841,9 @@ def scan(
         .limit(1)
     ).scalars().first()
     if item is None:
+        kit = accessory_kit_service.find_by_barcode(db, barcode)
+        if kit is not None:
+            return _scan_accessory_kit(packing, kit, barcode)
         return ScanOutcome(SerialResult.NOT_FOUND, barcode)
 
     line = next((ln for ln in packing.lines if not ln.is_custom and ln.model_id == item.model_id), None)
