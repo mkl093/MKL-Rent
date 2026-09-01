@@ -698,6 +698,12 @@ def remove_serial_item(db: Session, line: PackingLine, serial_item_id: int) -> N
     si = next((s for s in line.serial_items if s.id == serial_item_id), None)
     if si is not None:
         line.serial_items.remove(si)
+        if not line.is_serial:
+            # Количественная строка: экземпляр фиксируется в packing_serial_items
+            # только для carnet (ТЗ §22), а факт — line.quantity (наращивается
+            # в scan()/scan_add_new_model()) — при уборке экземпляра его нужно
+            # так же уменьшить, иначе факт в листе не изменится.
+            line.quantity = max(0, line.quantity - 1)
         line.packed_quantity = min(line.packed_quantity, line.fact_quantity)
         db.commit()
 

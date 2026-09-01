@@ -152,3 +152,28 @@ def test_remove_by_barcode_finds_item_in_any_line(env):
     out = service.remove_by_barcode(db, packing, "B1")
     assert out.result == RemoveResult.OK
     assert not any(si.barcode == "B1" for ln in packing.lines for si in ln.serial_items)
+
+
+def test_remove_by_barcode_decrements_quantity_line_fact(env):
+    """Для количественной строки убранный по штрих-коду экземпляр должен уменьшать факт (line.quantity)."""
+    from app.packing.service import RemoveResult
+
+    db, packing, model = env
+    qty_model = eq_service.create_model(
+        db,
+        EquipmentModelCreate(
+            category_id=model.category_id, name="Кабель", accounting_type=AccountingType.QUANTITY
+        ),
+    )
+    item_service.create_item(db, qty_model, EquipmentItemInput(barcode="Q1"), user_id=None)
+    out_add = service.scan_add_new_model(db, packing, "Q1")
+    assert out_add.ok
+    qty_line = next(ln for ln in packing.lines if ln.model_id == qty_model.id)
+    assert not qty_line.is_serial
+    assert qty_line.fact_quantity == 1
+
+    out = service.remove_by_barcode(db, packing, "Q1")
+    assert out.result == RemoveResult.OK
+    assert out.fact == 0
+    assert qty_line.quantity == 0
+    assert qty_line.fact_quantity == 0
