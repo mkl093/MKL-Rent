@@ -392,7 +392,7 @@ def _packing_render(
                     ln.has_power,
                     ln.power_peak_w,
                     ln.power_nominal_w,
-                    sorted(si.barcode for si in ln.serial_items),
+                    sorted((si.barcode, si.confirmed_by_scan) for si in ln.serial_items),
                     [
                         [g.model_name, [it.barcode or it.serial_number or "" for it in g.items]]
                         for g in kit_content.get(ln.id, [])

@@ -574,3 +574,157 @@ def test_project_delete_blocked_with_packing(env):
     service.create_from_estimate(db, project)
     with pytest.raises(proj_service.ValidationError):
         proj_service.delete_project(db, project)
+
+
+# --- Штрих-коды количественных строк: заготовки и замена сканом (ТЗ §22) ----
+
+
+def test_quantity_auto_assigns_unconfirmed_items_on_create(env):
+    """При наборе количества без сканирования строка получает заготовки на
+    свободные экземпляры с штрих-кодом — они не подтверждены сканом."""
+    db, project, qty_model, serial_model = env
+    for bc in ("Q1", "Q2", "Q3"):
+        item_service.create_item(db, qty_model, EquipmentItemInput(barcode=bc), user_id=None)
+    packing = service.create_from_estimate(db, project)
+    line = next(ln for ln in packing.lines if ln.model_id == qty_model.id)
+    assert line.quantity == 10  # факт не меняется — заготовки лишь фиксируют штрих-код
+    assert {si.barcode for si in line.serial_items} == {"Q1", "Q2", "Q3"}
+    assert all(not si.confirmed_by_scan for si in line.serial_items)
+
+
+def test_quantity_add_model_auto_assigns_too(env):
+    """Тот же авто-подбор — при ручном добавлении модели через подборщик (add_model)."""
+    db, project, qty_model, serial_model = env
+    other = eq_service.create_model(
+        db,
+        EquipmentModelCreate(
+            category_id=qty_model.category_id,
+            name="Кабель",
+            accounting_type=AccountingType.QUANTITY,
+            total_quantity=0,
+        ),
+    )
+    item_service.create_item(db, other, EquipmentItemInput(barcode="C1"), user_id=None)
+    packing = service.create_from_estimate(db, project)
+    line = service.add_model(db, packing, other, 3)
+    assert line.quantity == 3
+    assert len(line.serial_items) == 1  # доступен только один экземпляр со штрих-кодом
+    assert line.serial_items[0].barcode == "C1"
+    assert not line.serial_items[0].confirmed_by_scan
+
+
+def test_quantity_scan_replaces_unconfirmed_slot(env):
+    """Скан штрих-кода заменяет заготовку количественной строки, не наращивая факт."""
+    db, project, qty_model, serial_model = env
+    for bc in ("Q1", "Q2"):
+        item_service.create_item(db, qty_model, EquipmentItemInput(barcode=bc), user_id=None)
+    packing = service.create_from_estimate(db, project)
+    line = next(ln for ln in packing.lines if ln.model_id == qty_model.id)
+    assert len(line.serial_items) == 2
+    before_quantity = line.quantity
+
+    real_item = item_service.create_item(db, qty_model, EquipmentItemInput(barcode="Q3"), user_id=None)
+    outcome = service.scan(db, packing, "Q3")
+    assert outcome.result == service.SerialResult.OK
+
+    db.refresh(line)
+    assert line.quantity == before_quantity  # заменили заготовку, не добавили сверху
+    assert len(line.serial_items) == 2
+    confirmed = [si for si in line.serial_items if si.confirmed_by_scan]
+    assert len(confirmed) == 1
+    assert confirmed[0].barcode == "Q3"
+    assert confirmed[0].item_id == real_item.id
+    remaining = [si for si in line.serial_items if not si.confirmed_by_scan]
+    assert len(remaining) == 1
+    assert remaining[0].barcode in ("Q1", "Q2")
+
+
+def test_quantity_scan_protects_confirmed_slot_from_second_replace(env):
+    """Подтверждённая сканом заготовка не заменяется повторно другим сканом."""
+    db, project, qty_model, serial_model = env
+    for bc in ("Q1", "Q2"):
+        item_service.create_item(db, qty_model, EquipmentItemInput(barcode=bc), user_id=None)
+    packing = service.create_from_estimate(db, project)
+    line = next(ln for ln in packing.lines if ln.model_id == qty_model.id)
+
+    q3 = item_service.create_item(db, qty_model, EquipmentItemInput(barcode="Q3"), user_id=None)
+    q4 = item_service.create_item(db, qty_model, EquipmentItemInput(barcode="Q4"), user_id=None)
+
+    assert service.scan(db, packing, "Q3").result == service.SerialResult.OK
+    db.refresh(line)
+    assert {si.item_id for si in line.serial_items if si.confirmed_by_scan} == {q3.id}
+
+    assert service.scan(db, packing, "Q4").result == service.SerialResult.OK
+    db.refresh(line)
+    confirmed_ids = {si.item_id for si in line.serial_items if si.confirmed_by_scan}
+    assert confirmed_ids == {q3.id, q4.id}  # Q3 не переписан вторым сканом
+    assert not any(not si.confirmed_by_scan for si in line.serial_items)
+
+
+def test_quantity_scan_over_plan_when_no_unconfirmed_slot_left(env):
+    """Когда все заготовки строки уже подтверждены сканом, дальнейший скан — сверх плана."""
+    db, project, qty_model, serial_model = env
+    for bc in ("Q1", "Q2"):
+        item_service.create_item(db, qty_model, EquipmentItemInput(barcode=bc), user_id=None)
+    packing = service.create_from_estimate(db, project)
+    line = next(ln for ln in packing.lines if ln.model_id == qty_model.id)
+    service.scan(db, packing, "Q1")
+    service.scan(db, packing, "Q2")
+    db.refresh(line)
+    assert line.quantity == 10  # план=факт=10 по умолчанию, замены его не трогали
+
+    item_service.create_item(db, qty_model, EquipmentItemInput(barcode="Q5"), user_id=None)
+    blocked = service.scan(db, packing, "Q5")
+    assert blocked.result == service.SerialResult.OVER_PLAN
+    db.refresh(line)
+    assert line.quantity == 10
+
+    allowed = service.scan(db, packing, "Q5", allow_over=True)
+    assert allowed.result == service.SerialResult.OVER_PLAN
+    db.refresh(line)
+    assert line.quantity == 11
+    assert len(line.serial_items) == 3
+
+
+def test_quantity_add_serial_item_replaces_and_checks_model(env):
+    """Форма на основной странице (line_serial_add) теперь работает и для количественных строк."""
+    db, project, qty_model, serial_model = env
+    item_service.create_item(db, qty_model, EquipmentItemInput(barcode="Q1"), user_id=None)
+    packing = service.create_from_estimate(db, project)
+    line = next(ln for ln in packing.lines if ln.model_id == qty_model.id)
+    assert len(line.serial_items) == 1
+    assert not line.serial_items[0].confirmed_by_scan
+
+    q2 = item_service.create_item(db, qty_model, EquipmentItemInput(barcode="Q2"), user_id=None)
+    assert service.add_serial_item(db, line, "Q2") == service.SerialResult.OK
+    assert len(line.serial_items) == 1
+    assert line.serial_items[0].item_id == q2.id
+    assert line.serial_items[0].confirmed_by_scan
+
+    item_service.create_item(db, serial_model, EquipmentItemInput(barcode="OTHERQ"), user_id=None)
+    assert service.add_serial_item(db, line, "OTHERQ") == service.SerialResult.WRONG_MODEL
+
+
+def test_carnet_prefers_confirmed_barcodes_falls_back_to_unconfirmed(env):
+    """ТЗ по итогам обсуждения: если в строке есть подтверждённые сканом штрих-коды —
+    в carnet идут только они; если нет ни одного подтверждённого — все имеющиеся."""
+    from app.packing import carnet as carnet_module
+
+    db, project, qty_model, serial_model = env
+    item_service.create_item(db, qty_model, EquipmentItemInput(barcode="Q1"), user_id=None)
+    item_service.create_item(db, qty_model, EquipmentItemInput(barcode="Q2"), user_id=None)
+    packing = service.create_from_estimate(db, project)
+    line = next(ln for ln in packing.lines if ln.model_id == qty_model.id)
+    assert len(line.serial_items) == 2
+
+    rows = carnet_module.build_rows(db, packing)
+    qty_row = next(r for r in rows if r.description.startswith("Колонка"))
+    assert "Q1" in qty_row.description
+    assert "Q2" in qty_row.description  # подтверждённых нет — берём все заготовки
+
+    service.scan(db, packing, "Q1")
+    db.refresh(line)
+    rows2 = carnet_module.build_rows(db, packing)
+    qty_row2 = next(r for r in rows2 if r.description.startswith("Колонка"))
+    assert "Q1" in qty_row2.description
+    assert "Q2" not in qty_row2.description  # есть подтверждённый — только он

@@ -441,7 +441,7 @@ def line_serial_add(
     user: User = Depends(require_login),
 ):
     packing, line, _ = _line(db, project_id, line_id)
-    if line is not None and line.is_serial:
+    if line is not None:
         result = service.add_serial_item(db, line, barcode, allow_over=bool(allow_over))
         messages = {
             service.SerialResult.OK: ("Экземпляр добавлен.", "success"),

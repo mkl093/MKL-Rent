@@ -212,6 +212,33 @@
           <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">Применить</button></div>
         </form>
         {% endif %}
+        {% if line.model_id %}
+        {# Штрих-коды количественной строки: заготовки (не сканировались) и подтверждённые сканом (ТЗ §22) #}
+        {% if line.serial_items %}
+        <div class="d-flex flex-wrap gap-1 my-1">
+          {% for si in line.serial_items %}
+          <span class="badge {{ 'text-bg-success' if si.confirmed_by_scan else 'text-bg-light border' }} d-inline-flex align-items-center gap-1" title="{{ 'Подтверждено сканом' if si.confirmed_by_scan else 'Заготовка — ожидает скана' }}">
+            <code>{{ si.barcode }}</code>
+            <form method="post" action="{{ base }}/lines/{{ line.id }}/serial/{{ si.id }}/delete" class="m-0 d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn-close btn-close-sm" style="font-size:.6rem" title="Убрать"></button>
+            </form>
+          </span>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <form method="post" action="{{ base }}/lines/{{ line.id }}/serial" class="row g-1 mt-1">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="col-7 col-md-4">
+            <input class="form-control form-control-sm" name="barcode" placeholder="Штрих-код" required>
+          </div>
+          <div class="col-auto form-check ms-2 mt-1">
+            <input class="form-check-input" type="checkbox" name="allow_over" value="1" id="ov-{{ line.id }}">
+            <label class="form-check-label small" for="ov-{{ line.id }}">сверх плана</label>
+          </div>
+          <div class="col-auto"><button class="btn btn-sm btn-outline-primary">Отсканировать / заменить</button></div>
+        </form>
+        {% endif %}
       {% endif %}
       <div class="mt-1 d-flex gap-1">
         <form method="post" action="{{ base }}/lines/{{ line.id }}/move" class="m-0"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="direction" value="-1"><button class="btn btn-sm btn-outline-secondary" title="Выше">↑</button></form>

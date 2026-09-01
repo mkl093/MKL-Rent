@@ -70,7 +70,10 @@
           {% endif %}</td>
           <td class="num">{% if line.is_kit or line.is_accessory_kit %}1 / 1{% else %}{{ c.planned }} / {{ c.fact }}{% if c.missing %} <span style="color:#b00">−{{ c.missing }}</span>{% endif %}{% if c.over %} <span style="color:#a60">+{{ c.over }}</span>{% endif %}{% endif %}</td>
           <td>
-            {% if line.is_kit or line.is_accessory_kit %}—{% else %}{% for si in line.serial_items %}<span class="bc">{{ si.barcode }}{% if si.serial_number %} ({{ si.serial_number }}){% endif %}</span>{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}{% endif %}
+            {% if line.is_kit or line.is_accessory_kit %}—{% else %}
+              {% set shown_items = (line.serial_items|selectattr('confirmed_by_scan')|list) or line.serial_items %}
+              {% for si in shown_items %}<span class="bc">{{ si.barcode }}{% if si.serial_number %} ({{ si.serial_number }}){% endif %}</span>{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}
+            {% endif %}
           </td>
           <td class="num">{{ c.packed }}{% if c.packages %} <span style="color:#666">/ {{ c.packages }} {{ L.packages_unit }}</span>{% endif %}</td>
           <td class="num">{{ c.unpacked }}</td>

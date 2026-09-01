@@ -66,11 +66,18 @@ def _serial_text(barcodes: list[str]) -> str:
     return "S/N: " + ", ".join(barcodes) if barcodes else "NSN"
 
 
+def _carnet_barcodes(line: PackingLine) -> list[str]:
+    """Штрих-коды строки для carnet: подтверждённые сканом, если такие есть —
+    иначе все имеющиеся (включая незаменённые сканом заготовки, ТЗ §22)."""
+    confirmed = [si.barcode for si in line.serial_items if si.confirmed_by_scan]
+    return confirmed if confirmed else [si.barcode for si in line.serial_items]
+
+
 def _model_line_row(line: PackingLine, model: EquipmentModel | None, qty: int) -> CarnetRow:
     # Количественное оборудование, добавленное/дособранное сканом, тоже несёт
     # штрих-коды в packing_serial_items — используем их и здесь, не только у
     # серийных строк (line.is_serial=False не значит «без штрих-кодов»).
-    serial_text = _serial_text([si.barcode for si in line.serial_items])
+    serial_text = _serial_text(_carnet_barcodes(line))
     desc = line.name
     if model and model.manufacturer:
         desc += f", {model.manufacturer}"

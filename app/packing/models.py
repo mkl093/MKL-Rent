@@ -160,5 +160,10 @@ class PackingSerialItem(Base):
     )
     barcode: Mapped[str] = mapped_column(String(128), nullable=False)
     serial_number: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Реально отсканирован (True) или автоматически подобран как заготовка при
+    # простом наборе количества, без сканирования (False, ТЗ §22). Заготовку
+    # заменяет собой первый реальный скан того же штрих-кода той же модели —
+    # после этого запись защищена от повторной замены (см. app.packing.service).
+    confirmed_by_scan: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     line: Mapped[PackingLine] = relationship(back_populates="serial_items")

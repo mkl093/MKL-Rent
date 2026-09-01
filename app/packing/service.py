@@ -174,6 +174,48 @@ def _new_line_from_model(model: EquipmentModel, planned: int, sort_order: int) -
     return line
 
 
+def _auto_assign_quantity_items(
+    db: Session, packing: PackingList, line: PackingLine, count: int
+) -> None:
+    """Молча привязать до `count` физических экземпляров к количественной строке
+    при обычном наборе плана/факта — без сканирования (ТЗ §22).
+
+    Штрих-код единицы количественного учёта иначе появляется в документе только
+    после явного скана на отдельной странице — а он есть у оборудования и без
+    серийного учёта. Привязанные так экземпляры отмечаются confirmed_by_scan=False
+    (заготовка): при реальном сканировании штрих-кода той же модели scan() и
+    add_serial_item() заменяют заготовку отсканированным экземпляром вместо того,
+    чтобы плюсовать факт поверх неё (см. их докстринги). Если свободных экземпляров
+    с штрих-кодом меньше count, остаток остаётся не привязан — как и раньше.
+    """
+    if count <= 0 or line.model_id is None:
+        return
+    used_ids = {si.item_id for other in packing.lines for si in other.serial_items}
+    items = (
+        db.execute(
+            select(EquipmentItem)
+            .where(
+                EquipmentItem.model_id == line.model_id,
+                EquipmentItem.kit_id.is_(None),
+                EquipmentItem.barcode.is_not(None),
+            )
+            .order_by(EquipmentItem.id)
+        )
+        .scalars()
+        .all()
+    )
+    picked = [it for it in items if it.id not in used_ids and it.is_usable][:count]
+    for it in picked:
+        line.serial_items.append(
+            PackingSerialItem(
+                item_id=it.id,
+                barcode=it.barcode,
+                serial_number=it.serial_number,
+                confirmed_by_scan=False,
+            )
+        )
+
+
 def _new_line_from_accessory_kit(kit: AccessoryKit, sort_order: int) -> PackingLine:
     """Строка packing-листа для комплекта аксессуаров: снимок веса + перечень «живьём».
 
@@ -248,7 +290,10 @@ def create_from_estimate(db: Session, project: Project) -> PackingList:
         model = db.get(EquipmentModel, model_id)
         if model is None:
             continue
-        packing.lines.append(_new_line_from_model(model, planned, sort_order))
+        line = _new_line_from_model(model, planned, sort_order)
+        packing.lines.append(line)
+        if not line.is_serial:
+            _auto_assign_quantity_items(db, packing, line, planned)
         sort_order += 1
     # Комплекты сметы — отдельными строками с перечнем комплектации (ТЗ §17, «Комплект»).
     for kit_id in _estimate_kit_ids(db, project):
@@ -389,7 +434,10 @@ def apply_sync(db: Session, project: Project, packing: PackingList, *, confirm_d
         if line is None:
             model = db.get(EquipmentModel, model_id)
             if model is not None:
-                packing.lines.append(_new_line_from_model(model, est_qty, next_sort))
+                new_line = _new_line_from_model(model, est_qty, next_sort)
+                packing.lines.append(new_line)
+                if not new_line.is_serial:
+                    _auto_assign_quantity_items(db, packing, new_line, est_qty)
                 next_sort += 1
         else:
             line.planned_quantity = est_qty
@@ -578,6 +626,7 @@ def add_model(
             existing.quantity += quantity
             if existing.has_packing:
                 existing.packed_quantity += quantity
+            _auto_assign_quantity_items(db, packing, existing, quantity)
         db.commit()
         return existing
 
@@ -585,6 +634,8 @@ def add_model(
     line = _new_line_from_model(model, quantity, sort_order)
     line.is_manual = True
     packing.lines.append(line)
+    if not line.is_serial:
+        _auto_assign_quantity_items(db, packing, line, quantity)
     db.commit()
     db.refresh(line)
     return line
@@ -687,10 +738,13 @@ class SerialResult(enum.Enum):
 def add_serial_item(
     db: Session, line: PackingLine, barcode: str, *, allow_over: bool = False
 ) -> SerialResult:
-    """Назначить экземпляр в серийную строку по штрих-коду (ТЗ §17.7, §17.8, §22)."""
-    if not line.is_serial:
-        raise PackingError("Эта строка не серийная")
+    """Назначить экземпляр в строку по штрих-коду (ТЗ §17.7, §17.8, §22).
 
+    Для количественной строки — если в ней есть заготовка, ещё не подтверждённая
+    сканом (см. _auto_assign_quantity_items), она заменяется отсканированным
+    экземпляром на месте (план/факт не меняются); иначе — обычное добавление
+    сверх плана, как у серийной строки.
+    """
     item = db.execute(
         select(EquipmentItem)
         .where(_sql_normalized_barcode(EquipmentItem.barcode) == normalize_barcode(barcode))
@@ -703,18 +757,41 @@ def add_serial_item(
         return SerialResult.WRONG_MODEL
     if not item.is_usable:
         return SerialResult.BLOCKED
-    if any(si.item_id == item.id for si in line.serial_items):
+
+    # Найдена (в т.ч. заготовка на этот же экземпляр) — подтверждён сканом ранее?
+    # Тогда дубликат; иначе это и есть слот, который нужно подтвердить/заменить.
+    existing_si = next((si for si in line.serial_items if si.item_id == item.id), None)
+    if existing_si is not None and existing_si.confirmed_by_scan:
         return SerialResult.DUPLICATE
 
-    over = (line.fact_quantity + 1) > line.planned_quantity
-    if over and not allow_over:
-        return SerialResult.OVER_PLAN
+    replace_slot = existing_si
+    if replace_slot is None and not line.is_serial:
+        replace_slot = next((si for si in line.serial_items if not si.confirmed_by_scan), None)
 
-    line.serial_items.append(
-        PackingSerialItem(item_id=item.id, barcode=item.barcode, serial_number=item.serial_number)
-    )
-    if line.has_packing:
-        line.packed_quantity += 1  # по умолчанию упаковано (ТЗ §18)
+    over = False
+    if replace_slot is None:
+        over = (line.fact_quantity + 1) > line.planned_quantity
+        if over and not allow_over:
+            return SerialResult.OVER_PLAN
+
+    if replace_slot is not None:
+        replace_slot.item_id = item.id
+        replace_slot.barcode = item.barcode
+        replace_slot.serial_number = item.serial_number
+        replace_slot.confirmed_by_scan = True
+    else:
+        line.serial_items.append(
+            PackingSerialItem(
+                item_id=item.id,
+                barcode=item.barcode,
+                serial_number=item.serial_number,
+                confirmed_by_scan=True,
+            )
+        )
+        if not line.is_serial:
+            line.quantity += 1
+        if line.has_packing:
+            line.packed_quantity += 1  # по умолчанию упаковано (ТЗ §18)
     db.commit()
     return SerialResult.OVER_PLAN if over else SerialResult.OK
 
@@ -830,8 +907,13 @@ def scan(
     решению пользователя), просто у него факт — число (line.quantity), а не
     список экземпляров. Экземпляр в любом случае фиксируется в
     packing_serial_items — штрих-код/S/N нужен для carnet даже у количественных
-    моделей. Проверки и вставка — в транзакции; уникальный индекс (строка,
-    экземпляр) защищает от конкурентного/повторного добавления.
+    моделей. Если в количественной строке уже есть заготовка (экземпляр,
+    подобранный автоматически при простом наборе количества и ещё не
+    подтверждённый сканом — см. _auto_assign_quantity_items), скан заменяет её
+    отсканированным экземпляром на месте, не наращивая факт; заготовки, уже
+    заменённые сканом, повторной заменой не трогаются. Проверки и вставка — в
+    транзакции; уникальный индекс (строка, экземпляр) защищает от
+    конкурентного/повторного добавления.
     """
     barcode = barcode.strip()
     item = db.execute(
@@ -860,9 +942,14 @@ def scan(
             fact=line.fact_quantity,
         )
 
-    # Уже в этом packing-листе (в любой строке) — повторное добавление (ТЗ §22).
-    already = any(si.item_id == item.id for L in packing.lines for si in L.serial_items)
-    if already:
+    # Уже в этом packing-листе (в любой строке) и подтверждён сканом — повторное
+    # добавление (ТЗ §22). Если найденная запись — ещё не подтверждённая сканом
+    # заготовка (в т.ч. на этот же самый экземпляр — auto_assign мог подобрать
+    # именно его), это не дубликат, а как раз тот слот, который нужно подтвердить.
+    existing_si = next(
+        (si for L in packing.lines for si in L.serial_items if si.item_id == item.id), None
+    )
+    if existing_si is not None and existing_si.confirmed_by_scan:
         return ScanOutcome(
             SerialResult.DUPLICATE,
             barcode,
@@ -872,23 +959,38 @@ def scan(
             fact=line.fact_quantity,
         )
 
-    over = (line.fact_quantity + 1) > line.planned_quantity
-    if over and not allow_over:
-        return ScanOutcome(
-            SerialResult.OVER_PLAN,
-            barcode,
-            line_id=line.id,
-            model_name=line.name,
-            planned=line.planned_quantity,
-            fact=line.fact_quantity,
-        )
+    replace_slot = existing_si
+    if replace_slot is None and not line.is_serial:
+        replace_slot = next((si for si in line.serial_items if not si.confirmed_by_scan), None)
 
-    si = PackingSerialItem(item_id=item.id, barcode=item.barcode, serial_number=item.serial_number)
-    line.serial_items.append(si)
-    if not line.is_serial:
-        line.quantity += 1
-    if line.has_packing:
-        line.packed_quantity += 1
+    over = False
+    if replace_slot is None:
+        over = (line.fact_quantity + 1) > line.planned_quantity
+        if over and not allow_over:
+            return ScanOutcome(
+                SerialResult.OVER_PLAN,
+                barcode,
+                line_id=line.id,
+                model_name=line.name,
+                planned=line.planned_quantity,
+                fact=line.fact_quantity,
+            )
+
+    if replace_slot is not None:
+        replace_slot.item_id = item.id
+        replace_slot.barcode = item.barcode
+        replace_slot.serial_number = item.serial_number
+        replace_slot.confirmed_by_scan = True
+        si = replace_slot
+    else:
+        si = PackingSerialItem(
+            item_id=item.id, barcode=item.barcode, serial_number=item.serial_number, confirmed_by_scan=True
+        )
+        line.serial_items.append(si)
+        if not line.is_serial:
+            line.quantity += 1
+        if line.has_packing:
+            line.packed_quantity += 1
     try:
         db.commit()
     except IntegrityError:  # конкурентное добавление того же экземпляра (ТЗ §22)
@@ -938,8 +1040,10 @@ def scan_add_new_model(db: Session, packing: PackingList, barcode: str) -> ScanO
     if not item.is_usable:
         return ScanOutcome(SerialResult.BLOCKED, barcode, model_name=item.model.name)
 
-    already = any(si.item_id == item.id for L in packing.lines for si in L.serial_items)
-    if already:
+    existing_si = next(
+        (si for L in packing.lines for si in L.serial_items if si.item_id == item.id), None
+    )
+    if existing_si is not None and existing_si.confirmed_by_scan:
         line = next(L for L in packing.lines if any(si.item_id == item.id for si in L.serial_items))
         return ScanOutcome(
             SerialResult.DUPLICATE,
@@ -955,15 +1059,32 @@ def scan_add_new_model(db: Session, packing: PackingList, barcode: str) -> ScanO
     if is_new_line:
         line = add_model(db, packing, item.model, 1)
 
-    si = PackingSerialItem(item_id=item.id, barcode=item.barcode, serial_number=item.serial_number)
-    line.serial_items.append(si)
-    if line.is_serial:
-        if line.has_packing:
-            line.packed_quantity += 1
-    elif not is_new_line:
-        line.quantity += 1
-        if line.has_packing:
-            line.packed_quantity += 1
+    # Для количественной строки (в т.ч. только что созданной add_model, который
+    # уже мог подобрать заготовку — см. _auto_assign_quantity_items) заменяем
+    # незаполненную сканом заготовку отсканированным экземпляром, а не плюсуем
+    # факт поверх неё.
+    replace_slot = existing_si
+    if replace_slot is None and not line.is_serial:
+        replace_slot = next((si for si in line.serial_items if not si.confirmed_by_scan), None)
+
+    if replace_slot is not None:
+        replace_slot.item_id = item.id
+        replace_slot.barcode = item.barcode
+        replace_slot.serial_number = item.serial_number
+        replace_slot.confirmed_by_scan = True
+        si = replace_slot
+    else:
+        si = PackingSerialItem(
+            item_id=item.id, barcode=item.barcode, serial_number=item.serial_number, confirmed_by_scan=True
+        )
+        line.serial_items.append(si)
+        if line.is_serial:
+            if line.has_packing:
+                line.packed_quantity += 1
+        elif not is_new_line:
+            line.quantity += 1
+            if line.has_packing:
+                line.packed_quantity += 1
     try:
         db.commit()
     except IntegrityError:  # конкурентное добавление того же экземпляра (ТЗ §22)
