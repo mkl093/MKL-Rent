@@ -99,3 +99,56 @@ def test_scan_over_plan(env):
     assert out2.serial_item_id is not None
     line = next(ln for ln in packing.lines if ln.model_id == model.id)
     assert line.fact_quantity == 3
+
+
+def test_remove_by_barcode_ok(env):
+    from app.packing.service import RemoveResult
+
+    db, packing, model = env
+    service.scan(db, packing, "A1")
+    line = next(ln for ln in packing.lines if ln.model_id == model.id)
+    assert line.fact_quantity == 1
+
+    out = service.remove_by_barcode(db, packing, "A1")
+    assert out.result == RemoveResult.OK
+    assert out.fact == 0
+    assert not any(si.barcode == "A1" for si in line.serial_items)
+
+
+def test_remove_by_barcode_not_in_packing(env):
+    from app.packing.service import RemoveResult
+
+    db, packing, model = env
+    # A1 существует, но ещё не отсканирован в этот packing-лист
+    out = service.remove_by_barcode(db, packing, "A1")
+    assert out.result == RemoveResult.NOT_IN_PACKING
+
+
+def test_remove_by_barcode_not_found(env):
+    from app.packing.service import RemoveResult
+
+    db, packing, model = env
+    out = service.remove_by_barcode(db, packing, "ZZZ")
+    assert out.result == RemoveResult.NOT_FOUND
+
+
+def test_remove_by_barcode_finds_item_in_any_line(env):
+    """Удаление ищет экземпляр среди всех строк, а не только «своей» по модели."""
+    from app.packing.service import RemoveResult
+
+    db, packing, model = env
+    other = eq_service.create_model(
+        db,
+        EquipmentModelCreate(
+            category_id=model.category_id, name="Дым", accounting_type=AccountingType.SERIAL
+        ),
+    )
+    item_service.create_item(db, other, EquipmentItemInput(barcode="B1"), user_id=None)
+    # Заведём вторую модель в packing вручную-по-сканированию (as new model),
+    # затем уберём именно этот экземпляр по штрих-коду.
+    out_add = service.scan_add_new_model(db, packing, "B1")
+    assert out_add.ok
+
+    out = service.remove_by_barcode(db, packing, "B1")
+    assert out.result == RemoveResult.OK
+    assert not any(si.barcode == "B1" for ln in packing.lines for si in ln.serial_items)

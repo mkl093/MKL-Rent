@@ -554,6 +554,12 @@ _SCAN_MESSAGES = {
     service.SerialResult.NOT_FOUND: "Штрих-код не найден",
 }
 
+_REMOVE_MESSAGES = {
+    service.RemoveResult.OK: "Убрано",
+    service.RemoveResult.NOT_IN_PACKING: "Экземпляра нет в этом packing-листе",
+    service.RemoveResult.NOT_FOUND: "Штрих-код не найден",
+}
+
 
 @router.get("/scan")
 def scan_page(
@@ -705,6 +711,46 @@ def scan_undo(
         {
             "ok": True,
             "message": "Последнее сканирование отменено",
+            "total_planned": sum(ln.planned_quantity for ln in serial_lines),
+            "total_fact": sum(ln.fact_quantity for ln in serial_lines),
+        }
+    )
+
+
+@router.post("/scan/remove", dependencies=[Depends(verify_csrf)])
+def scan_remove(
+    request: Request,
+    project_id: int,
+    barcode: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    """Убрать конкретный экземпляр из packing-листа по штрих-коду (не обязательно последний)."""
+    project, packing, editable = _load(db, project_id, require_editable=True)
+    if project is None or packing is None or not editable:
+        return JSONResponse({"ok": False, "message": "Недоступно"}, status_code=400)
+
+    outcome = service.remove_by_barcode(db, packing, barcode)
+    if outcome.ok:
+        audit_log(
+            db,
+            user,
+            EventType.PACKING_SCAN_UNDO,
+            f"Packing {packing.number}: убран по штрих-коду {outcome.barcode}"
+            f" — {outcome.model_name}",
+            object_type="packing_list",
+            object_id=packing.id,
+        )
+    serial_lines = [ln for ln in packing.lines if ln.is_serial]
+    return JSONResponse(
+        {
+            "ok": outcome.ok,
+            "result": outcome.result.value,
+            "message": _REMOVE_MESSAGES[outcome.result],
+            "barcode": outcome.barcode,
+            "model": outcome.model_name,
+            "planned": outcome.planned,
+            "fact": outcome.fact,
             "total_planned": sum(ln.planned_quantity for ln in serial_lines),
             "total_fact": sum(ln.fact_quantity for ln in serial_lines),
         }

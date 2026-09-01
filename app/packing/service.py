@@ -626,6 +626,55 @@ def remove_serial_item(db: Session, line: PackingLine, serial_item_id: int) -> N
         db.commit()
 
 
+class RemoveResult(enum.Enum):
+    OK = "ok"
+    NOT_IN_PACKING = "not_in_packing"  # штрих-код есть в базе, но не в этом листе
+    NOT_FOUND = "not_found"
+
+
+@dataclass
+class RemoveOutcome:
+    result: RemoveResult
+    barcode: str
+    line_id: int | None = None
+    model_name: str | None = None
+    planned: int = 0
+    fact: int = 0
+
+    @property
+    def ok(self) -> bool:
+        return self.result == RemoveResult.OK
+
+
+def remove_by_barcode(db: Session, packing: PackingList, barcode: str) -> RemoveOutcome:
+    """Убрать конкретный экземпляр из packing-листа по его штрих-коду (независимо от строки)."""
+    barcode = barcode.strip()
+    item = db.execute(
+        select(EquipmentItem)
+        .where(_sql_normalized_barcode(EquipmentItem.barcode) == normalize_barcode(barcode))
+        .order_by(EquipmentItem.id)
+        .limit(1)
+    ).scalars().first()
+    if item is None:
+        return RemoveOutcome(RemoveResult.NOT_FOUND, barcode)
+
+    line = next((L for L in packing.lines if any(si.item_id == item.id for si in L.serial_items)), None)
+    if line is None:
+        return RemoveOutcome(RemoveResult.NOT_IN_PACKING, barcode, model_name=item.model.name)
+
+    si = next(s for s in line.serial_items if s.item_id == item.id)
+    remove_serial_item(db, line, si.id)
+    db.refresh(line)
+    return RemoveOutcome(
+        RemoveResult.OK,
+        barcode,
+        line_id=line.id,
+        model_name=line.name,
+        planned=line.planned_quantity,
+        fact=line.fact_quantity,
+    )
+
+
 # --- Сканирование (ТЗ §22) ----------------------------------------------
 
 

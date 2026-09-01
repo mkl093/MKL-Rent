@@ -7,7 +7,10 @@
 </div>
 
 <div class="card mb-2"><div class="card-body py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
-  <div>Прогресс: <span class="fs-5 fw-bold" id="progress">{{ total_fact }}</span> / <span id="totalPlanned">{{ total_planned }}</span></div>
+  <div>
+    Прогресс: <span class="fs-5 fw-bold" id="progress">{{ total_fact }}</span> / <span id="totalPlanned">{{ total_planned }}</span>
+    <span id="sessionCountWrap" class="ms-2 text-secondary small d-none">· в этой сессии: <span id="sessionCount">0</span></span>
+  </div>
   <div class="d-flex gap-3 align-items-center">
     <div class="form-check m-0">
       <input class="form-check-input" type="checkbox" id="allowOver">
@@ -20,6 +23,10 @@
     <div class="form-check form-switch m-0">
       <input class="form-check-input" type="checkbox" id="bulkMode">
       <label class="form-check-label small" for="bulkMode">Массовое добавление</label>
+    </div>
+    <div class="form-check form-switch m-0">
+      <input class="form-check-input" type="checkbox" id="removeMode">
+      <label class="form-check-label small" for="removeMode">Режим удаления</label>
     </div>
   </div>
 </div></div>
@@ -73,9 +80,44 @@
   const allowOver = document.getElementById("allowOver");
   const soundOn = document.getElementById("soundOn");
   const bulkMode = document.getElementById("bulkMode");
+  const removeMode = document.getElementById("removeMode");
+  const sessionCountWrap = document.getElementById("sessionCountWrap");
+  const sessionCount = document.getElementById("sessionCount");
   const confirmWrap = document.getElementById("confirmAddWrap");
   const confirmBtn = document.getElementById("confirmAddBtn");
   let pendingBarcode = null;
+
+  function bumpSessionCount() {
+    if (!bulkMode.checked) return;
+    sessionCount.textContent = (parseInt(sessionCount.textContent, 10) || 0) + 1;
+  }
+
+  function updateModeBanner() {
+    if (removeMode.checked) {
+      show("over", "Режим удаления", "Отсканируйте штрих-код, чтобы убрать экземпляр из packing-листа");
+    } else {
+      show("info", "Готов к сканированию", "Наведите камеру на штрих-код или QR-дубликат (держите телефон на расстоянии ~15-20 см от кода) или введите штрих-код сканером");
+    }
+  }
+
+  bulkMode.addEventListener("change", () => {
+    sessionCount.textContent = "0";
+    sessionCountWrap.classList.toggle("d-none", !bulkMode.checked);
+    if (bulkMode.checked && removeMode.checked) {
+      removeMode.checked = false;
+      updateModeBanner();
+    }
+  });
+
+  removeMode.addEventListener("change", () => {
+    if (removeMode.checked && bulkMode.checked) {
+      bulkMode.checked = false;
+      sessionCount.textContent = "0";
+      sessionCountWrap.classList.add("d-none");
+    }
+    hideConfirm();
+    updateModeBanner();
+  });
 
   // Режим массового добавления не запоминаем между визитами — включать
   // осознанно на сессию сканирования (защита от случайного автосоздания).
@@ -119,12 +161,41 @@
   // входа и для камеры, и для USB/BT-сканера-клавиатуры (ТЗ §21.3), а
   // антидребезг в barcode-scan.js защищает только путь камеры.
   let lastCode = "", lastTime = 0;
+  async function submitRemove(code) {
+    const body = new URLSearchParams();
+    body.set("barcode", code);
+    body.set("csrf_token", csrf);
+    let r;
+    try {
+      r = await fetch(base + "/scan/remove", { method: "POST", body });
+    } catch (e) {
+      show("err", "Нет связи", "Повторите"); errSound();
+      return;
+    }
+    const d = await r.json();
+    if (d.ok) {
+      progress.textContent = d.total_fact;
+      totalPlanned.textContent = d.total_planned;
+      show("ok", "Убрано: " + d.model, d.barcode); okSound();
+    } else if (d.result === "not_in_packing") {
+      show("over", "Нет в этом листе: " + (d.model || ""), d.barcode); warnSound();
+    } else {
+      show("err", d.message, d.barcode || ""); errSound();
+    }
+    input.value = ""; input.focus();
+  }
+
   async function submitScan(code) {
     code = (code || "").trim();
     if (!code) return;
     const now = Date.now();
     if (code === lastCode && now - lastTime < 1500) return;
     lastCode = code; lastTime = now;
+
+    if (removeMode.checked) {
+      await submitRemove(code);
+      return;
+    }
 
     const body = new URLSearchParams();
     body.set("barcode", code);
@@ -144,6 +215,7 @@
       hideConfirm();
       progress.textContent = d.total_fact;
       totalPlanned.textContent = d.total_planned;
+      bumpSessionCount();
       if (d.over) { show("over", "Сверх плана: " + d.model, d.barcode); warnSound(); }
       else { show("ok", d.model, d.barcode + " · " + d.fact + "/" + d.planned); okSound(); }
     } else {
@@ -188,6 +260,7 @@
     if (d.ok) {
       progress.textContent = d.total_fact;
       totalPlanned.textContent = d.total_planned;
+      bumpSessionCount();
       show("ok", d.model, "Новая позиция · " + d.barcode + " · " + d.fact + "/" + d.planned);
       okSound();
     } else {
