@@ -24,7 +24,7 @@ from app.documents.models import GeneratedDocument
 from app.estimates.service import get_or_create_estimate, grouped_lines
 from app.estimates.service import totals as estimate_totals
 from app.packing.calc import compute_category_breakdown, compute_line, compute_totals
-from app.packing.service import accessory_totals, get_packing
+from app.packing.service import accessory_totals, backfill_quantity_barcodes, get_packing
 from app.projects.models import Project
 from app.settings.service import get_company_settings
 
@@ -337,6 +337,11 @@ def _packing_render(
     packing = get_packing(db, project)
     if packing is None:
         raise PdfUnavailable("Packing-лист не создан")
+    if not project.is_archived:
+        # Факт мог быть выставлен до появления штрих-кода в наличии/до правки
+        # логики авто-подбора — довязываем недостающие заготовки перед сборкой
+        # документа, а не только по явному скану/правке количества.
+        backfill_quantity_barcodes(db, packing)
 
     ordered = _packing_ordered_lines(packing)
     rows = [(ln, compute_line(ln)) for ln in ordered]

@@ -579,6 +579,47 @@ def test_project_delete_blocked_with_packing(env):
 # --- Штрих-коды количественных строк: заготовки и замена сканом (ТЗ §22) ----
 
 
+def test_backfill_quantity_barcodes(env):
+    """backfill_quantity_barcodes довязывает заготовки под уже выставленный факт,
+    даже если в момент выставления факта на складе ещё не было штрих-кодов —
+    вызывается перед пересборкой документов (PDF packing-листа, carnet)."""
+    db, project, qty_model, serial_model = env
+    packing = service.create_from_estimate(db, project)
+    line = next(ln for ln in packing.lines if ln.model_id == qty_model.id)
+    assert not line.serial_items  # на складе ещё нет штрих-кодов (см. env)
+
+    item_service.create_item(db, qty_model, EquipmentItemInput(barcode="B1"), user_id=None)
+    item_service.create_item(db, qty_model, EquipmentItemInput(barcode="B2"), user_id=None)
+
+    attached = service.backfill_quantity_barcodes(db, packing)
+    assert attached == 2
+    assert {si.barcode for si in line.serial_items} == {"B1", "B2"}
+    assert all(not si.confirmed_by_scan for si in line.serial_items)
+
+    # Повторный вызов идемпотентен — не плодит дубликаты по уже занятому факту.
+    again = service.backfill_quantity_barcodes(db, packing)
+    assert again == 0
+    assert len(line.serial_items) == 2
+
+
+def test_quantity_auto_assigns_on_manual_fact_increase(env):
+    """Увеличение «Факт» вручную (без сканирования, поле на основной странице)
+    тоже должно подобрать заготовки — не только add_model/create_from_estimate."""
+    db, project, qty_model, serial_model = env
+    packing = service.create_from_estimate(db, project)
+    line = next(ln for ln in packing.lines if ln.model_id == qty_model.id)
+    assert not line.serial_items  # на момент создания склад без штрих-кодов (см. env)
+
+    # Штрих-коды появились на складе уже после сборки packing-листа.
+    for bc in ("M1", "M2"):
+        item_service.create_item(db, qty_model, EquipmentItemInput(barcode=bc), user_id=None)
+
+    service.update_quantity_line(db, line, fact_quantity=12, packed_quantity=0, comment=None)
+    assert line.quantity == 12
+    assert {si.barcode for si in line.serial_items} == {"M1", "M2"}
+    assert all(not si.confirmed_by_scan for si in line.serial_items)
+
+
 def test_quantity_auto_assigns_unconfirmed_items_on_create(env):
     """При наборе количества без сканирования строка получает заготовки на
     свободные экземпляры с штрих-кодом — они не подтверждены сканом."""

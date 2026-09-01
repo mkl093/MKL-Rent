@@ -216,6 +216,36 @@ def _auto_assign_quantity_items(
         )
 
 
+def backfill_quantity_barcodes(
+    db: Session, packing: PackingList, *, commit: bool = True
+) -> int:
+    """Досоздать заготовки под уже выставленный факт количественных строк.
+
+    Факт мог быть выставлен (add_model/правка «Факт») ещё до того, как на складе
+    появились свободные экземпляры со штрих-кодом, либо до появления самой этой
+    логики (см. _auto_assign_quantity_items) — план/факт при этом не пересчитывается,
+    только «дозаполняются» недостающие заготовки под уже существующее количество.
+    Вызывается перед сборкой документов (PDF packing-листа, carnet), чтобы штрих-код
+    появлялся там при пересборке документа, а не только после явного скана или
+    ручной правки количества. `commit=False` — для вызова пачкой из скрипта
+    (scripts/backfill_packing_quantity_barcodes.py), который сам решает, коммитить
+    или откатить (--dry-run). Возвращает число фактически привязанных экземпляров.
+    """
+    attached = 0
+    for line in packing.lines:
+        if line.is_serial or line.is_custom or line.model_id is None:
+            continue
+        missing = line.quantity - len(line.serial_items)
+        if missing <= 0:
+            continue
+        before = len(line.serial_items)
+        _auto_assign_quantity_items(db, packing, line, missing)
+        attached += len(line.serial_items) - before
+    if attached and commit:
+        db.commit()
+    return attached
+
+
 def _new_line_from_accessory_kit(kit: AccessoryKit, sort_order: int) -> PackingLine:
     """Строка packing-листа для комплекта аксессуаров: снимок веса + перечень «живьём».
 
@@ -699,7 +729,13 @@ def update_quantity_line(
     """
     if line.is_serial:
         raise PackingError("Серийная строка комплектуется экземплярами")
+    old_quantity = line.quantity
     line.quantity = max(0, fact_quantity)
+    if line.quantity > old_quantity:
+        # Факт увеличен вручную (без сканирования) — как и при добавлении со
+        # склада, штрих-код заготовки нужен для документа/carnet сразу, а не
+        # только после явного скана (см. _auto_assign_quantity_items).
+        _auto_assign_quantity_items(db, line.packing_list, line, line.quantity - old_quantity)
     line.packed_quantity = max(0, min(packed_quantity, line.quantity))
     line.comment = comment or None
     if line.is_custom:

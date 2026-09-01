@@ -231,6 +231,41 @@ def test_generate_real_pdf_xhtml2pdf(db_session, project, tmp_path, monkeypatch)
     assert len(data) > 5000  # кириллический шрифт встроен в документ
 
 
+def test_render_packing_html_backfills_missing_barcodes(db_session):
+    """Пересборка PDF packing-листа сама довязывает недостающие заготовки
+    штрих-кодов количественных строк (backfill_quantity_barcodes), а не только
+    по явному скану/правке количества — иначе документ теряет уже доступные
+    на складе штрих-коды, если факт был выставлен раньше, чем появился сток."""
+    from app.inventory.schemas import EquipmentItemInput
+    from app.inventory.services import items as item_service
+    from app.packing import service as packing_service
+
+    cat = cat_service.create_category(db_session, "Звук")
+    model = eq_service.create_model(
+        db_session,
+        EquipmentModelCreate(
+            category_id=cat.id, name="Колонка", accounting_type=AccountingType.QUANTITY, total_quantity=0
+        ),
+    )
+    project = proj_service.create_project(
+        db_session,
+        ProjectInput(name="Тур", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5)),
+    )
+    estimate = est_service.get_or_create_estimate(db_session, project)
+    est_service.add_model(db_session, estimate, project, model, 2)
+    packing = packing_service.create_from_estimate(db_session, project)
+    line = next(ln for ln in packing.lines if ln.model_id == model.id)
+    assert not line.serial_items  # на складе ещё нет штрих-кодов на момент сборки плана
+
+    item_service.create_item(db_session, model, EquipmentItemInput(barcode="PB1"), user_id=None)
+    item_service.create_item(db_session, model, EquipmentItemInput(barcode="PB2"), user_id=None)
+
+    html, _ = builder.render_html(db_session, project, DocumentType.PACKING, "ru")
+    assert "PB1" in html
+    assert "PB2" in html
+    assert len(line.serial_items) == 2  # довязано и сохранено, не только для рендера
+
+
 def test_render_packing_html_localizes_packages_unit(db_session):
     """packing_pdf.html: суффикс количества упаковок берётся из LABELS, не «уп.» (ТЗ §26.1)."""
     from app.inventory.enums import PackingType

@@ -19,7 +19,7 @@ from app.dependencies import redirect, render, require_login, verify_csrf
 from app.documents import builder
 from app.documents.enums import DocumentType, Language
 from app.packing import carnet
-from app.packing.service import get_packing
+from app.packing.service import backfill_quantity_barcodes, get_packing
 from app.projects.service import get_project
 from app.templating import flash
 
@@ -64,6 +64,8 @@ def carnet_export(
     packing = get_packing(db, project)
     if packing is None:
         raise HTTPException(status_code=404)
+    if not project.is_archived:
+        backfill_quantity_barcodes(db, packing)
 
     rows = carnet.build_rows(db, packing)
     wb = carnet.build_workbook(project, packing, rows)
