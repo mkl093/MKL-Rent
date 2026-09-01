@@ -63,6 +63,11 @@ class PackingLine(Base):
     kit_id: Mapped[int | None] = mapped_column(
         ForeignKey("kits.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Строка-комплект аксессуаров: аналогично kit_id, но комплект проектный
+    # (см. app.accessory_kits) — содержимое выводится «живьём» по accessory_kit_id.
+    accessory_kit_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accessory_kits.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     is_custom: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_serial: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Строка произвольной строки сметы — связь для синхронизации (ТЗ §17.2, §17.9).
@@ -122,6 +127,11 @@ class PackingLine(Base):
     def is_kit(self) -> bool:
         """Строка-комплект (бронируемая позиция «Комплект»)."""
         return self.kit_id is not None
+
+    @property
+    def is_accessory_kit(self) -> bool:
+        """Строка-комплект аксессуаров (проектный, см. app.accessory_kits)."""
+        return self.accessory_kit_id is not None
 
     @property
     def fact_quantity(self) -> int:

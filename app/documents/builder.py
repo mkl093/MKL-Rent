@@ -104,6 +104,8 @@ LABELS = {
         "kits": "Комплекты",
         "other": "Прочее",
         "kit": "комплект",
+        "accessory_kits": "Комплекты аксессуаров",
+        "accessory_kit": "комплект аксессуаров",
     },
     "en": {
         "estimate": "Estimate",
@@ -165,6 +167,8 @@ LABELS = {
         "kits": "Kits",
         "other": "Other",
         "kit": "kit",
+        "accessory_kits": "Accessory kits",
+        "accessory_kit": "accessory kit",
     },
     "de": {
         "estimate": "Angebot",
@@ -226,6 +230,8 @@ LABELS = {
         "kits": "Sets",
         "other": "Sonstiges",
         "kit": "Set",
+        "accessory_kits": "Zubehör-Sets",
+        "accessory_kit": "Zubehör-Set",
     },
 }
 
@@ -267,6 +273,7 @@ def _estimate_render(
     groups = grouped_lines(
         estimate,
         kit_label=LABELS[lang]["kits"],
+        accessory_kit_label=LABELS[lang]["accessory_kits"],
         custom_label=LABELS[lang]["other"],
         no_category_label=LABELS[lang]["no_category"],
     )
@@ -338,19 +345,26 @@ def _packing_render(
         packing.lines,
         custom_label=LABELS[lang]["additional"],
         kit_label=LABELS[lang]["kits"],
+        accessory_kit_label=LABELS[lang]["accessory_kits"],
         no_category_label=LABELS[lang]["no_category"],
     )
     accessories = accessory_totals(db, packing)
 
     # Перечень комплектации для строк-комплектов (структура «Комплект»).
+    from app.accessory_kits import service as accessory_kit_service
     from app.inventory.services import kits as kit_service
 
     kit_content: dict[int, list] = {}
+    accessory_kit_content: dict[int, list] = {}
     for ln in ordered:
         if ln.kit_id is not None:
             kit = kit_service.get_kit(db, ln.kit_id)
             if kit is not None:
                 kit_content[ln.id] = kit_service.content_groups(kit)
+        elif ln.accessory_kit_id is not None:
+            ak = accessory_kit_service.get(db, ln.accessory_kit_id)
+            if ak is not None:
+                accessory_kit_content[ln.id] = ak.lines
 
     fingerprint = json.dumps(
         {
@@ -383,6 +397,10 @@ def _packing_render(
                         [g.model_name, [it.barcode or it.serial_number or "" for it in g.items]]
                         for g in kit_content.get(ln.id, [])
                     ],
+                    [
+                        [cl.name, cl.quantity]
+                        for cl in accessory_kit_content.get(ln.id, [])
+                    ],
                 ]
                 for ln in ordered
             ],
@@ -399,6 +417,7 @@ def _packing_render(
         breakdown=breakdown,
         accessories=accessories,
         kit_content=kit_content,
+        accessory_kit_content=accessory_kit_content,
         generated_at=utcnow(),
         logo_uri=_logo_uri(company),
         fontface=fontface,
@@ -488,6 +507,7 @@ def _picking_render(
 def _transport_render(
     db: Session, project: Project, lang: str, fontface: bool = True
 ) -> tuple[str, str]:
+    from app.accessory_kits import service as accessory_kit_service
     from app.transport import service as transport_service
 
     company = get_company_settings(db)
@@ -499,6 +519,16 @@ def _transport_render(
     if not board.vehicles or not any(v.assignments for v in board.vehicles):
         raise PdfUnavailable("Оборудование не распределено по машинам")
 
+    # Содержимое комплектов аксессуаров, назначенных в машины — отдельной
+    # таблицей на листе каждой машины (кабелярка едет одним неделимым кейсом).
+    accessory_kit_content: dict[int, list] = {}
+    for vb in board.vehicles:
+        for row in vb.assignments:
+            if row.line.accessory_kit_id is not None and row.line.id not in accessory_kit_content:
+                ak = accessory_kit_service.get(db, row.line.accessory_kit_id)
+                if ak is not None:
+                    accessory_kit_content[row.line.id] = ak.lines
+
     fingerprint = json.dumps(
         {
             "company": [company.company_name, company.address, company.pdf_footer],
@@ -509,7 +539,14 @@ def _transport_render(
                     v.project_vehicle.name,
                     v.project_vehicle.plate_number,
                     str(v.project_vehicle.max_weight_kg),
-                    [[a.line.name, a.assignment.quantity] for a in v.assignments],
+                    [
+                        [
+                            a.line.name,
+                            a.assignment.quantity,
+                            [[cl.name, cl.quantity] for cl in accessory_kit_content.get(a.line.id, [])],
+                        ]
+                        for a in v.assignments
+                    ],
                 ]
                 for v in board.vehicles
             ],
@@ -523,6 +560,7 @@ def _transport_render(
         project=project,
         packing=packing,
         board=board,
+        accessory_kit_content=accessory_kit_content,
         generated_at=utcnow(),
         logo_uri=_logo_uri(company),
         fontface=fontface,

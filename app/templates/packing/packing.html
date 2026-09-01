@@ -110,10 +110,11 @@
     <div class="d-flex flex-wrap justify-content-between gap-2">
       <div class="fw-semibold">
         {% if line.is_kit %}<a href="/inventory/kits/{{ line.kit_id }}">{{ line.name }}</a> <span class="badge text-bg-info">комплект</span>
+        {% elif line.is_accessory_kit %}<a href="/projects/{{ project.id }}/accessory-kits/{{ line.accessory_kit_id }}">{{ line.name }}</a> <span class="badge text-bg-info">комплект аксессуаров</span>
         {% elif line.model_id %}<a href="/inventory/models/{{ line.model_id }}">{{ line.name }}</a>{% else %}{{ line.name }}{% endif %}
         {% if line.is_custom %}<span class="badge text-bg-light">доп.</span>{% endif %}
-        {% if not line.is_kit and c.over > 0 %}<span class="badge text-bg-warning">сверх плана +{{ c.over }}</span>{% endif %}
-        {% if not line.is_kit and c.missing > 0 %}<span class="badge text-bg-danger">недокомплект −{{ c.missing }}</span>{% endif %}
+        {% if not line.is_kit and not line.is_accessory_kit and c.over > 0 %}<span class="badge text-bg-warning">сверх плана +{{ c.over }}</span>{% endif %}
+        {% if not line.is_kit and not line.is_accessory_kit and c.missing > 0 %}<span class="badge text-bg-danger">недокомплект −{{ c.missing }}</span>{% endif %}
       </div>
       <div class="text-secondary small">
         план {{ c.planned }} · факт {{ c.fact }} · упак. {{ c.packed }} / без {{ c.unpacked }}
@@ -136,11 +137,20 @@
         <div class="text-secondary">Комплект пуст.</div>
         {% endfor %}
       </div>
+    {% elif line.is_accessory_kit %}
+      {# Содержимое комплекта аксессуаров — «живьём» по accessory_kit_id #}
+      <div class="ms-3 mt-1 small">
+        {% for cl in accessory_kit_content.get(line.id, []) %}
+        <div><span class="text-secondary">{{ cl.name }}</span> — {{ cl.quantity }} шт.{% if cl.is_custom %} <span class="badge text-bg-light">произв.</span>{% endif %}</div>
+        {% else %}
+        <div class="text-secondary">Содержимое ещё не задано — <a href="/projects/{{ project.id }}/accessory-kits/{{ line.accessory_kit_id }}">заполнить</a>.</div>
+        {% endfor %}
+      </div>
     {% endif %}
 
     {% if editable %}
-      {% if line.is_kit %}
-        {# Комплект комплектуется целиком; строка без факта/сканирования #}
+      {% if line.is_kit or line.is_accessory_kit %}
+        {# Комплект/комплект аксессуаров комплектуется целиком; строка без факта/сканирования #}
       {% elif line.is_serial %}
         {# Серийная строка: экземпляры (ТЗ §17.7) #}
         {% if line.serial_items %}

@@ -31,6 +31,7 @@
     <div class="d-flex flex-wrap justify-content-between gap-2">
       <div class="fw-semibold">
         {% if line.is_kit %}<a href="/inventory/kits/{{ line.kit_id }}">{{ line.name }}</a> <span class="badge text-bg-info">комплект</span>
+        {% elif line.is_accessory_kit %}<a href="/projects/{{ project.id }}/accessory-kits/{{ line.accessory_kit_id }}">{{ line.name }}</a> <span class="badge text-bg-info">комплект аксессуаров</span>
         {% elif line.model_id %}<a href="/inventory/models/{{ line.model_id }}">{{ line.name }}</a>{% else %}{{ line.name }}{% endif %}
         {% if line.missing_quantity > 0 %}<span class="badge text-bg-danger">недостача −{{ line.missing_quantity }}</span>{% endif %}
       </div>
@@ -84,6 +85,34 @@
         <input class="form-control form-control-sm" name="comment" value="{{ line.comment or '' }}"></div>
       <div class="col-auto align-self-end"><button class="btn btn-sm btn-outline-primary">Сохранить</button></div>
     </form>
+    {% endif %}
+    {% if line.is_accessory_kit %}
+    {# Чек-лист по содержимому кабелярки — недостача мелких кабелей/коннекторов
+       не должна теряться за одной галочкой «кейс вернулся» (ТЗ §56.1, §56.3). #}
+    <div class="ms-3 mt-2 small">
+      <div class="text-secondary mb-1">Содержимое:</div>
+      {% for cl in line.accessory_kit_lines %}
+      <div class="d-flex flex-wrap align-items-center gap-2 py-1 border-top">
+        <div class="flex-grow-1">
+          {{ cl.name }}
+          {% if cl.missing_quantity > 0 %}<span class="badge text-bg-danger">недостача −{{ cl.missing_quantity }}</span>{% endif %}
+        </div>
+        {% if editable %}
+        <form method="post" action="{{ base }}/lines/accessory/{{ cl.id }}" class="row g-1 align-items-center m-0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="col-auto"><input class="form-control form-control-sm" name="returned_quantity" inputmode="numeric" value="{{ cl.returned_quantity }}" style="width:4.5rem" title="Принято из {{ cl.expected_quantity }}"></div>
+          <div class="col-auto text-secondary">/ {{ cl.expected_quantity }}</div>
+          <div class="col-auto"><input class="form-control form-control-sm" name="comment" value="{{ cl.comment or '' }}" placeholder="комментарий" style="width:9rem"></div>
+          <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">✓</button></div>
+        </form>
+        {% else %}
+        <div class="text-secondary">{{ cl.returned_quantity }} / {{ cl.expected_quantity }}</div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="text-secondary">Содержимое не было задано на момент возврата.</div>
+      {% endfor %}
+    </div>
     {% endif %}
     {% endif %}
   </div>

@@ -65,7 +65,7 @@
       <tbody>
         {% for row in vb.assignments %}
         <tr>
-          <td>{{ row.line.name }}</td>
+          <td>{{ row.line.name }}{% if row.line.is_accessory_kit %} ({{ L.accessory_kit }}){% endif %}</td>
           <td class="num">{{ row.assignment.quantity }}</td>
           <td class="num">{{ row.calc.packed }}</td>
           <td class="num">{{ row.calc.unpacked }}</td>
@@ -73,6 +73,22 @@
           <td class="num">{{ fmt_volume(row.calc.total_volume) }}</td>
           <td>{{ row.line.comment or "" }}</td>
         </tr>
+        {% if row.line.is_accessory_kit %}
+        <tr>
+          <td colspan="7" style="padding:2px 5px 6px 22px;">
+            <table style="width:100%;border-collapse:collapse;font-size:7.5pt;">
+              {% for cl in accessory_kit_content.get(row.line.id, []) %}
+              <tr>
+                <td style="border:none;padding:1px 4px;color:#555;">— {{ cl.name }}</td>
+                <td class="num" style="border:none;padding:1px 4px;color:#555;width:15%;">{{ cl.quantity }}</td>
+              </tr>
+              {% else %}
+              <tr><td style="border:none;padding:1px 4px;color:#999;">—</td></tr>
+              {% endfor %}
+            </table>
+          </td>
+        </tr>
+        {% endif %}
         {% endfor %}
       </tbody>
     </table>

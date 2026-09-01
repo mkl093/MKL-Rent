@@ -157,17 +157,19 @@ def compute_category_breakdown(
     *,
     custom_label: str = "Дополнительно",
     kit_label: str = "Комплекты",
+    accessory_kit_label: str = "Комплекты аксессуаров",
     no_category_label: str = "Без категории",
 ) -> list[CategoryTotal]:
     """Разбивка веса, объёма и энергопотребления по категориям.
 
     Дополнительные позиции (без категории) собираются в группу ``custom_label``,
-    строки-комплекты — в ``kit_label``. Порядок групп — по первому появлению строки,
-    как при выводе документа. Метки по умолчанию — русские (для веб-интерфейса
+    строки-комплекты — в ``kit_label``, строки-комплекты аксессуаров — в
+    ``accessory_kit_label``. Порядок групп — по первому появлению строки, как при
+    выводе документа. Метки по умолчанию — русские (для веб-интерфейса
     packing-листа); PDF-рендер (документы на en/de) передаёт локализованные метки
-    явно (ТЗ §26.1). Комплект определяется по ``line.is_kit``, а не по сохранённому
-    тексту ``category_name`` — там снимок KIT_GROUP_NAME (см. packing.service),
-    который сам по себе не переводится.
+    явно (ТЗ §26.1). Группа определяется по ``line.is_kit``/``is_accessory_kit``,
+    а не по сохранённому тексту ``category_name`` — там снимок группового имени
+    (см. packing.service), который сам по себе не переводится.
     """
     order: list[str] = []
     acc: dict[str, dict] = {}
@@ -176,6 +178,8 @@ def compute_category_breakdown(
             key = custom_label
         elif line.is_kit:
             key = kit_label
+        elif line.is_accessory_kit:
+            key = accessory_kit_label
         else:
             key = line.category_name or no_category_label
         if key not in acc:

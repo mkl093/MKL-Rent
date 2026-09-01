@@ -53,6 +53,11 @@ class ReturnLine(Base):
     kit_id: Mapped[int | None] = mapped_column(
         ForeignKey("kits.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Строка-комплект аксессуаров: аналогично kit_id, но комплект проектный
+    # (см. app.accessory_kits) — содержимое сверяется по позициям (accessory_kit_lines).
+    accessory_kit_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accessory_kits.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     is_custom: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_serial: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
@@ -74,10 +79,17 @@ class ReturnLine(Base):
     serial_items: Mapped[list[ReturnSerialItem]] = relationship(
         back_populates="line", cascade="all, delete-orphan", order_by="ReturnSerialItem.barcode"
     )
+    accessory_kit_lines: Mapped[list[ReturnAccessoryKitLine]] = relationship(
+        back_populates="return_line", cascade="all, delete-orphan", order_by="ReturnAccessoryKitLine.id"
+    )
 
     @property
     def is_kit(self) -> bool:
         return self.kit_id is not None
+
+    @property
+    def is_accessory_kit(self) -> bool:
+        return self.accessory_kit_id is not None
 
     @property
     def fact_quantity(self) -> int:
@@ -119,3 +131,30 @@ class ReturnSerialItem(Base):
     condition_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     line: Mapped[ReturnLine] = relationship(back_populates="serial_items")
+
+
+class ReturnAccessoryKitLine(Base):
+    """Снимок позиции содержимого комплекта аксессуаров на момент оформления возврата.
+
+    Содержимое кабелярки количественное, а не поштучно отслеживаемое (в отличие
+    от ReturnSerialItem) — поэтому сверяется как «ожидается/принято» по каждой
+    позиции состава отдельно, чтобы недостача мелких кабелей/коннекторов не
+    терялась за одной общей галочкой «кейс вернулся» (ТЗ §56.1, §56.3).
+    """
+
+    __tablename__ = "return_accessory_kit_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    return_line_id: Mapped[int] = mapped_column(
+        ForeignKey("return_lines.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    expected_quantity: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    returned_quantity: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    return_line: Mapped[ReturnLine] = relationship(back_populates="accessory_kit_lines")
+
+    @property
+    def missing_quantity(self) -> int:
+        return max(0, self.expected_quantity - self.returned_quantity)

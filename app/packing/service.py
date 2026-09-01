@@ -10,6 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app.accessory_kits import service as accessory_kit_service
+from app.accessory_kits.models import AccessoryKit
 from app.estimates.models import EstimateLine
 from app.estimates.service import add_model as estimate_add_model
 from app.estimates.service import get_estimate
@@ -69,6 +71,7 @@ def get_packing(db: Session, project: Project) -> PackingList | None:
 
 
 KIT_GROUP_NAME = "Комплекты"
+ACCESSORY_KIT_GROUP_NAME = "Комплекты аксессуаров"
 
 
 def _estimate_warehouse_quantities(db: Session, project: Project) -> dict[int, int]:
@@ -89,6 +92,14 @@ def _estimate_kit_ids(db: Session, project: Project) -> list[int]:
     if estimate is None:
         return []
     return [line.kit_id for line in estimate.lines if line.kit_id is not None]
+
+
+def _estimate_accessory_kit_ids(db: Session, project: Project) -> list[int]:
+    """Комплекты аксессуаров, добавленные в смету (см. app.accessory_kits)."""
+    estimate = get_estimate(db, project)
+    if estimate is None:
+        return []
+    return [line.accessory_kit_id for line in estimate.lines if line.accessory_kit_id is not None]
 
 
 def _estimate_custom_lines(db: Session, project: Project) -> list[EstimateLine]:
@@ -163,6 +174,35 @@ def _new_line_from_model(model: EquipmentModel, planned: int, sort_order: int) -
     return line
 
 
+def _new_line_from_accessory_kit(kit: AccessoryKit, sort_order: int) -> PackingLine:
+    """Строка packing-листа для комплекта аксессуаров: снимок веса + перечень «живьём».
+
+    Комплект аксессуаров обычно достраивается уже в процессе сборки packing-листа
+    (см. app.accessory_kits) — правки содержимого/веса кабелярки проталкиваются
+    в снимок этой строки самим сервисом кабелярки (accessory_kit_service._push_to_packing_line),
+    поэтому здесь достаточно взять текущее значение на момент добавления строки.
+    """
+    return PackingLine(
+        model_id=None,
+        accessory_kit_id=kit.id,
+        is_custom=False,
+        is_serial=False,
+        name=kit.name,
+        category_id=None,
+        category_name=ACCESSORY_KIT_GROUP_NAME,
+        subcategory_name=None,
+        planned_quantity=1,
+        quantity=1,
+        packed_quantity=0,
+        sort_order=sort_order,
+        unit_weight_kg=accessory_kit_service.total_weight(kit),
+        length_mm=kit.length_mm,
+        width_mm=kit.width_mm,
+        height_mm=kit.height_mm,
+        has_packing=False,
+    )
+
+
 def _new_line_from_estimate_custom(est_line: EstimateLine, sort_order: int) -> PackingLine:
     """Строка packing-листа из произвольной строки сметы (ТЗ §17.9).
 
@@ -217,6 +257,13 @@ def create_from_estimate(db: Session, project: Project) -> PackingList:
             continue
         packing.lines.append(_new_line_from_kit(kit, sort_order))
         sort_order += 1
+    # Комплекты аксессуаров сметы — отдельными строками, содержимое живёт своей жизнью.
+    for ak_id in _estimate_accessory_kit_ids(db, project):
+        kit = accessory_kit_service.get(db, ak_id)
+        if kit is None:
+            continue
+        packing.lines.append(_new_line_from_accessory_kit(kit, sort_order))
+        sort_order += 1
     # Произвольные строки сметы — суб-аренда и подобное (ТЗ §17.9).
     for est_line in _estimate_custom_lines(db, project):
         packing.lines.append(_new_line_from_estimate_custom(est_line, sort_order))
@@ -264,6 +311,20 @@ def discrepancies(db: Session, project: Project, packing: PackingList) -> list[D
                 result.append(Discrepancy(None, kit.name, 1, 0, is_kit=True))
     for kit_id, line in packing_kits.items():
         if kit_id not in est_kits and not line.is_manual:
+            result.append(Discrepancy(None, line.name, 0, 1, is_kit=True))
+
+    # Комплекты аксессуаров: расхождение состава сметы и packing-листа.
+    est_accessory_kits = set(_estimate_accessory_kit_ids(db, project))
+    packing_accessory_kits = {
+        ln.accessory_kit_id: ln for ln in packing.lines if ln.accessory_kit_id is not None
+    }
+    for ak_id in est_accessory_kits:
+        if ak_id not in packing_accessory_kits:
+            kit = accessory_kit_service.get(db, ak_id)
+            if kit is not None:
+                result.append(Discrepancy(None, kit.name, 1, 0, is_kit=True))
+    for ak_id, line in packing_accessory_kits.items():
+        if ak_id not in est_accessory_kits and not line.is_manual:
             result.append(Discrepancy(None, line.name, 0, 1, is_kit=True))
 
     # Произвольные строки сметы — перенос/обновление/удаление в packing (ТЗ §17.9).
@@ -346,6 +407,21 @@ def apply_sync(db: Session, project: Project, packing: PackingList, *, confirm_d
                 next_sort += 1
     for kit_id, line in by_kit.items():
         if kit_id not in est_kits and not line.is_manual:
+            db.delete(line)
+
+    # Комплекты аксессуаров: добавить новые, убрать отсутствующие в смете.
+    est_accessory_kits = set(_estimate_accessory_kit_ids(db, project))
+    by_accessory_kit = {
+        ln.accessory_kit_id: ln for ln in packing.lines if ln.accessory_kit_id is not None
+    }
+    for ak_id in est_accessory_kits:
+        if ak_id not in by_accessory_kit:
+            kit = accessory_kit_service.get(db, ak_id)
+            if kit is not None:
+                packing.lines.append(_new_line_from_accessory_kit(kit, next_sort))
+                next_sort += 1
+    for ak_id, line in by_accessory_kit.items():
+        if ak_id not in est_accessory_kits and not line.is_manual:
             db.delete(line)
 
     # Произвольные строки сметы: добавить новые, обновить существующие (ТЗ §17.9).

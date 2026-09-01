@@ -131,6 +131,26 @@ def line_quantity(
     return redirect(f"/projects/{project_id}/returns")
 
 
+@router.post("/lines/accessory/{content_line_id}", dependencies=[Depends(verify_csrf)])
+def accessory_content_line_quantity(
+    request: Request,
+    project_id: int,
+    content_line_id: int,
+    returned_quantity: str = Form("0"),
+    comment: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    """Сверить одну позицию содержимого комплекта аксессуаров (ТЗ §56.1, чек-лист)."""
+    project, ret, editable = _load(db, project_id, require_editable=True)
+    if ret is not None and editable:
+        content_line = service.get_accessory_content_line(db, ret, content_line_id)
+        if content_line is not None:
+            service.update_accessory_content_line(db, content_line, _int(returned_quantity), comment)
+            flash(request, "Позиция сверена.", "success")
+    return redirect(f"/projects/{project_id}/returns")
+
+
 @router.post("/lines/{line_id}/accept_all", dependencies=[Depends(verify_csrf)])
 def line_accept_all(
     request: Request,

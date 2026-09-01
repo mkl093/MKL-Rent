@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.accessory_kits import service as accessory_kit_service
 from app.audit.events import EventType
 from app.audit.service import log as audit_log
 from app.auth.models import User
@@ -113,11 +114,16 @@ def packing_page(
 
     # Перечень комплектации для строк-комплектов — «живьём» по kit_id («Комплект»).
     kit_content: dict[int, list] = {}
+    accessory_kit_content: dict[int, list] = {}
     for ln in packing.lines:
         if ln.kit_id is not None:
             kit = kit_service.get_kit(db, ln.kit_id)
             if kit is not None:
                 kit_content[ln.id] = kit_service.content_groups(kit)
+        elif ln.accessory_kit_id is not None:
+            ak = accessory_kit_service.get(db, ln.accessory_kit_id)
+            if ak is not None:
+                accessory_kit_content[ln.id] = ak.lines
 
     return render(
         request,
@@ -130,6 +136,7 @@ def packing_page(
             "calcs": calcs,
             "available": available,
             "kit_content": kit_content,
+            "accessory_kit_content": accessory_kit_content,
             "totals": service.totals(db, packing),
             "breakdown": service.category_breakdown(db, packing),
             "accessories": service.accessory_totals(db, packing),

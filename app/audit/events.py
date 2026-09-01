@@ -43,6 +43,7 @@ class EventType(enum.StrEnum):
     VEHICLE_MANAGE = "vehicle_manage"
     TRANSPORT_ASSIGN = "transport_assign"
     GUEST_MANAGE = "guest_manage"
+    ACCESSORY_KIT_MANAGE = "accessory_kit_manage"
 
     @property
     def label(self) -> str:
@@ -84,4 +85,5 @@ class EventType(enum.StrEnum):
             "vehicle_manage": "Справочник машин",
             "transport_assign": "Распределение по транспорту",
             "guest_manage": "Управление гостевым доступом",
+            "accessory_kit_manage": "Комплект аксессуаров",
         }[self.value]

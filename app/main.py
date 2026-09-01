@@ -119,6 +119,8 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     # Маршруты модулей.
+    from app.accessory_kits.project_router import router as accessory_kits_project_router
+    from app.accessory_kits.router import router as accessory_kits_router
     from app.audit.router import router as audit_router
     from app.auth.router import router as auth_router
     from app.backup.router import router as backup_router
@@ -151,6 +153,8 @@ def create_app() -> FastAPI:
     app.include_router(staff_calendar_router)
     app.include_router(transport_router)
     app.include_router(transport_project_router)
+    app.include_router(accessory_kits_project_router)
+    app.include_router(accessory_kits_router)
     app.include_router(users_router)
     app.include_router(audit_router)
     app.include_router(backup_router)

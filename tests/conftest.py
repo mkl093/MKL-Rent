@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 # Регистрируем модели в Base.metadata.
+from app.accessory_kits import models as _accessory_kit_models  # noqa: F401
 from app.audit import models as _audit_models  # noqa: F401
 from app.auth import models as _auth_models  # noqa: F401
 from app.database import Base, get_db

@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h1 class="h3 m-0">{{ kit.name }} <span class="badge text-bg-info align-middle">комплект аксессуаров</span></h1>
+    <div class="text-secondary">{{ project.number }} · {{ project.name }}</div>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a href="/projects/{{ project.id }}/accessory-kits" class="btn btn-outline-secondary">К списку</a>
+    {% if editable %}
+      {% if in_estimate %}
+      <span class="btn btn-outline-success disabled">В смете</span>
+      {% else %}
+      <form method="post" action="/projects/{{ project.id }}/accessory-kits/{{ kit.id }}/add-to-estimate" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn btn-outline-primary">Добавить в смету</button>
+      </form>
+      {% endif %}
+      <form method="post" action="/projects/{{ project.id }}/accessory-kits/{{ kit.id }}/delete" class="m-0"
+            onsubmit="return confirm('Удалить комплект аксессуаров?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn btn-outline-danger">Удалить</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if editable %}
+<div class="card card-body mb-3">
+  <form method="post" action="/projects/{{ project.id }}/accessory-kits/{{ kit.id }}" class="row g-2 align-items-end">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="col-12 col-md-5">
+      <label class="form-label small mb-0">Название</label>
+      <input class="form-control" name="name" value="{{ kit.name }}" required>
+    </div>
+    <div class="col-12 col-md-4">
+      <label class="form-label small mb-0">Штрих-код кейса</label>
+      <input class="form-control" name="barcode" value="{{ kit.barcode or '' }}" placeholder="отсканируйте/введите">
+    </div>
+    <div class="col-12 col-md-3">
+      <label class="form-label small mb-0">Комментарий</label>
+      <input class="form-control" name="comment" value="{{ kit.comment or '' }}">
+    </div>
+    <div class="col-12 col-md-4">
+      <label class="form-label small mb-0">Расчёт веса для packing</label>
+      <select class="form-select" name="weight_mode">
+        {% for m in KitWeightMode %}
+        <option value="{{ m.value }}" {% if kit.weight_mode == m %}selected{% endif %}>{{ m.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-8 col-md-3">
+      <label class="form-label small mb-0">Вес, кг</label>
+      <input class="form-control" name="weight_value" inputmode="decimal"
+             value="{{ kit.weight_value if kit.weight_value is not none else '' }}"
+             placeholder="для «+ упаковки» и «фиксированного»">
+    </div>
+    <div class="col-12 col-md-5">
+      <label class="form-label small mb-0">Габариты кейса, мм (Д×Ш×В)</label>
+      <div class="input-group">
+        <input class="form-control" name="length_mm" inputmode="numeric" value="{{ kit.length_mm }}">
+        <input class="form-control" name="width_mm" inputmode="numeric" value="{{ kit.width_mm }}">
+        <input class="form-control" name="height_mm" inputmode="numeric" value="{{ kit.height_mm }}">
+      </div>
+    </div>
+    <div class="col-12"><button class="btn btn-outline-primary">Сохранить</button></div>
+    <div class="col-12">
+      <span class="small text-secondary">
+        Вес содержимого: {{ "%.1f"|format(content_weight) }} кг ·
+        расчётный вес кейса: <b>{{ "%.1f"|format(total_weight) }} кг</b>
+      </span>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Содержимое ({{ kit.lines|length }} поз.)</strong>
+  </div>
+  <div class="card-body">
+    {% if kit.lines %}
+    <table class="table table-sm align-middle m-0">
+      <thead><tr><th>Название</th><th class="text-end">Кол-во</th><th class="text-end">Вес ед., кг</th><th>Комментарий</th>{% if editable %}<th></th>{% endif %}</tr></thead>
+      <tbody>
+        {% for ln in kit.lines %}
+        <tr>
+          <td>{% if ln.model_id %}<a href="/inventory/models/{{ ln.model_id }}">{{ ln.name }}</a>{% else %}{{ ln.name }}{% endif %}
+            {% if ln.is_custom %}<span class="badge text-bg-light">произв.</span>{% endif %}</td>
+          {% if editable %}
+          <td colspan="3">
+            <form method="post" action="/projects/{{ project.id }}/accessory-kits/{{ kit.id }}/lines/{{ ln.id }}"
+                  class="row g-1 align-items-center m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div class="col-2"><input class="form-control form-control-sm text-end" name="quantity" inputmode="numeric" value="{{ ln.quantity }}"></div>
+              {% if ln.is_custom %}
+              <div class="col-3"><input class="form-control form-control-sm text-end" name="unit_weight_kg" inputmode="decimal" value="{{ ln.unit_weight_kg }}"></div>
+              {% else %}
+              <div class="col-3 text-end">{{ ln.unit_weight_kg }}</div>
+              {% endif %}
+              <div class="col-4"><input class="form-control form-control-sm" name="comment" value="{{ ln.comment or '' }}" placeholder="комментарий"></div>
+              <div class="col-3 d-flex gap-1">
+                <button class="btn btn-sm btn-outline-secondary">Сохранить</button>
+              </div>
+            </form>
+          </td>
+          <td class="text-end">
+            <form method="post" action="/projects/{{ project.id }}/accessory-kits/{{ kit.id }}/lines/{{ ln.id }}/delete" class="m-0 d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-sm btn-outline-danger" title="Удалить">×</button>
+            </form>
+          </td>
+          {% else %}
+          <td class="text-end">{{ ln.quantity }}</td>
+          <td class="text-end">{{ ln.unit_weight_kg }}</td>
+          <td>{{ ln.comment or "" }}</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-secondary m-0">Содержимое ещё не задано — добавьте позиции ниже.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if editable %}
+<div class="card card-body mb-3">
+  <h2 class="h6">Добавить произвольную позицию</h2>
+  <form method="post" action="/projects/{{ project.id }}/accessory-kits/{{ kit.id }}/custom" class="row g-2 align-items-end">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="col-12 col-md-4"><label class="form-label small mb-0">Название</label><input class="form-control" name="name" required></div>
+    <div class="col-4 col-md-2"><label class="form-label small mb-0">Кол-во</label><input class="form-control" name="quantity" inputmode="numeric" value="1"></div>
+    <div class="col-4 col-md-2"><label class="form-label small mb-0">Вес ед., кг</label><input class="form-control" name="unit_weight_kg" inputmode="decimal" value="0"></div>
+    <div class="col-12 col-md-3"><label class="form-label small mb-0">Комментарий</label><input class="form-control" name="comment"></div>
+    <div class="col-4 col-md-1"><button class="btn btn-outline-primary w-100">+</button></div>
+  </form>
+</div>
+
+<div class="card card-body mb-3">
+  <h2 class="h6">Добавить со склада</h2>
+  <form method="get" action="/projects/{{ project.id }}/accessory-kits/{{ kit.id }}" class="row g-2 align-items-end mb-2">
+    <div class="col-12 col-md-8"><label class="form-label small mb-0">Поиск (название, производитель)</label><input class="form-control" name="q" value="{{ q }}"></div>
+    <div class="col-6 col-md-2"><button class="btn btn-outline-primary w-100">Найти</button></div>
+  </form>
+  {% if models %}
+  <form method="post" action="/projects/{{ project.id }}/accessory-kits/{{ kit.id }}/add">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <table class="table table-sm table-hover align-middle">
+      <thead><tr><th></th><th>Модель</th><th>Производитель</th><th class="text-end">Кол-во</th></tr></thead>
+      <tbody>
+        {% for m in models %}
+        <tr>
+          <td><input class="form-check-input" type="checkbox" name="select_{{ m.id }}" value="1"></td>
+          <td>{{ m.name }}</td>
+          <td class="text-secondary">{{ m.manufacturer or "—" }}</td>
+          <td class="text-end"><input class="form-control form-control-sm text-end" name="qty_{{ m.id }}" inputmode="numeric" value="1" style="width:4.5rem"></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <button class="btn btn-primary" type="submit">Добавить выбранное</button>
+  </form>
+  {% elif q %}
+  <p class="text-secondary">Ничего не найдено.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

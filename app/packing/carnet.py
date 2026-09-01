@@ -20,6 +20,8 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.accessory_kits import service as accessory_kit_service
+from app.accessory_kits.models import AccessoryKitLine
 from app.inventory.models import EquipmentModel
 from app.inventory.services import kits as kit_service
 from app.inventory.services.kits import KitGroup
@@ -37,6 +39,22 @@ class CarnetRow:
 
 def _models_by_id(db: Session, packing: PackingList) -> dict[int, EquipmentModel]:
     ids = {ln.model_id for ln in packing.lines if ln.model_id is not None}
+    if not ids:
+        return {}
+    stmt = select(EquipmentModel).where(EquipmentModel.id.in_(ids))
+    return {m.id: m for m in db.execute(stmt).scalars().all()}
+
+
+def _accessory_content_models(db: Session, packing: PackingList) -> dict[int, EquipmentModel]:
+    """Модели содержимого комплектов аксессуаров проекта (для производителя/страны в carnet)."""
+    ids: set[int] = set()
+    for ln in packing.lines:
+        if ln.accessory_kit_id is None:
+            continue
+        kit = accessory_kit_service.get(db, ln.accessory_kit_id)
+        if kit is None:
+            continue
+        ids.update(cl.model_id for cl in kit.lines if cl.model_id is not None)
     if not ids:
         return {}
     stmt = select(EquipmentModel).where(EquipmentModel.id.in_(ids))
@@ -61,6 +79,21 @@ def _model_line_row(line: PackingLine, model: EquipmentModel | None, qty: int) -
     return CarnetRow(desc, qty, line.unit_weight_kg * qty, country)
 
 
+def _accessory_content_row(cl: AccessoryKitLine, model: EquipmentModel | None) -> CarnetRow:
+    """Строка carnet для позиции содержимого комплекта аксессуаров.
+
+    Содержимое количественное (модель+кол-во, без отслеживаемых экземпляров) —
+    в отличие от Комплекта здесь нет штрих-кодов отдельных единиц, поэтому S/N
+    всегда «NSN», как того требует формат ATA Carnet для неотслеживаемых позиций.
+    """
+    desc = cl.name
+    if model and model.manufacturer:
+        desc += f", {model.manufacturer}"
+    desc += ", NSN"
+    country = (model.country_of_origin if model else None) or ""
+    return CarnetRow(desc, cl.quantity, cl.unit_weight_kg * cl.quantity, country)
+
+
 def _kit_group_row(group: KitGroup) -> CarnetRow:
     model = group.items[0].model if group.items else None
     serial_text = _serial_text([it.barcode for it in group.items])
@@ -74,10 +107,13 @@ def _kit_group_row(group: KitGroup) -> CarnetRow:
 
 
 def build_rows(db: Session, packing: PackingList) -> list[CarnetRow]:
-    """Построчный список для carnet: комплекты разворачиваются по составу (ATA
-    требует поштучного описания, группировка допустима только для одинаковых
-    единиц — ТЗ на комплекты этому уже соответствует, см. `KitGroup`)."""
+    """Построчный список для carnet: комплекты и комплекты аксессуаров разворачиваются
+    по составу (ATA требует поштучного/по-позиционного описания, группировка допустима
+    только для одинаковых единиц — ТЗ на комплекты этому уже соответствует, см. `KitGroup`).
+    Комплект аксессуаров в смете виден одной строкой без содержимого (ТЗ), но в carnet
+    декларируется реальное количество провозимого — поэтому здесь именно содержимое."""
     models = _models_by_id(db, packing)
+    accessory_models = _accessory_content_models(db, packing)
     rows: list[CarnetRow] = []
     ordered = sorted(packing.lines, key=lambda ln: (ln.sort_order, ln.id))
     for line in ordered:
@@ -87,6 +123,14 @@ def build_rows(db: Session, packing: PackingList) -> list[CarnetRow]:
                 for group in kit_service.content_groups(kit):
                     if group.count > 0:
                         rows.append(_kit_group_row(group))
+            continue
+        if line.accessory_kit_id is not None:
+            ak = accessory_kit_service.get(db, line.accessory_kit_id)
+            if ak is not None:
+                for cl in ak.lines:
+                    if cl.quantity > 0:
+                        model = accessory_models.get(cl.model_id) if cl.model_id else None
+                        rows.append(_accessory_content_row(cl, model))
             continue
         qty = line.fact_quantity
         if qty <= 0:

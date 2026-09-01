@@ -56,6 +56,10 @@ class EstimateLine(Base):
     kit_id: Mapped[int | None] = mapped_column(
         ForeignKey("kits.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Строка-комплект аксессуаров: аналогично kit_id, но комплект проектный (не складской).
+    accessory_kit_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accessory_kits.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     is_custom: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Произвольную строку можно исключить из переноса в packing-лист (ТЗ §16.5, §17.9).
     add_to_packing: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -87,6 +91,11 @@ class EstimateLine(Base):
     def is_kit(self) -> bool:
         """Строка-комплект (бронируемая позиция «Комплект»)."""
         return self.kit_id is not None
+
+    @property
+    def is_accessory_kit(self) -> bool:
+        """Строка-комплект аксессуаров (проектный, см. app.accessory_kits)."""
+        return self.accessory_kit_id is not None
 
     @property
     def line_total(self) -> Decimal:

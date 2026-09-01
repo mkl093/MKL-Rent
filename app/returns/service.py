@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.accessory_kits import service as accessory_kit_service
 from app.inventory.enums import ItemStatus
 from app.inventory.services import items as item_service
 from app.inventory.services.items import _sql_normalized_barcode, normalize_barcode
@@ -16,7 +17,12 @@ from app.numbering.service import next_number
 from app.packing.service import get_packing
 from app.projects.models import Project
 from app.returns.enums import ReturnCondition, ReturnStatus
-from app.returns.models import ReturnLine, ReturnList, ReturnSerialItem
+from app.returns.models import (
+    ReturnAccessoryKitLine,
+    ReturnLine,
+    ReturnList,
+    ReturnSerialItem,
+)
 
 
 class ReturnError(Exception):
@@ -85,6 +91,7 @@ def create_from_packing(db: Session, project: Project) -> ReturnList:
             ret_line = ReturnLine(
                 model_id=line.model_id,
                 kit_id=line.kit_id,
+                accessory_kit_id=line.accessory_kit_id,
                 is_custom=line.is_custom,
                 is_serial=line.is_serial,
                 name=line.name,
@@ -105,6 +112,17 @@ def create_from_packing(db: Session, project: Project) -> ReturnList:
                             is_returned=False,
                         )
                     )
+            elif line.accessory_kit_id is not None:
+                # Снимок содержимого кабелярки на момент возврата — сверяется по
+                # позициям, а не только «кейс целиком» (ТЗ §56.1, чек-лист).
+                ak = accessory_kit_service.get(db, line.accessory_kit_id)
+                if ak is not None:
+                    for cl in ak.lines:
+                        ret_line.accessory_kit_lines.append(
+                            ReturnAccessoryKitLine(
+                                name=cl.name, expected_quantity=cl.quantity, returned_quantity=0
+                            )
+                        )
             ret.lines.append(ret_line)
             sort_order += 1
 
@@ -132,6 +150,25 @@ def update_quantity_line(
         raise ReturnError("Серийная строка принимается сканированием")
     line.returned_quantity = max(0, returned_quantity)
     line.comment = comment or None
+    db.commit()
+
+
+def get_accessory_content_line(
+    db: Session, ret: ReturnList, content_line_id: int
+) -> ReturnAccessoryKitLine | None:
+    for line in ret.lines:
+        for cl in line.accessory_kit_lines:
+            if cl.id == content_line_id:
+                return cl
+    return None
+
+
+def update_accessory_content_line(
+    db: Session, content_line: ReturnAccessoryKitLine, returned_quantity: int, comment: str | None
+) -> None:
+    """Сверить одну позицию содержимого кабелярки (ТЗ §56.1, чек-лист по содержимому)."""
+    content_line.returned_quantity = max(0, returned_quantity)
+    content_line.comment = comment or None
     db.commit()
 
 
@@ -306,7 +343,15 @@ def undo_scan(db: Session, ret: ReturnList, serial_item_id: int) -> None:
 
 
 def is_incomplete(ret: ReturnList) -> bool:
-    return any(ln.fact_quantity < ln.expected_quantity for ln in ret.lines)
+    """Есть ли недостача — включая недостачу содержимого комплектов аксессуаров.
+
+    Кейс кабелярки может вернуться целиком (line.fact_quantity == expected), но
+    с недостачей внутри (потерян кабель) — это тоже недостача проекта, иначе
+    чек-лист по содержимому был бы чисто информационным и не защищал бы §56.5.
+    """
+    if any(ln.fact_quantity < ln.expected_quantity for ln in ret.lines):
+        return True
+    return any(cl.missing_quantity > 0 for ln in ret.lines for cl in ln.accessory_kit_lines)
 
 
 def set_status(
