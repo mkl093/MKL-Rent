@@ -44,19 +44,21 @@
 
   <table class="items">
     <thead><tr>
-      <th width="55%">{{ L.name }}</th>
-      <th class="num" width="15%">{{ L.qty }}</th>
+      <th width="50%">{{ L.name }}</th>
+      <th class="num" width="20%">{{ L.plan }}/{{ L.fact }}</th>
       <th width="30%">{{ L.location }}</th>
     </tr></thead>
     <tbody>
       {% set ns = namespace(group=None) %}
-      {% for line, location, qty in rows %}
+      {% for line, location, planned, fact in rows %}
         {% set gname = (L.additional if line.is_custom else (L.kits if line.is_kit else (line.category_name or "—") ~ (" / " ~ line.subcategory_name if line.subcategory_name else ""))) %}
         {% if gname != ns.group %}{% set ns.group = gname %}
         <tr class="cat"><td colspan="3">{{ gname }}</td></tr>{% endif %}
+        {% set missing = [0, planned - fact]|max %}
+        {% set over = [0, fact - planned]|max %}
         <tr>
           <td>{{ line.name }}{% if line.is_kit %} ({{ L.kit }}){% endif %}</td>
-          <td class="num">{{ qty }}</td>
+          <td class="num">{{ planned }} / {{ fact }}{% if missing %} <span style="color:#b00">−{{ missing }}</span>{% endif %}{% if over %} <span style="color:#a60">+{{ over }}</span>{% endif %}</td>
           <td>{{ location }}</td>
         </tr>
       {% endfor %}

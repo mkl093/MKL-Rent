@@ -494,14 +494,22 @@ def _picking_render(
 
     ordered = _packing_ordered_lines(packing)
     locations = _storage_locations(db, ordered)
-    rows = [(ln, locations[ln.id], 1 if ln.is_kit else ln.fact_quantity) for ln in ordered]
+    rows = [
+        (
+            ln,
+            locations[ln.id],
+            1 if ln.is_kit else ln.planned_quantity,
+            1 if ln.is_kit else ln.fact_quantity,
+        )
+        for ln in ordered
+    ]
 
     fingerprint = json.dumps(
         {
             "company": [company.company_name, company.address, company.pdf_footer],
             "project": [project.number, project.name],
             "packing": [packing.number],
-            "lines": [[ln.name, qty, loc] for ln, loc, qty in rows],
+            "lines": [[ln.name, planned, fact, loc] for ln, loc, planned, fact in rows],
         },
         ensure_ascii=False,
         sort_keys=True,
