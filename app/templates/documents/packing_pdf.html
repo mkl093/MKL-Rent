@@ -25,7 +25,8 @@
   .cat td { background: #e9ecef; font-weight: bold; }
   .totals { margin-top: 8px; font-size: 10pt; font-weight: bold; text-align: right; }
   .shortage { margin-top: 8px; color: #b00; font-size: 9pt; }
-  .bc { font-family: monospace; font-size: 7pt; overflow-wrap: anywhere; }
+  .bc-list { column-width: 62px; column-gap: 6px; }
+  .bc { display: block; font-family: monospace; font-size: 6.5pt; overflow-wrap: anywhere; break-inside: avoid; margin-bottom: 1px; }
   .footer { margin-top: 18px; padding-top: 6px; border-top: 1px solid #ccc; font-size: 8pt; color: #666; text-align: center; }
 </style>
 </head>
@@ -50,10 +51,10 @@
     <thead><tr>
       <th width="14%">{{ L.name }}</th>
       <th class="num" width="6%">{{ L.plan }}/{{ L.fact }}</th>
-      <th width="14%">{{ L.serial }} / {{ L.barcode }}</th>
+      <th width="25%">{{ L.serial }} / {{ L.barcode }}</th>
       <th class="num" width="8%">{{ L.packed }}</th><th class="num" width="5%">{{ L.unpacked }}</th>
-      <th class="num" width="8%">{{ L.eq_weight }}</th><th class="num" width="8%">{{ L.pack_weight }}</th><th class="num" width="7%">{{ L.weight }}</th>
-      <th class="num" width="8%">{{ L.vol_loose }}</th><th class="num" width="8%">{{ L.vol_pack }}</th><th class="num" width="7%">{{ L.volume }}</th>
+      <th width="12%">{{ L.weight }} ({{ L.eq_short }} + {{ L.pack_short }})</th>
+      <th class="num" width="8%">{{ L.vol_loose }}</th><th class="num" width="8%">{{ L.dimensions }}</th><th class="num" width="7%">{{ L.volume }}</th>
       <th width="7%">{{ L.comment }}</th>
     </tr></thead>
     <tbody>
@@ -61,7 +62,7 @@
       {% for line, c in rows %}
         {% set gname = (L.additional if line.is_custom else (L.kits if line.is_kit else (L.accessory_kits if line.is_accessory_kit else (line.category_name or "—") ~ (" / " ~ line.subcategory_name if line.subcategory_name else "")))) %}
         {% if gname != ns.group %}{% set ns.group = gname %}
-        <tr class="cat"><td colspan="12">{{ gname }}</td></tr>{% endif %}
+        <tr class="cat"><td colspan="10">{{ gname }}</td></tr>{% endif %}
         <tr>
           <td>{{ line.name }}{% if line.is_kit %} ({{ L.kit }})
             {% for g in kit_content.get(line.id, []) %}<div style="color:#555">— {{ g.model_name }}: {% for it in g.items %}{{ it.barcode or it.serial_number or "—" }}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endfor %}
@@ -72,16 +73,22 @@
           <td>
             {% if line.is_kit or line.is_accessory_kit %}—{% else %}
               {% set shown_items = (line.serial_items|selectattr('confirmed_by_scan')|list) or line.serial_items %}
-              {% for si in shown_items %}<span class="bc">{{ si.barcode }}{% if si.serial_number %} ({{ si.serial_number }}){% endif %}</span>{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}
+              {% if shown_items %}
+              <div class="bc-list">
+                {% for si in shown_items %}<span class="bc">{{ si.barcode }}{% if si.serial_number %} ({{ si.serial_number }}){% endif %}</span>{% endfor %}
+              </div>
+              {% else %}—{% endif %}
             {% endif %}
           </td>
           <td class="num">{{ c.packed }}{% if c.packages %} <span style="color:#666">/ {{ c.packages }} {{ L.packages_unit }}</span>{% endif %}</td>
           <td class="num">{{ c.unpacked }}</td>
-          <td class="num">{{ fmt_weight(c.equipment_weight) }}</td>
-          <td class="num">{{ fmt_weight(c.packaging_weight) }}</td>
-          <td class="num">{{ fmt_weight(c.total_weight) }}</td>
+          <td>{{ fmt_weight(c.equipment_weight) }} + {{ fmt_weight(c.packaging_weight) }} = <b>{{ fmt_weight(c.total_weight) }}</b></td>
           <td class="num">{{ fmt_volume(c.equipment_volume) }}</td>
-          <td class="num">{{ fmt_volume(c.package_volume) }}</td>
+          <td class="num">
+            {% if line.has_packing and line.pack_length_mm and line.pack_width_mm and line.pack_height_mm %}{{ line.pack_length_mm }}×{{ line.pack_width_mm }}×{{ line.pack_height_mm }}
+            {% elif line.length_mm and line.width_mm and line.height_mm %}{{ line.length_mm }}×{{ line.width_mm }}×{{ line.height_mm }}
+            {% else %}—{% endif %}
+          </td>
           <td class="num">{{ fmt_volume(c.total_volume) }}</td>
           <td>{{ line.comment or "" }}</td>
         </tr>
