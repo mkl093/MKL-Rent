@@ -18,16 +18,14 @@
   table.items { width: 100%; border-collapse: collapse; font-size: 7pt; table-layout: fixed; }
   table.items th, table.items td {
     padding: 2px 3px; border: 1px solid #ddd; text-align: left; vertical-align: top;
-    overflow-wrap: break-word; word-break: break-word;
+    overflow-wrap: break-word; word-break: break-word; overflow: hidden;
   }
   table.items th { background: #f2f2f2; }
   .num { text-align: right; }
   .cat td { background: #e9ecef; font-weight: bold; }
   .totals { margin-top: 8px; font-size: 10pt; font-weight: bold; text-align: right; }
   .shortage { margin-top: 8px; color: #b00; font-size: 9pt; }
-  table.bc-list { width: 100%; table-layout: fixed; border-collapse: collapse; }
-  table.bc-list td { width: 50%; border: none; padding: 0 4px 0 0; vertical-align: top; overflow: hidden; }
-  .bc { display: block; font-family: monospace; font-size: 6.5pt; margin-bottom: 1px; }
+  .bc { display: block; font-family: monospace; font-size: 6.5pt; margin-bottom: 1px; overflow: hidden; }
   .bc .code, .bc .sn { white-space: nowrap; }
   .footer { margin-top: 18px; padding-top: 6px; border-top: 1px solid #ccc; font-size: 8pt; color: #666; text-align: center; }
 </style>
@@ -50,46 +48,53 @@
   </div>
 
   <table class="items">
+    <colgroup>
+      <col style="width:18%"><col style="width:21%"><col style="width:21%">
+      <col style="width:7%"><col style="width:3%">
+      <col style="width:10%">
+      <col style="width:5%"><col style="width:6%"><col style="width:5%">
+      <col style="width:4%">
+    </colgroup>
     <thead><tr>
-      <th width="16%">{{ L.name }}</th>
-      <th width="38%">{{ L.serial }} / {{ L.barcode }}</th>
-      <th class="num" width="7%">{{ L.packed }}</th><th class="num" width="4%">{{ L.unpacked }}</th>
-      <th width="10%">{{ L.weight }} ({{ L.eq_short }} + {{ L.pack_short }})</th>
-      <th class="num" width="6%">{{ L.vol_loose }}</th><th class="num" width="7%">{{ L.dimensions }}</th><th class="num" width="6%">{{ L.volume }}</th>
-      <th width="6%">{{ L.comment }}</th>
+      <th>{{ L.name }}</th>
+      <th colspan="2">{{ L.serial }} / {{ L.barcode }}</th>
+      <th class="num">{{ L.packed }}</th><th class="num">{{ L.unpacked }}</th>
+      <th>{{ L.weight }} ({{ L.eq_short }} + {{ L.pack_short }})</th>
+      <th class="num">{{ L.vol_loose }}</th><th class="num">{{ L.dimensions }}</th><th class="num">{{ L.volume }}</th>
+      <th>{{ L.comment }}</th>
     </tr></thead>
     <tbody>
       {% set ns = namespace(group=None) %}
       {% for line, c in rows %}
         {% set gname = (L.additional if line.is_custom else (L.kits if line.is_kit else (L.accessory_kits if line.is_accessory_kit else (line.category_name or "—") ~ (" / " ~ line.subcategory_name if line.subcategory_name else "")))) %}
         {% if gname != ns.group %}{% set ns.group = gname %}
-        <tr class="cat"><td colspan="9">{{ gname }}</td></tr>{% endif %}
+        <tr class="cat"><td colspan="10">{{ gname }}</td></tr>{% endif %}
         <tr>
           <td>{{ line.name }}{% if line.is_kit %} ({{ L.kit }})
             {% for g in kit_content.get(line.id, []) %}<div style="color:#555">— {{ g.model_name }}: {% for it in g.items %}{{ it.barcode or it.serial_number or "—" }}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endfor %}
           {% elif line.is_accessory_kit %} ({{ L.accessory_kit }})
             {% for cl in accessory_kit_content.get(line.id, []) %}<div style="color:#555">— {{ cl.name }}: {{ cl.quantity }}</div>{% endfor %}
           {% endif %}</td>
-          <td>
-            {% if line.is_kit or line.is_accessory_kit %}—{% else %}
-              {% set shown_items = (line.serial_items|selectattr('confirmed_by_scan')|list) or line.serial_items %}
-              {% set n = shown_items|length %}
-              {% if n == 0 %}—
-              {% else %}
-                {% set cols = 2 if n > 1 else 1 %}
-                {% set chunk = ((n - 1) // cols) + 1 %}
-                <table class="bc-list"><tr>
-                  {% for col in range(cols) %}
-                  <td>
-                    {% for si in shown_items[col * chunk : (col + 1) * chunk] %}
-                    <span class="bc"><span class="code">{{ si.barcode }}</span>{% if si.serial_number %} <span class="sn">({{ si.serial_number }})</span>{% endif %}</span>
-                    {% endfor %}
-                  </td>
-                  {% endfor %}
-                </tr></table>
-              {% endif %}
+          {% if line.is_kit or line.is_accessory_kit %}
+          <td colspan="2">—</td>
+          {% else %}
+            {% set shown_items = (line.serial_items|selectattr('confirmed_by_scan')|list) or line.serial_items %}
+            {% set n = shown_items|length %}
+            {% if n == 0 %}
+            <td colspan="2">—</td>
+            {% else %}
+              {% set cols = 2 if n > 1 else 1 %}
+              {% set chunk = ((n - 1) // cols) + 1 %}
+              {% for col in range(cols) %}
+              <td>
+                {% for si in shown_items[col * chunk : (col + 1) * chunk] %}
+                <span class="bc"><span class="code">{{ si.barcode }}</span>{% if si.serial_number %} <span class="sn">({{ si.serial_number }})</span>{% endif %}</span>
+                {% endfor %}
+              </td>
+              {% endfor %}
+              {% if cols == 1 %}<td></td>{% endif %}
             {% endif %}
-          </td>
+          {% endif %}
           <td class="num">{{ c.packed }}{% if c.packages %} <span style="color:#666">/ {{ c.packages }} {{ L.packages_unit }}</span>{% endif %}</td>
           <td class="num">{{ c.unpacked }}</td>
           <td>{{ fmt_weight(c.equipment_weight) }} + {{ fmt_weight(c.packaging_weight) }} = <b>{{ fmt_weight(c.total_weight) }}</b></td>
