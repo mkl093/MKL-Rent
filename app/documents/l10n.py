@@ -105,3 +105,10 @@ def format_percent(value: Decimal, lang: str) -> str:
     if value == value.to_integral_value():
         return f"{int(value)}{sep}%"
     return f"{_decimal_str(value, 1, lang)}{sep}%"
+
+
+def format_coefficient(value: Decimal, lang: str) -> str:
+    """Коэффициент без лишних нулей: 1.500 → «1,5» (ru/de) / «1.5» (en)."""
+    q = Decimal(value).normalize()
+    decimals = max(0, -q.as_tuple().exponent)
+    return _decimal_str(Decimal(value), decimals, lang)

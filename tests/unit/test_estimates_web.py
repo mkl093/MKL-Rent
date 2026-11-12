@@ -119,3 +119,89 @@ def test_custom_line_via_web(auth_client):
     page = auth_client.get(est_url).text
     assert "Доставка" in page
     assert "Прочее" in page
+
+
+def test_estimate_coefficient_and_hide_prices_via_web(auth_client, db_session, model):
+    from app.estimates.models import Estimate
+
+    token = _csrf(auth_client, "/projects/new")
+    resp = auth_client.post(
+        "/projects",
+        data={"name": "Выставка", "rental_coefficient": "1", "vat": "19", "csrf_token": token},
+        follow_redirects=False,
+    )
+    pid = resp.headers["location"].rsplit("/", 1)[-1]
+    est_url = f"/projects/{pid}/estimate"
+
+    token = _csrf(auth_client, f"{est_url}/add")
+    auth_client.post(
+        f"{est_url}/add",
+        data={
+            f"select_{model.id}": "1",
+            f"qty_{model.id}": "2",
+            "mode": "merge",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+
+    # Коэффициент сметы 2 → строка 100 × 2 × 2 = 400
+    token = _csrf(auth_client, est_url)
+    auth_client.post(
+        f"{est_url}/coefficient",
+        data={"rental_coefficient": "2", "csrf_token": token},
+        follow_redirects=False,
+    )
+    page = auth_client.get(est_url).text
+    assert "400.00" in page
+    assert "Итого по разделу" in page
+
+    # Некорректный коэффициент не применяется
+    token = _csrf(auth_client, est_url)
+    auth_client.post(
+        f"{est_url}/coefficient",
+        data={"rental_coefficient": "0", "csrf_token": token},
+        follow_redirects=False,
+    )
+    estimate = db_session.query(Estimate).filter_by(project_id=int(pid)).one()
+    db_session.refresh(estimate)
+    assert estimate.rental_coefficient == Decimal("2")
+
+    # Ручной коэффициент строки → кнопка сброса; сброс возвращает коэффициент сметы
+    line = estimate.lines[0]
+    token = _csrf(auth_client, est_url)
+    auth_client.post(
+        f"{est_url}/lines/{line.id}",
+        data={"quantity": "2", "unit_price": "100", "coefficient": "3", "csrf_token": token},
+        follow_redirects=False,
+    )
+    page = auth_client.get(est_url).text
+    assert f"reset-coef-{line.id}" in page
+    token = _csrf(auth_client, est_url)
+    auth_client.post(
+        f"{est_url}/lines/{line.id}/reset-coefficient",
+        data={"csrf_token": token},
+        follow_redirects=False,
+    )
+    db_session.refresh(line)
+    assert line.coefficient == Decimal("2")
+    assert line.coefficient_custom is False
+
+    # «Скрыть стоимость»: флаг ставится, редактор по-прежнему показывает цены
+    token = _csrf(auth_client, est_url)
+    auth_client.post(
+        f"{est_url}/hide-prices",
+        data={"hide_prices": "1", "csrf_token": token},
+        follow_redirects=False,
+    )
+    db_session.refresh(estimate)
+    assert estimate.hide_prices is True
+    page = auth_client.get(est_url).text
+    assert "100.00" in page  # цена в редакторе видна
+    assert "В документах стоимость позиций скрыта" in page
+
+    # Снятие галочки (чекбокс не передан)
+    token = _csrf(auth_client, est_url)
+    auth_client.post(f"{est_url}/hide-prices", data={"csrf_token": token}, follow_redirects=False)
+    db_session.refresh(estimate)
+    assert estimate.hide_prices is False

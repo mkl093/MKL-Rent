@@ -47,6 +47,8 @@ def get_or_create_estimate(db: Session, project: Project) -> Estimate:
         project_id=project.id,
         number=next_number(db, DocType.ESTIMATE, _current_year()),
         discount_percent=Decimal("0"),
+        rental_coefficient=project.rental_coefficient,
+        hide_prices=False,
     )
     db.add(estimate)
     db.commit()
@@ -96,7 +98,7 @@ def add_model(
         manufacturer=model.manufacturer,
         quantity=quantity,
         unit_price=model.base_price_eur,
-        coefficient=project.rental_coefficient,
+        coefficient=estimate.rental_coefficient,
         discount_percent=_clamp_percent(discount_percent),
         sort_order=_next_sort_order(estimate),
     )
@@ -129,7 +131,7 @@ def add_accessory_kit_line(
         name=kit.name,
         quantity=1,
         unit_price=Decimal("0"),
-        coefficient=Decimal("1"),
+        coefficient=estimate.rental_coefficient,
         sort_order=_next_sort_order(estimate),
     )
     estimate.lines.append(line)
@@ -159,7 +161,7 @@ def add_kit_line(
         manufacturer=None,
         quantity=1,
         unit_price=Decimal("0"),
-        coefficient=project.rental_coefficient,
+        coefficient=estimate.rental_coefficient,
         discount_percent=Decimal("0"),
         sort_order=_next_sort_order(estimate),
     )
@@ -185,6 +187,7 @@ def add_custom_line(
         quantity=data.quantity,
         unit_price=data.unit_price,
         coefficient=data.coefficient,
+        coefficient_custom=data.coefficient != estimate.rental_coefficient,
         discount_percent=_clamp_percent(data.discount_percent),
         comment=(data.comment or None),
         add_to_packing=data.add_to_packing,
@@ -201,6 +204,9 @@ def update_line(db: Session, line: EstimateLine, data: LineUpdate) -> EstimateLi
     line.quantity = 1 if line.is_kit else data.quantity
     line.unit_price = data.unit_price
     line.coefficient = data.coefficient
+    # Коэффициент, отличный от коэффициента сметы, — ручная корректировка строки:
+    # смена коэффициента сметы её больше не перезаписывает.
+    line.coefficient_custom = data.coefficient != line.estimate.rental_coefficient
     line.discount_percent = _clamp_percent(data.discount_percent)
     line.comment = data.comment or None
     db.commit()
@@ -234,6 +240,37 @@ def set_discount(db: Session, estimate: Estimate, percent: Decimal) -> None:
     db.commit()
 
 
+def set_coefficient(db: Session, estimate: Estimate, value: Decimal) -> int:
+    """Задать коэффициент сметы и применить его ко всем строкам без ручной корректировки.
+
+    Строки с coefficient_custom=True (коэффициент строки задан вручную) не
+    трогаются. Возвращает число строк, у которых коэффициент изменился.
+    """
+    if value <= 0:
+        raise EstimateError("Коэффициент сметы должен быть больше нуля")
+    estimate.rental_coefficient = value
+    changed = 0
+    for line in estimate.lines:
+        if not line.coefficient_custom and line.coefficient != value:
+            line.coefficient = value
+            changed += 1
+    db.commit()
+    return changed
+
+
+def reset_line_coefficient(db: Session, line: EstimateLine) -> None:
+    """Вернуть строке коэффициент сметы (снять ручную корректировку)."""
+    line.coefficient = line.estimate.rental_coefficient
+    line.coefficient_custom = False
+    db.commit()
+
+
+def set_hide_prices(db: Session, estimate: Estimate, hide: bool) -> None:
+    """«Скрыть стоимость оборудования» — влияет только на документы, не на редактор."""
+    estimate.hide_prices = hide
+    db.commit()
+
+
 def totals(db: Session, estimate: Estimate, project: Project) -> EstimateTotals:
     return compute_totals(
         [ln.line_total for ln in estimate.lines], estimate.discount_percent, project.vat
@@ -245,6 +282,13 @@ class LineGroup:
     category_id: int | None
     category_name: str
     lines: list[EstimateLine]
+
+    @property
+    def subtotal(self) -> Decimal:
+        """«Итого по разделу» — сумма итогов строк раздела (до общей скидки и VAT)."""
+        from app.estimates.totals import money
+
+        return money(sum((ln.line_total for ln in self.lines), Decimal("0")))
 
 
 def grouped_lines(
@@ -362,12 +406,19 @@ def copy_estimate(db: Session, source: Project, target: Project) -> Estimate:
     if src is None:
         return dst
     dst.discount_percent = src.discount_percent
+    dst.rental_coefficient = src.rental_coefficient
+    dst.hide_prices = src.hide_prices
     for line in sorted(src.lines, key=lambda ln: (ln.sort_order, ln.id)):
+        if line.is_accessory_kit:
+            # Комплект аксессуаров — проектный (app.accessory_kits), в копию проекта
+            # не переносится; без accessory_kit_id строка стала бы «пустышкой».
+            continue
         dst.lines.append(
             EstimateLine(
                 model_id=line.model_id,
                 kit_id=line.kit_id,
                 is_custom=line.is_custom,
+                add_to_packing=line.add_to_packing,
                 name=line.name,
                 category_id=line.category_id,
                 category_name=line.category_name,
@@ -375,6 +426,7 @@ def copy_estimate(db: Session, source: Project, target: Project) -> Estimate:
                 quantity=line.quantity,
                 unit_price=line.unit_price,
                 coefficient=line.coefficient,
+                coefficient_custom=line.coefficient_custom,
                 discount_percent=line.discount_percent,
                 comment=line.comment,
                 sort_order=line.sort_order,

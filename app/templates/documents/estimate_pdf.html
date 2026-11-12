@@ -21,6 +21,7 @@
   table.items th { background: #f2f2f2; font-size: 9pt; }
   .num { text-align: right; }
   .cat td { background: #e9ecef; font-weight: bold; }
+  .subtotal td { font-weight: bold; border-bottom: 1px solid #999; }
   table.totals { width: 45%; margin-left: 55%; margin-top: 10px; border-collapse: collapse; }
   table.totals td { padding: 2px 6px; }
   .grand td { font-weight: bold; font-size: 12pt; border-top: 2px solid #333; }
@@ -53,29 +54,44 @@
     {% if project.customer %}<br>{{ L.customer }}: {{ project.customer }}{% endif %}
   </div>
 
+  {# hide_prices («Скрыть стоимость оборудования»): только наименования и количества,
+     «Итого по разделу» после каждого раздела, коэффициент сметы в итогах. #}
+  {% set hide = estimate.hide_prices %}
   <table class="items">
     <thead><tr>
-      <th>{{ L.name }}</th><th class="num">{{ L.qty }}</th><th class="num">{{ L.price }}</th>
-      <th class="num">{{ L.coef }}</th><th class="num">{{ L.discount }}</th><th class="num">{{ L.total }}</th>
+      {% if hide %}
+      {# Инлайн-стили: правило table.items th/td {text-align:left} перебивает .num. #}
+      <th>{{ L.name }}</th><th class="num" width="15%" style="text-align:right">{{ L.qty }}</th>
+      {% else %}
+      <th>{{ L.name }}</th><th class="num">{{ L.qty }}</th>
+      {% endif %}
+      {% if not hide %}<th class="num">{{ L.price }}</th>
+      <th class="num">{{ L.coef }}</th><th class="num">{{ L.discount }}</th><th class="num">{{ L.total }}</th>{% endif %}
     </tr></thead>
     <tbody>
       {% for g in groups %}
-      <tr class="cat"><td colspan="6">{{ g.category_name }}</td></tr>
+      <tr class="cat"><td colspan="{{ 2 if hide else 6 }}">{{ g.category_name }}</td></tr>
       {% for line in g.lines %}
       <tr>
         <td>{{ line.name }}{% if line.comment %}<br><span style="color:#666;font-size:8pt">{{ line.comment }}</span>{% endif %}</td>
-        <td class="num">{{ line.quantity }}</td>
+        <td class="num"{% if hide %} style="text-align:right"{% endif %}>{{ line.quantity }}</td>
+        {% if not hide %}
         <td class="num">{{ fmt_money(line.unit_price) }}</td>
         <td class="num">{{ line.coefficient }}</td>
         <td class="num">{% if line.discount_percent %}{{ fmt_percent(line.discount_percent) }}{% else %}—{% endif %}</td>
         <td class="num">{{ fmt_money(line.line_total) }}</td>
+        {% endif %}
       </tr>
       {% endfor %}
+      {% if hide %}
+      <tr class="subtotal"><td colspan="2" class="num" style="text-align:right">{{ L.group_subtotal }} {{ L.quote_open }}{{ g.category_name }}{{ L.quote_close }}: {{ fmt_money(g.subtotal) }}</td></tr>
+      {% endif %}
       {% endfor %}
     </tbody>
   </table>
 
   <table class="totals">
+    {% if hide %}<tr><td>{{ L.coef_estimate }}</td><td class="num">{{ fmt_coef(estimate.rental_coefficient) }}</td></tr>{% endif %}
     <tr><td>{{ L.total }}</td><td class="num">{{ fmt_money(totals.subtotal) }}</td></tr>
     <tr><td>{{ L.discount }} ({{ fmt_percent(totals.discount_percent) }})</td>
         <td class="num">−{{ fmt_money(totals.discount_amount) }}</td></tr>

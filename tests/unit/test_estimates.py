@@ -198,3 +198,112 @@ def test_copy_estimate(db_session, setup):
     # бронь скопированной сметы тоже синхронизирована
     res = db_session.query(ProjectReservation).filter_by(project_id=target.id).all()
     assert res[0].quantity == 2
+
+
+# --- Коэффициент сметы ---------------------------------------------------
+
+
+def test_new_estimate_takes_project_coefficient(setup):
+    _, estimate, _ = setup
+    assert estimate.rental_coefficient == Decimal("1.5")
+    assert estimate.hide_prices is False
+
+
+def test_new_lines_take_estimate_coefficient(db_session, setup):
+    project, estimate, model = setup
+    service.set_coefficient(db_session, estimate, Decimal("2"))
+    line = service.add_model(db_session, estimate, project, model, 1, merge=False)
+    assert line.coefficient == Decimal("2")
+    assert line.coefficient_custom is False
+
+
+def test_set_coefficient_skips_custom_lines(db_session, setup):
+    project, estimate, model = setup
+    a = service.add_model(db_session, estimate, project, model, 1, merge=False)
+    b = service.add_model(db_session, estimate, project, model, 1, merge=False)
+    service.update_line(
+        db_session, b, LineUpdate(quantity=1, unit_price=Decimal("100"), coefficient=Decimal("3"))
+    )
+    assert b.coefficient_custom is True
+
+    changed = service.set_coefficient(db_session, estimate, Decimal("2"))
+    assert changed == 1
+    assert a.coefficient == Decimal("2")
+    assert b.coefficient == Decimal("3")  # ручная корректировка сохранена
+
+
+def test_update_line_with_estimate_coefficient_is_not_custom(db_session, setup):
+    project, estimate, model = setup
+    line = service.add_model(db_session, estimate, project, model, 1)
+    service.update_line(
+        db_session,
+        line,
+        LineUpdate(quantity=3, unit_price=Decimal("100"), coefficient=Decimal("1.5")),
+    )
+    assert line.coefficient_custom is False
+
+
+def test_reset_line_coefficient(db_session, setup):
+    project, estimate, model = setup
+    line = service.add_model(db_session, estimate, project, model, 1)
+    service.update_line(
+        db_session,
+        line,
+        LineUpdate(quantity=1, unit_price=Decimal("100"), coefficient=Decimal("4")),
+    )
+    service.reset_line_coefficient(db_session, line)
+    assert line.coefficient == Decimal("1.5")
+    assert line.coefficient_custom is False
+    # после сброса строка снова следует за коэффициентом сметы
+    service.set_coefficient(db_session, estimate, Decimal("2"))
+    assert line.coefficient == Decimal("2")
+
+
+def test_set_coefficient_rejects_non_positive(db_session, setup):
+    _, estimate, _ = setup
+    with pytest.raises(service.EstimateError):
+        service.set_coefficient(db_session, estimate, Decimal("0"))
+    assert estimate.rental_coefficient == Decimal("1.5")
+
+
+def test_custom_line_coefficient_flag(db_session, setup):
+    project, estimate, _ = setup
+    same = service.add_custom_line(
+        db_session, estimate, project, CustomLineInput(name="Доставка", coefficient=Decimal("1.5"))
+    )
+    other = service.add_custom_line(
+        db_session, estimate, project, CustomLineInput(name="Монтаж", coefficient=Decimal("1"))
+    )
+    assert same.coefficient_custom is False
+    assert other.coefficient_custom is True
+
+
+def test_group_subtotal(db_session, setup):
+    project, estimate, model = setup
+    service.add_model(db_session, estimate, project, model, 2)  # 100 × 2 × 1.5 = 300
+    service.add_custom_line(
+        db_session,
+        estimate,
+        project,
+        CustomLineInput(name="Доставка", unit_price=Decimal("50"), coefficient=Decimal("1")),
+    )
+    groups = {g.category_name: g for g in service.grouped_lines(estimate)}
+    assert groups["Звук"].subtotal == Decimal("300.00")
+    assert groups["Прочее"].subtotal == Decimal("50.00")
+
+
+def test_copy_estimate_keeps_coefficient_and_hide_prices(db_session, setup):
+    project, estimate, model = setup
+    a = service.add_model(db_session, estimate, project, model, 1, merge=False)
+    service.update_line(
+        db_session, a, LineUpdate(quantity=1, unit_price=Decimal("100"), coefficient=Decimal("3"))
+    )
+    service.set_coefficient(db_session, estimate, Decimal("2"))
+    service.set_hide_prices(db_session, estimate, True)
+
+    target = create_project(db_session, ProjectInput(name="Копия"))
+    copied = service.copy_estimate(db_session, project, target)
+    assert copied.rental_coefficient == Decimal("2")
+    assert copied.hide_prices is True
+    assert copied.lines[0].coefficient == Decimal("3")
+    assert copied.lines[0].coefficient_custom is True

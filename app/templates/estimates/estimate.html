@@ -22,7 +22,10 @@
 {% if groups %}
   {% for g in groups %}
   <div class="card mb-3">
-    <div class="card-header fw-semibold">{{ g.category_name }}</div>
+    <div class="card-header fw-semibold d-flex justify-content-between">
+      <span>{{ g.category_name }}</span>
+      <span class="text-secondary fw-normal small align-self-center">Итого по разделу: <b class="text-body">{{ '%.2f'|format(g.subtotal) }} €</b></span>
+    </div>
     <div class="card-body py-2">
       {% if editable %}
         <div class="row g-2 d-none d-md-flex small text-secondary fw-semibold pb-1 mb-1 border-bottom">
@@ -49,7 +52,16 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="col-3"><label class="d-md-none form-label small mb-0">Кол-во</label><input class="form-control form-control-sm text-end" name="quantity" inputmode="numeric" value="{{ line.quantity }}" aria-label="Количество" {% if line.is_kit %}readonly title="Комплект — 1 позиция"{% elif line.is_accessory_kit %}readonly title="Комплект аксессуаров — 1 позиция"{% endif %}></div>
             <div class="col-3"><label class="d-md-none form-label small mb-0">Цена, €</label><input class="form-control form-control-sm text-end" name="unit_price" inputmode="decimal" value="{{ '%.2f'|format(line.unit_price) }}" aria-label="Цена"></div>
-            <div class="col-3"><label class="d-md-none form-label small mb-0">Коэф.</label><input class="form-control form-control-sm text-end" name="coefficient" inputmode="decimal" value="{{ line.coefficient }}" aria-label="Коэффициент"></div>
+            <div class="col-3"><label class="d-md-none form-label small mb-0">Коэф.</label>
+              {% if line.coefficient_custom %}
+              <div class="input-group input-group-sm">
+                <input class="form-control form-control-sm text-end border-warning" name="coefficient" inputmode="decimal" value="{{ line.coefficient }}" aria-label="Коэффициент" title="Коэффициент строки изменён вручную (коэффициент сметы — {{ estimate.rental_coefficient }})">
+                <button class="btn btn-outline-warning" type="submit" form="reset-coef-{{ line.id }}" title="Вернуть коэффициент сметы ({{ estimate.rental_coefficient }})">↺</button>
+              </div>
+              {% else %}
+              <input class="form-control form-control-sm text-end" name="coefficient" inputmode="decimal" value="{{ line.coefficient }}" aria-label="Коэффициент" title="Коэффициент сметы">
+              {% endif %}
+            </div>
             <div class="col-3"><label class="d-md-none form-label small mb-0">Скидка, %</label><input class="form-control form-control-sm text-end" name="discount_percent" inputmode="decimal" value="{{ line.discount_percent }}" aria-label="Скидка строки"></div>
             <div class="col-6"><input class="form-control form-control-sm" name="comment" value="{{ line.comment or '' }}" placeholder="Комментарий"></div>
             <div class="col-3 text-end fw-semibold align-self-center">{{ '%.2f'|format(line.line_total) }} €</div>
@@ -67,6 +79,10 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="btn btn-sm btn-outline-danger" title="Удалить">✕</button></form>
           </div>
+          {% if line.coefficient_custom %}
+          <form method="post" action="/projects/{{ project.id }}/estimate/lines/{{ line.id }}/reset-coefficient" id="reset-coef-{{ line.id }}" class="d-none">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}"></form>
+          {% endif %}
         </div>
         {% endfor %}
       {% else %}
@@ -79,7 +95,7 @@
               <td>{{ line.name }}</td>
               <td class="text-end">{{ line.quantity }}</td>
               <td class="text-end">{{ '%.2f'|format(line.unit_price) }}</td>
-              <td class="text-end">{{ line.coefficient }}</td>
+              <td class="text-end">{{ line.coefficient }}{% if line.coefficient_custom %} <span class="badge text-bg-warning" title="Изменён вручную">✎</span>{% endif %}</td>
               <td class="text-end">{{ line.discount_percent }}</td>
               <td class="text-end fw-semibold">{{ '%.2f'|format(line.line_total) }}</td>
               <td>{{ line.comment or '' }}</td>
@@ -109,7 +125,7 @@
           <div class="col-3"><label class="form-label small mb-0">Цена, €</label>
             <input class="form-control" name="unit_price" inputmode="decimal" value="0"></div>
           <div class="col-3"><label class="form-label small mb-0">Коэф.</label>
-            <input class="form-control" name="coefficient" inputmode="decimal" value="1"></div>
+            <input class="form-control" name="coefficient" inputmode="decimal" value="{{ estimate.rental_coefficient }}"></div>
           <div class="col-3"><label class="form-label small mb-0">Скидка, %</label>
             <input class="form-control" name="discount_percent" inputmode="decimal" value="0"></div>
           <div class="col-12"><label class="form-label small mb-0">Комментарий</label>
@@ -130,6 +146,24 @@
       <div class="card-header">Итоги</div>
       <div class="card-body">
         {% if editable %}
+        <form method="post" action="/projects/{{ project.id }}/estimate/coefficient" class="row g-2 mb-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="col-auto"><label class="col-form-label" for="estimate-coef">Коэффициент сметы</label></div>
+          <div class="col-auto"><input class="form-control" id="estimate-coef" name="rental_coefficient" inputmode="decimal"
+                 value="{{ estimate.rental_coefficient }}" style="width:7rem"></div>
+          <div class="col-auto"><button class="btn btn-outline-secondary">Применить</button></div>
+          <div class="col-12 form-text mt-0">Применяется ко всем строкам, кроме строк с коэффициентом, изменённым вручную.</div>
+        </form>
+        <form method="post" action="/projects/{{ project.id }}/estimate/hide-prices" class="mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="hide_prices" value="1" id="hide-prices"
+                   {% if estimate.hide_prices %}checked{% endif %} onchange="this.form.submit()">
+            <label class="form-check-label" for="hide-prices">Скрыть стоимость оборудования</label>
+          </div>
+          <div class="form-text mt-0">Только для документов: в PDF останутся наименования, количества, итоги по разделам, коэффициент и общие суммы. В редакторе цены видны всегда.</div>
+          <noscript><button class="btn btn-sm btn-outline-secondary mt-1">Сохранить</button></noscript>
+        </form>
         <form method="post" action="/projects/{{ project.id }}/estimate/discount" class="row g-2 mb-3">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <div class="col-auto"><label class="col-form-label">Скидка, %</label></div>
@@ -137,6 +171,12 @@
                  value="{{ estimate.discount_percent }}" style="width:7rem"></div>
           <div class="col-auto"><button class="btn btn-outline-secondary">Применить</button></div>
         </form>
+        {% endif %}
+        {% if not editable %}
+        <p class="mb-2">Коэффициент сметы: <b>{{ estimate.rental_coefficient }}</b></p>
+        {% endif %}
+        {% if estimate.hide_prices %}
+        <div class="alert alert-secondary py-1 px-2 small">В документах стоимость позиций скрыта.</div>
         {% endif %}
         <table class="table table-sm m-0">
           <tr><td>Подытог (до скидки)</td><td class="text-end">{{ '%.2f'|format(totals.subtotal) }} €</td></tr>

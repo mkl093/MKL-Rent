@@ -698,3 +698,51 @@ def test_resolve_engine_override(monkeypatch):
 class _FakeSettings:
     def __init__(self, engine):
         self.pdf_engine = engine
+
+
+def test_format_coefficient():
+    from app.documents.l10n import format_coefficient
+
+    assert format_coefficient(Decimal("1.500"), "ru") == "1,5"
+    assert format_coefficient(Decimal("1.500"), "en") == "1.5"
+    assert format_coefficient(Decimal("2.000"), "de") == "2"
+    assert format_coefficient(Decimal("10"), "en") == "10"
+    assert format_coefficient(Decimal("1.125"), "ru") == "1,125"
+
+
+def test_estimate_html_hide_prices(db_session, project):
+    """«Скрыть стоимость»: без цен строк, с итогом по разделу и коэффициентом сметы."""
+    estimate = est_service.get_or_create_estimate(db_session, project)
+    _, fp_shown = builder.render_html(db_session, project, DocumentType.ESTIMATE, "ru")
+    est_service.set_hide_prices(db_session, estimate, True)
+    html, fp_hidden = builder.render_html(db_session, project, DocumentType.ESTIMATE, "ru")
+
+    assert fp_hidden != fp_shown  # документ помечается устаревшим
+    assert "Колонка" in html
+    assert ">2<" in html  # количество остаётся
+    assert "100,00 €" not in html  # цена за единицу скрыта
+    assert "Цена" not in html
+    assert "Итого по разделу «Звук»: 200,00 €" in html
+    assert "Коэффициент" in html
+    assert "238,00 €" in html  # итого с VAT 19%
+
+    html_en, _ = builder.render_html(db_session, project, DocumentType.ESTIMATE, "en")
+    assert "Subtotal “Sound”" not in html_en  # категория не переводится
+    assert "Subtotal “Звук”: €200.00" in html_en
+    html_de, _ = builder.render_html(db_session, project, DocumentType.ESTIMATE, "de")
+    assert "Zwischensumme „Звук“: 200,00 €" in html_de
+
+
+def test_estimate_html_shows_prices_by_default(db_session, project):
+    html, _ = builder.render_html(db_session, project, DocumentType.ESTIMATE, "ru")
+    assert "100,00 €" in html
+    assert "Итого по разделу" not in html
+
+
+def test_estimate_coefficient_changes_fingerprint(db_session, project):
+    estimate = est_service.get_or_create_estimate(db_session, project)
+    _, before = builder.render_html(db_session, project, DocumentType.ESTIMATE, "ru")
+    est_service.set_coefficient(db_session, estimate, Decimal("2"))
+    html, after = builder.render_html(db_session, project, DocumentType.ESTIMATE, "ru")
+    assert before != after
+    assert "400,00 €" in html  # 100 × 2 × 2

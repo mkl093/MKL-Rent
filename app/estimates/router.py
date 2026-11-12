@@ -374,3 +374,95 @@ def set_discount(
     )
     flash(request, "Скидка обновлена.", "success")
     return redirect(f"/projects/{project_id}/estimate")
+
+
+@router.post("/coefficient", dependencies=[Depends(verify_csrf)])
+def set_coefficient(
+    request: Request,
+    project_id: int,
+    rental_coefficient: str = Form("1"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    """Коэффициент сметы: применяется ко всем строкам без ручной корректировки."""
+    project, estimate = _load(db, project_id, require_editable=True)
+    if project is None or estimate is None:
+        return redirect(f"/projects/{project_id}/estimate")
+    try:
+        changed = service.set_coefficient(db, estimate, _dec(rental_coefficient, "0"))
+    except service.EstimateError as exc:
+        flash(request, str(exc), "danger")
+        return redirect(f"/projects/{project_id}/estimate")
+    audit_log(
+        db,
+        user,
+        EventType.ESTIMATE_CHANGE,
+        f"Смета {estimate.number}: коэффициент сметы {estimate.rental_coefficient}"
+        f" (обновлено строк — {changed})",
+        object_type="estimate",
+        object_id=estimate.id,
+    )
+    flash(
+        request,
+        f"Коэффициент сметы {estimate.rental_coefficient} применён (строк обновлено: {changed}).",
+        "success",
+    )
+    return redirect(f"/projects/{project_id}/estimate")
+
+
+@router.post("/lines/{line_id}/reset-coefficient", dependencies=[Depends(verify_csrf)])
+def reset_line_coefficient(
+    request: Request,
+    project_id: int,
+    line_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    project, estimate = _load(db, project_id, require_editable=True)
+    if project is None or estimate is None:
+        return redirect(f"/projects/{project_id}/estimate")
+    line = next((ln for ln in estimate.lines if ln.id == line_id), None)
+    if line is not None:
+        service.reset_line_coefficient(db, line)
+        audit_log(
+            db,
+            user,
+            EventType.ESTIMATE_CHANGE,
+            f"Смета {estimate.number}: строке «{line.name}» возвращён коэффициент сметы",
+            object_type="estimate",
+            object_id=estimate.id,
+        )
+        flash(request, "Коэффициент строки сброшен к коэффициенту сметы.", "success")
+    return redirect(f"/projects/{project_id}/estimate")
+
+
+@router.post("/hide-prices", dependencies=[Depends(verify_csrf)])
+def set_hide_prices(
+    request: Request,
+    project_id: int,
+    hide_prices: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    """«Скрыть стоимость оборудования» — только для документов (PDF)."""
+    project, estimate = _load(db, project_id, require_editable=True)
+    if project is None or estimate is None:
+        return redirect(f"/projects/{project_id}/estimate")
+    hide = hide_prices is not None
+    service.set_hide_prices(db, estimate, hide)
+    audit_log(
+        db,
+        user,
+        EventType.ESTIMATE_CHANGE,
+        f"Смета {estimate.number}: стоимость оборудования в документах "
+        f"{'скрыта' if hide else 'показана'}",
+        object_type="estimate",
+        object_id=estimate.id,
+    )
+    flash(
+        request,
+        "В документах стоимость позиций будет скрыта." if hide
+        else "В документах стоимость позиций будет показана.",
+        "success",
+    )
+    return redirect(f"/projects/{project_id}/estimate")

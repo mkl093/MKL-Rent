@@ -30,6 +30,16 @@ class Estimate(Base, TimestampMixin):
     discount_percent: Mapped[Decimal] = mapped_column(
         Numeric(5, 2), default=Decimal("0"), nullable=False
     )
+    # Коэффициент аренды сметы целиком. По умолчанию — из проекта на момент
+    # создания сметы; подставляется в новые строки, а при изменении переписывает
+    # коэффициент всех строк, кроме скорректированных вручную (coefficient_custom).
+    rental_coefficient: Mapped[Decimal] = mapped_column(
+        Numeric(6, 3), default=Decimal("1"), nullable=False
+    )
+    # «Скрыть стоимость оборудования»: только для документов (PDF) — там остаются
+    # наименования, количества, «Итого по разделу», коэффициент и общие суммы.
+    # Редактор сметы показывает цены всегда.
+    hide_prices: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     lines: Mapped[list[EstimateLine]] = relationship(
         back_populates="estimate",
@@ -77,6 +87,9 @@ class EstimateLine(Base):
     coefficient: Mapped[Decimal] = mapped_column(
         Numeric(6, 3), default=Decimal("1"), nullable=False
     )
+    # Коэффициент строки скорректирован вручную — смена коэффициента сметы его
+    # не перезаписывает (сброс — reset_line_coefficient).
+    coefficient_custom: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Индивидуальная скидка строки в процентах (ТЗ §16.7). Применяется к строке
     # до общей скидки сметы, которая считается от подытога.
     discount_percent: Mapped[Decimal] = mapped_column(
