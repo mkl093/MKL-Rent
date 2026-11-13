@@ -311,8 +311,14 @@ def backfill_quantity_barcodes(
         before = len(line.serial_items)
         _auto_assign_quantity_items(db, packing, line, missing)
         attached += len(line.serial_items) - before
-    if attached and commit:
-        db.commit()
+    if attached:
+        if commit:
+            db.commit()
+        else:
+            # Пачкой из скрипта (одна транзакция, autoflush выключен): без flush
+            # следующий лист проекта не увидит эти заготовки в БД и может взять
+            # те же экземпляры (см. _items_in_other_packings).
+            db.flush()
     return attached
 
 

@@ -292,3 +292,35 @@ def test_stand_fingerprint_only_when_stand_is_shown(db_session, tmp_path, monkey
     # Переименованный стенд появляется в шапке — PDF устаревает.
     versions.rename_section(db, section, "Hall 1")
     assert stale() == {DocumentType.PACKING: True, DocumentType.PICKING: True}
+
+
+def test_batch_backfill_does_not_share_items_between_stands(db_session):
+    """Скрипт бэкфилла идёт по листам одной транзакцией (commit=False): заготовки
+    одного стенда должны быть видны следующему, иначе экземпляр попадёт в два листа."""
+    db = db_session
+    cat = cat_service.create_category(db, "Свет")
+    lamp = eq_service.create_model(
+        db,
+        EquipmentModelCreate(
+            category_id=cat.id,
+            name="Прибор",
+            accounting_type=AccountingType.QUANTITY,
+            total_quantity=2,
+        ),
+    )
+    project = create_project(db, ProjectInput(name="Бэкфилл"))
+    a = versions.create_section(db, project, "A")
+    b = versions.create_section(db, project, "B")
+    est_service.add_model(db, a.active_version, project, lamp, 1)
+    est_service.add_model(db, b.active_version, project, lamp, 1)
+    pa = service.create_from_estimate(db, project, a)
+    pb = service.create_from_estimate(db, project, b)
+    assert not _barcodes(pa) and not _barcodes(pb)  # экземпляров со штрих-кодом ещё нет
+
+    for bc in ("L1", "L2"):
+        item_service.create_item(db, lamp, EquipmentItemInput(barcode=bc), user_id=None)
+    assert service.backfill_quantity_barcodes(db, pa, commit=False) == 1
+    assert service.backfill_quantity_barcodes(db, pb, commit=False) == 1
+    db.commit()
+    db.expire_all()
+    assert len(_barcodes(pa) | _barcodes(pb)) == 2
