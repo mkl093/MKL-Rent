@@ -45,7 +45,9 @@
         <form method="post" action="/projects/{{ project.id }}/transport/assign" id="pool-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <div class="list-group mb-2">
-            {% for item in board.unassigned %}
+            {% for section_name, items in board.pool_groups %}
+            {% if section_name %}<div class="list-group-item list-group-item-secondary py-1 small fw-semibold">Стенд: {{ section_name }} <span class="fw-normal">· {{ items|length }}</span></div>{% endif %}
+            {% for item in items %}
             <label class="list-group-item d-flex align-items-center gap-2 mkl-drag-item" draggable="{{ 'true' if editable else 'false' }}"
                    data-line-id="{{ item.line.id }}" data-source="pool">
               {% if editable %}<input class="form-check-input flex-shrink-0" type="checkbox" name="line_id" value="{{ item.line.id }}">{% endif %}
@@ -58,6 +60,7 @@
                      name="qty_{{ item.line.id }}" placeholder="{{ item.remaining }}">
               {% endif %}
             </label>
+            {% endfor %}
             {% endfor %}
           </div>
           {% if editable %}
@@ -112,7 +115,9 @@
 
             {% if vb.assignments %}
             <div class="list-group">
-              {% for row in vb.assignments %}
+              {% for section_name, rows in vb.groups %}
+              {% if section_name %}<div class="list-group-item list-group-item-secondary py-1 small fw-semibold">Стенд: {{ section_name }}</div>{% endif %}
+              {% for row in rows %}
               <div class="list-group-item d-flex align-items-center gap-2 mkl-drag-item" draggable="{{ 'true' if editable else 'false' }}"
                    data-line-id="{{ row.line.id }}" data-source="{{ vb.project_vehicle.id }}">
                 <span class="flex-grow-1">
@@ -126,6 +131,7 @@
                 </form>
                 {% endif %}
               </div>
+              {% endfor %}
               {% endfor %}
             </div>
             {% else %}

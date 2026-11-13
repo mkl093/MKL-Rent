@@ -15,6 +15,7 @@ from app.inventory.services import items as item_service
 from app.inventory.services.items import _sql_normalized_barcode, normalize_barcode
 from app.numbering.models import DocType
 from app.numbering.service import next_number
+from app.packing import combined
 from app.packing.service import list_packings
 from app.projects.models import Project
 from app.returns.enums import ReturnCondition, ReturnStatus
@@ -64,6 +65,14 @@ def project_has_return(db: Session, project_id: int) -> bool:
     return db.scalar(select(ReturnList.id).where(ReturnList.project_id == project_id)) is not None
 
 
+def _section_label(line: combined.CombinedLine) -> str:
+    """«A: 4 · B: 2» — сколько выдано по стендам (стенды без факта не упоминаются);
+    имя стенда — для комплекта, кабелярки и дополнительной позиции."""
+    if not line.merged:
+        return line.by_section[0].section_name
+    return " · ".join(f"{s.section_name}: {s.fact}" for s in line.by_section if s.fact > 0)
+
+
 def create_from_packing(db: Session, project: Project) -> ReturnList:
     """Оформить возврат: снимок строк packing-листа (ТЗ §56.1).
 
@@ -82,8 +91,14 @@ def create_from_packing(db: Session, project: Project) -> ReturnList:
     db.add(ret)
     db.flush()
 
-    # Приёмка одна на проект: строки packing-листов всех стендов.
-    lines = [ln for packing in list_packings(db, project) for ln in packing.lines]
+    # Приёмка одна на проект: оборудование всех стендов возвращается вместе.
+    # При нескольких листах одинаковые модели — одной строкой (склад считает
+    # возврат одной цифрой), распределение по стендам — справочной меткой.
+    packings = list_packings(db, project)
+    if len(packings) > 1:
+        lines = combined.combine_lines(packings)
+    else:
+        lines = [ln for packing in packings for ln in packing.lines]
     if lines:
         sort_order = 1
         for line in lines:
@@ -91,6 +106,7 @@ def create_from_packing(db: Session, project: Project) -> ReturnList:
             if expected <= 0:
                 continue
             ret_line = ReturnLine(
+                section_label=_section_label(line) if len(packings) > 1 else None,
                 model_id=line.model_id,
                 kit_id=line.kit_id,
                 accessory_kit_id=line.accessory_kit_id,
@@ -246,7 +262,7 @@ def _scan_accessory_kit_return(
             ScanResult.ALREADY,
             barcode,
             line_id=line.id,
-            model_name=line.name,
+            model_name=line.display_name,
             expected=line.expected_quantity,
             fact=line.fact_quantity,
             is_accessory_kit=True,
@@ -258,7 +274,7 @@ def _scan_accessory_kit_return(
         ScanResult.OK,
         barcode,
         line_id=line.id,
-        model_name=line.name,
+        model_name=line.display_name,
         expected=line.expected_quantity,
         fact=line.fact_quantity,
         is_accessory_kit=True,
@@ -304,7 +320,7 @@ def scan(db: Session, ret: ReturnList, barcode: str) -> ScanOutcome:
                         barcode,
                         line_id=line.id,
                         serial_item_id=si.id,
-                        model_name=line.name,
+                        model_name=line.display_name,
                         expected=line.expected_quantity,
                         fact=line.fact_quantity,
                     )
@@ -316,7 +332,7 @@ def scan(db: Session, ret: ReturnList, barcode: str) -> ScanOutcome:
                     barcode,
                     line_id=line.id,
                     serial_item_id=si.id,
-                    model_name=line.name,
+                    model_name=line.display_name,
                     expected=line.expected_quantity,
                     fact=line.fact_quantity,
                 )
@@ -331,7 +347,7 @@ def scan(db: Session, ret: ReturnList, barcode: str) -> ScanOutcome:
                     ScanResult.SUBSTITUTE_CANDIDATE,
                     barcode,
                     line_id=line.id,
-                    model_name=line.name,
+                    model_name=line.display_name,
                     expected=line.expected_quantity,
                     fact=line.fact_quantity,
                     pending_serial_item_id=pending.id,
@@ -380,7 +396,7 @@ def confirm_substitute(
         item.barcode,
         line_id=line.id,
         serial_item_id=pending.id,
-        model_name=line.name,
+        model_name=line.display_name,
         expected=line.expected_quantity,
         fact=line.fact_quantity,
         pending_barcode=old_barcode,

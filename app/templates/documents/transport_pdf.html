@@ -27,6 +27,7 @@
   .num { text-align: right; }
   .totals { margin-top: 8px; font-size: 10pt; font-weight: bold; text-align: right; }
   .overload { color: #b00; }
+  .stand td { background: #e9ecef; font-weight: bold; }
   .footer { margin-top: 18px; padding-top: 6px; border-top: 1px solid #ccc; font-size: 8pt; color: #666; text-align: center; }
 </style>
 </head>
@@ -44,6 +45,7 @@
     </tr></table>
 
     <h1>{{ L.transport }} — {{ title_number }}</h1>
+    {% if stands %}<div class="meta"><b>{{ L.stands }}: {{ stands }}</b></div>{% endif %}
     <div class="meta">
       {{ L.date }}: {{ fmt_date(generated_at.date()) }} ·
       {{ L.project }}: {{ project.name }} ({{ project.number }}) ·
@@ -63,7 +65,9 @@
         <th width="26%">{{ L.comment }}</th>
       </tr></thead>
       <tbody>
-        {% for row in vb.assignments %}
+        {% for section_name, rows in vb.groups %}
+        {% if section_name %}<tr class="stand"><td colspan="7">{{ L.stand }}: {{ section_name }}</td></tr>{% endif %}
+        {% for row in rows %}
         <tr>
           <td>{{ row.line.name }}{% if row.line.is_accessory_kit %} ({{ L.accessory_kit }}){% endif %}</td>
           <td class="num">{{ row.assignment.quantity }}</td>
@@ -90,6 +94,7 @@
         </tr>
         {% endif %}
         {% endfor %}
+        {% endfor %}
       </tbody>
     </table>
 
@@ -113,8 +118,11 @@
     <table class="items">
       <thead><tr><th>{{ L.name }}</th><th class="num">{{ L.qty }}</th></tr></thead>
       <tbody>
-        {% for item in board.unassigned %}
+        {% for section_name, items in board.pool_groups %}
+        {% if section_name %}<tr class="stand"><td colspan="2">{{ L.stand }}: {{ section_name }}</td></tr>{% endif %}
+        {% for item in items %}
         <tr><td>{{ item.line.name }}</td><td class="num">{{ item.remaining }}</td></tr>
+        {% endfor %}
         {% endfor %}
       </tbody>
     </table>

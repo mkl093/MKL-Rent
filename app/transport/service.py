@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -235,6 +235,7 @@ def move(db: Session, assignment: TransportAssignment, target: ProjectVehicle, q
 class PoolItem:
     line: PackingLine
     remaining: int
+    section_name: str | None = None  # стенд строки (только при нескольких листах)
 
 
 @dataclass
@@ -242,6 +243,18 @@ class VehicleAssignmentRow:
     assignment: TransportAssignment
     line: PackingLine
     calc: LineCalc
+    section_name: str | None = None  # стенд строки (только при нескольких листах)
+
+
+def _by_section(rows: list) -> list[tuple[str | None, list]]:
+    """Подряд идущие строки одного стенда — группами [(стенд, строки)]."""
+    groups: list[tuple[str | None, list]] = []
+    for row in rows:
+        if groups and groups[-1][0] == row.section_name:
+            groups[-1][1].append(row)
+        else:
+            groups.append((row.section_name, [row]))
+    return groups
 
 
 @dataclass
@@ -250,19 +263,46 @@ class VehicleBoard:
     assignments: list[VehicleAssignmentRow]
     totals: VehicleTotals
 
+    @property
+    def groups(self) -> list[tuple[str | None, list[VehicleAssignmentRow]]]:
+        return _by_section(self.assignments)
+
 
 @dataclass
 class Board:
     unassigned: list[PoolItem]
     vehicles: list[VehicleBoard]
+    # Названия стендов — когда у проекта несколько packing-листов, иначе пусто.
+    sections: list[str] = field(default_factory=list)
+
+    @property
+    def multi_section(self) -> bool:
+        return len(self.sections) > 1
+
+    @property
+    def pool_groups(self) -> list[tuple[str | None, list[PoolItem]]]:
+        return _by_section(self.unassigned)
 
 
 def board(db: Session, project: Project) -> Board:
-    """Собрать доску распределения: пул нераспределённого + машины с итогами."""
-    # Оборудование всех стендов распределяется по общим машинам проекта.
-    lines = _project_lines(db, project)
-    if not lines and not packing_service.project_has_packing(db, project.id):
+    """Собрать доску распределения: пул нераспределённого + машины с итогами.
+
+    Оборудование всех стендов распределяется по общим машинам проекта. При
+    нескольких листах строки помечены стендом: пул и строки машины идут по
+    стендам (в порядке стендов), внутри — как раньше.
+    """
+    packings = packing_service.list_packings(db, project)
+    lines = [ln for packing in packings for ln in packing.lines]
+    if not lines and not packings:
         return Board(unassigned=[], vehicles=[])
+
+    multi = len(packings) > 1
+    section_pos: dict[int, int] = {}
+    section_name: dict[int, str | None] = {}
+    for pos, packing in enumerate(packings):
+        for ln in packing.lines:
+            section_pos[ln.id] = pos
+            section_name[ln.id] = packing.section.name if multi else None
 
     lines_by_id = {ln.id: ln for ln in lines}
     vehicles = list_project_vehicles(db, project)
@@ -285,13 +325,22 @@ def board(db: Session, project: Project) -> Board:
     for pv in vehicles:
         rows = [
             VehicleAssignmentRow(
-                assignment=a, line=lines_by_id[a.packing_line_id], calc=calc_by_assignment[a.id]
+                assignment=a,
+                line=lines_by_id[a.packing_line_id],
+                calc=calc_by_assignment[a.id],
+                section_name=section_name[a.packing_line_id],
             )
             for a in pv.assignments
             if a.packing_line_id in lines_by_id
         ]
+        # По стендам; внутри стенда — прежний порядок (сортировка устойчивая).
+        rows.sort(key=lambda r: section_pos[r.line.id])
         vehicle_boards.append(
-            VehicleBoard(project_vehicle=pv, assignments=rows, totals=vehicle_totals(pv, [r.calc for r in rows]))
+            VehicleBoard(
+                project_vehicle=pv,
+                assignments=rows,
+                totals=vehicle_totals(pv, [r.calc for r in rows]),
+            )
         )
 
     assigned_total: dict[int, int] = {}
@@ -301,6 +350,7 @@ def board(db: Session, project: Project) -> Board:
     ordered_lines = sorted(
         lines,
         key=lambda ln: (
+            section_pos[ln.id],
             ln.is_custom,
             ln.category_name or "",
             ln.subcategory_name or "",
@@ -309,9 +359,17 @@ def board(db: Session, project: Project) -> Board:
         ),
     )
     pool = [
-        PoolItem(line=ln, remaining=ln.fact_quantity - assigned_total.get(ln.id, 0))
+        PoolItem(
+            line=ln,
+            remaining=ln.fact_quantity - assigned_total.get(ln.id, 0),
+            section_name=section_name[ln.id],
+        )
         for ln in ordered_lines
         if ln.fact_quantity - assigned_total.get(ln.id, 0) > 0
     ]
 
-    return Board(unassigned=pool, vehicles=vehicle_boards)
+    return Board(
+        unassigned=pool,
+        vehicles=vehicle_boards,
+        sections=[pl.section.name for pl in packings] if multi else [],
+    )

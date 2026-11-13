@@ -679,36 +679,43 @@ def _transport_render(
                 if ak is not None:
                     accessory_kit_content[row.line.id] = ak.lines
 
-    fingerprint = json.dumps(
-        {
-            "company": [company.company_name, company.address, company.pdf_footer],
-            "project": [project.number, project.name],
-            "packing": [pl.number for pl in packings],
-            "vehicles": [
+    data = {
+        "company": [company.company_name, company.address, company.pdf_footer],
+        "project": [project.number, project.name],
+        "packing": [pl.number for pl in packings],
+        "vehicles": [
+            [
+                v.project_vehicle.name,
+                v.project_vehicle.plate_number,
+                str(v.project_vehicle.max_weight_kg),
                 [
-                    v.project_vehicle.name,
-                    v.project_vehicle.plate_number,
-                    str(v.project_vehicle.max_weight_kg),
                     [
-                        [
-                            a.line.name,
-                            a.assignment.quantity,
-                            [[cl.name, cl.quantity] for cl in accessory_kit_content.get(a.line.id, [])],
-                        ]
-                        for a in v.assignments
-                    ],
-                ]
-                for v in board.vehicles
-            ],
-            "unassigned": [[u.line.name, u.remaining] for u in board.unassigned],
-        },
-        ensure_ascii=False,
-        sort_keys=True,
-    )
+                        a.line.name,
+                        a.assignment.quantity,
+                        [[cl.name, cl.quantity] for cl in accessory_kit_content.get(a.line.id, [])],
+                    ]
+                    for a in v.assignments
+                ],
+            ]
+            for v in board.vehicles
+        ],
+        "unassigned": [[u.line.name, u.remaining] for u in board.unassigned],
+    }
+    stands = None
+    if board.multi_section:
+        # Несколько стендов: строки машин и пула сгруппированы по стендам.
+        stands = _stands_meta(packings)
+        data["stands"] = stands
+        data["sections"] = [
+            [[a.section_name for a in v.assignments] for v in board.vehicles],
+            [u.section_name for u in board.unassigned],
+        ]
+    fingerprint = json.dumps(data, ensure_ascii=False, sort_keys=True)
     html = _env.get_template("transport_pdf.html").render(
         company=company,
         project=project,
         title_number=title_number,
+        stands=stands,
         board=board,
         accessory_kit_content=accessory_kit_content,
         generated_at=utcnow(),
