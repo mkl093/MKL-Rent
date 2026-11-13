@@ -174,6 +174,14 @@ def downgrade() -> None:
     # Возврат к «один лист на проект»: остаётся лист первого стенда, листы других
     # стендов удаляются вместе со строками.
     bind = op.get_bind()
+    # Общий packing-лист проекта (PDF в области проекта) без листов стендов не
+    # существует — удаляем, иначе конфликт уникальности при возврате PDF стенда.
+    bind.execute(
+        sa.text(
+            "DELETE FROM generated_documents "
+            "WHERE doc_type IN ('packing', 'picking') AND scope = 'project'"
+        )
+    )
     # PDF листа первого стенда возвращаются в область проекта, остальные — удаляются.
     bind.execute(
         sa.text(

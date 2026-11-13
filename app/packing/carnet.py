@@ -37,18 +37,18 @@ class CarnetRow:
     country_of_origin: str
 
 
-def _models_by_id(db: Session, packing: PackingList) -> dict[int, EquipmentModel]:
-    ids = {ln.model_id for ln in packing.lines if ln.model_id is not None}
+def _models_by_id(db: Session, lines: list) -> dict[int, EquipmentModel]:
+    ids = {ln.model_id for ln in lines if ln.model_id is not None}
     if not ids:
         return {}
     stmt = select(EquipmentModel).where(EquipmentModel.id.in_(ids))
     return {m.id: m for m in db.execute(stmt).scalars().all()}
 
 
-def _accessory_content_models(db: Session, packing: PackingList) -> dict[int, EquipmentModel]:
+def _accessory_content_models(db: Session, lines: list) -> dict[int, EquipmentModel]:
     """Модели содержимого комплектов аксессуаров проекта (для производителя/страны в carnet)."""
     ids: set[int] = set()
-    for ln in packing.lines:
+    for ln in lines:
         if ln.accessory_kit_id is None:
             continue
         kit = accessory_kit_service.get(db, ln.accessory_kit_id)
@@ -68,9 +68,9 @@ def _serial_text(barcodes: list[str]) -> str:
 
 def _carnet_barcodes(line: PackingLine) -> list[str]:
     """Штрих-коды строки для carnet: подтверждённые сканом, если такие есть —
-    иначе все имеющиеся (включая незаменённые сканом заготовки, ТЗ §22)."""
-    confirmed = [si.barcode for si in line.serial_items if si.confirmed_by_scan]
-    return confirmed if confirmed else [si.barcode for si in line.serial_items]
+    иначе все имеющиеся (включая незаменённые сканом заготовки, ТЗ §22).
+    В общем листе проекта — так же, но по каждому стенду отдельно."""
+    return [si.barcode for si in line.shown_serial_items]
 
 
 def _model_line_row(line: PackingLine, model: EquipmentModel | None, qty: int) -> CarnetRow:
@@ -113,16 +113,22 @@ def _kit_group_row(group: KitGroup) -> CarnetRow:
     return CarnetRow(desc, group.count, weight, country)
 
 
-def build_rows(db: Session, packing: PackingList) -> list[CarnetRow]:
+def build_rows(db: Session, source: PackingList | list) -> list[CarnetRow]:
     """Построчный список для carnet: комплекты и комплекты аксессуаров разворачиваются
     по составу (ATA требует поштучного/по-позиционного описания, группировка допустима
     только для одинаковых единиц — ТЗ на комплекты этому уже соответствует, см. `KitGroup`).
     Комплект аксессуаров в смете виден одной строкой без содержимого (ТЗ), но в carnet
-    декларируется реальное количество провозимого — поэтому здесь именно содержимое."""
-    models = _models_by_id(db, packing)
-    accessory_models = _accessory_content_models(db, packing)
+    декларируется реальное количество провозимого — поэтому здесь именно содержимое.
+
+    ``source`` — лист стенда или готовый список строк (общий лист проекта, где
+    строки одной модели разных стендов уже слиты — см. ``app.packing.combined``)."""
+    if isinstance(source, PackingList):
+        ordered = sorted(source.lines, key=lambda ln: (ln.sort_order, ln.id))
+    else:
+        ordered = list(source)
+    models = _models_by_id(db, ordered)
+    accessory_models = _accessory_content_models(db, ordered)
     rows: list[CarnetRow] = []
-    ordered = sorted(packing.lines, key=lambda ln: (ln.sort_order, ln.id))
     for line in ordered:
         if line.kit_id is not None:
             kit = kit_service.get_kit(db, line.kit_id)
@@ -147,7 +153,8 @@ def build_rows(db: Session, packing: PackingList) -> list[CarnetRow]:
     return rows
 
 
-def build_workbook(project: Project, packing: PackingList, rows: list[CarnetRow]) -> Workbook:
+def build_workbook(project: Project, packing_title: str, rows: list[CarnetRow]) -> Workbook:
+    """``packing_title`` — номер листа стенда или перечень листов общего carnet."""
     wb = Workbook()
     ws = wb.active
     ws.title = "General List"
@@ -156,7 +163,7 @@ def build_workbook(project: Project, packing: PackingList, rows: list[CarnetRow]
     ws["A1"] = "ATA CARNET — GENERAL LIST"
     ws["A1"].font = Font(bold=True, size=14)
     ws["A2"] = f"{project.number} · {project.name}"
-    ws["A3"] = f"Packing-лист: {packing.number}"
+    ws["A3"] = packing_title
     ws["A4"] = "Стоимость (Value) заполняется вручную после экспорта."
     ws["A4"].font = Font(italic=True, color="808080")
 

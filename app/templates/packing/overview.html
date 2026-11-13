@@ -5,7 +5,14 @@
     <h1 class="h3 m-0">Packing-листы</h1>
     <div class="text-secondary"><a href="/projects/{{ project.id }}">{{ project.number }} · {{ project.name }}</a></div>
   </div>
-  <a href="/projects/{{ project.id }}" class="btn btn-outline-secondary">К проекту</a>
+  <div class="d-flex flex-wrap gap-2">
+    {% if combined %}
+    <a href="/projects/{{ project.id }}/documents" class="btn btn-outline-secondary">PDF общего листа</a>
+    <a href="/projects/{{ project.id }}/documents/carnet" class="btn btn-outline-secondary"
+       title="ATA Carnet по всем стендам: одинаковые модели одной строкой">Общий carnet (.xlsx)</a>
+    {% endif %}
+    <a href="/projects/{{ project.id }}" class="btn btn-outline-secondary">К проекту</a>
+  </div>
 </div>
 
 <div class="card">
@@ -37,8 +44,109 @@
         </tr>
         {% endfor %}
       </tbody>
+      {% if combined %}
+      <tfoot><tr class="fw-semibold border-top">
+        <td>Итого по проекту</td>
+        <td></td>
+        <td><span class="badge text-bg-{{ combined.status.badge }}">{{ combined.status.label }}</span></td>
+        <td class="text-end {% if combined.fact < combined.planned %}text-danger{% endif %}">{{ combined.fact }} / {{ combined.planned }}</td>
+        <td class="text-end">{{ '%.1f'|format(combined.totals.total_weight) }}</td>
+        <td></td>
+      </tr></tfoot>
+      {% endif %}
     </table>
   </div>
 </div>
 <p class="text-secondary small mt-2">У каждого стенда свой packing-лист, его план — активная версия сметы стенда. Один экземпляр оборудования может быть только в одном листе проекта.</p>
+
+{% if combined %}
+<h2 class="h5 mt-4">Общий packing-лист проекта</h2>
+<p class="text-secondary small">Сводка листов всех стендов, только просмотр. Одинаковые модели — одной строкой
+  с распределением по стендам; упаковки, вес и объём — сумма по стендам. Комплекты, кабелярка и дополнительные
+  позиции — отдельными строками своего стенда. Сканирование и правки — в листах стендов.</p>
+<div class="row g-3">
+  <div class="col-12 col-xl-8">
+    <div class="card"><div class="table-responsive">
+      <table class="table table-sm align-middle m-0">
+        <thead><tr>
+          <th>Наименование</th><th>Стенды <span class="fw-normal text-secondary small">(план / факт)</span></th>
+          <th class="text-end">План</th><th class="text-end">Факт</th>
+          <th class="text-end">В упак. / упак.</th>
+          <th class="text-end">Вес, кг</th><th class="text-end">Объём, м³</th>
+        </tr></thead>
+        <tbody>
+          {% set ns = namespace(group=None) %}
+          {% for line in combined.lines %}
+          {% set gname = ("Дополнительно" if line.is_custom else ("Комплекты" if line.is_kit else ("Комплекты аксессуаров" if line.is_accessory_kit else (line.category_name or "Без категории") ~ (" / " ~ line.subcategory_name if line.subcategory_name else "")))) %}
+          {% if gname != ns.group %}{% set ns.group = gname %}
+          <tr class="table-light"><td class="fw-semibold" colspan="7">{{ gname }}</td></tr>
+          {% endif %}
+          {% set c = line.calc %}
+          <tr>
+            <td>{{ line.name }}{% if line.is_kit %} <span class="badge text-bg-secondary">комплект</span>{% elif line.is_accessory_kit %} <span class="badge text-bg-secondary">кабелярка</span>{% endif %}</td>
+            <td class="small">
+              {% for s in line.by_section %}<a href="/projects/{{ project.id }}/sections/{{ s.section_id }}/packing"
+                 title="план {{ s.planned }}, факт {{ s.fact }}">{{ s.section_name }}</a>{% if line.merged %}: {{ s.planned }} / {{ s.fact }}{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
+            </td>
+            <td class="text-end">{{ c.planned }}</td>
+            <td class="text-end {% if c.fact < c.planned %}text-danger{% elif c.fact > c.planned %}text-warning{% endif %}">{{ c.fact }}</td>
+            <td class="text-end">{{ c.packed }}{% if c.packages %} / {{ c.packages }}{% endif %}</td>
+            <td class="text-end">{{ '%.1f'|format(c.total_weight) }}</td>
+            <td class="text-end">{{ '%.3f'|format(c.total_volume) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+    {% for stand, text in combined.shortages %}
+    <div class="alert alert-warning mt-2 mb-0 py-2"><b>Недостача ({{ stand }}):</b> {{ text }}</div>
+    {% endfor %}
+  </div>
+
+  <div class="col-12 col-xl-4">
+    {% set totals = combined.totals %}
+    <div class="card mb-3"><div class="card-header">Итоги проекта</div><div class="card-body">
+      <div class="d-flex justify-content-between"><span>Общий вес</span><b>{{ "%.1f"|format(totals.total_weight) }} кг</b></div>
+      <div class="d-flex justify-content-between"><span>Общий объём</span><b>{{ "%.3f"|format(totals.total_volume) }} м³</b></div>
+      <div class="d-flex justify-content-between"><span>Энергопотребление пиковое</span><b>{{ totals.total_power_peak_w }} Вт</b></div>
+      <div class="d-flex justify-content-between"><span>Энергопотребление номинальное</span><b>{{ totals.total_power_nominal_w }} Вт</b></div>
+    </div></div>
+
+    <div class="card mb-3"><div class="card-header">Итоги по категориям</div><div class="card-body p-0">
+      <table class="table table-sm mb-0 align-middle">
+        <thead><tr>
+          <th>Категория</th><th class="text-end">Вес, кг</th><th class="text-end">Объём, м³</th>
+          <th class="text-end">Пик, Вт</th><th class="text-end">Ном., Вт</th>
+        </tr></thead>
+        <tbody>
+          {% for b in combined.breakdown %}
+          <tr>
+            <td>{{ b.category_name }}</td>
+            <td class="text-end">{{ "%.1f"|format(b.total_weight) }}</td>
+            <td class="text-end">{{ "%.3f"|format(b.total_volume) }}</td>
+            <td class="text-end">{{ b.power_peak_w }}</td>
+            <td class="text-end">{{ b.power_nominal_w }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+
+    {% if combined.accessories %}
+    <div class="card mb-3"><div class="card-header">Аксессуары (комплектация)</div><div class="card-body p-0">
+      <table class="table table-sm mb-0 align-middle">
+        <tbody>
+          {% for g in combined.accessories %}
+          <tr class="table-light"><td class="fw-semibold" colspan="2">{{ g.category_name }}</td></tr>
+          {% for name, qty in g.items %}
+          <tr><td>{{ name }}</td><td class="text-end" style="width:6rem">{{ qty }} шт.</td></tr>
+          {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 {% endblock %}

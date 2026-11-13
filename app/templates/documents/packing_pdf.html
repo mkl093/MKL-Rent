@@ -39,8 +39,9 @@
     <td class="num" width="25%">{% if logo_uri %}<img class="logo" src="{{ logo_uri }}" alt="">{% endif %}</td>
   </tr></table>
 
-  <h1>{{ L.packing }} {{ packing.number }}</h1>
+  <h1>{{ L.packing }} {{ title_number }}{% if combined %} — {{ L.all_stands }}{% endif %}</h1>
   {% if section_name %}<div class="meta"><b>{{ L.stand }}: {{ section_name }}</b></div>{% endif %}
+  {% if stands %}<div class="meta"><b>{{ L.stands }}: {{ stands }}</b></div>{% endif %}
   <div class="meta">
     {{ L.date }}: {{ fmt_date(generated_at.date()) }} ·
     {{ L.project }}: {{ project.name }} ({{ project.number }}) ·
@@ -50,7 +51,11 @@
 
   <table class="items">
     <colgroup>
+      {% if combined %}
+      <col style="width:16%"><col style="width:15%"><col style="width:15%"><col style="width:8%">
+      {% else %}
       <col style="width:18%"><col style="width:18%"><col style="width:18%">
+      {% endif %}
       <col style="width:7%"><col style="width:3%">
       <col style="width:10%">
       <col style="width:5%"><col style="width:6%"><col style="width:5%">
@@ -59,6 +64,7 @@
     <thead><tr>
       <th>{{ L.name }}</th>
       <th colspan="2">{{ L.serial }} / {{ L.barcode }}</th>
+      {% if combined %}<th>{{ L.stands }}</th>{% endif %}
       <th class="num">{{ L.packed }}</th><th class="num">{{ L.unpacked }}</th>
       <th>{{ L.weight }} ({{ L.eq_short }} + {{ L.pack_short }})</th>
       <th class="num">{{ L.vol_loose }}</th><th class="num">{{ L.dimensions }}</th><th class="num">{{ L.volume }}</th>
@@ -69,7 +75,7 @@
       {% for line, c in rows %}
         {% set gname = (L.additional if line.is_custom else (L.kits if line.is_kit else (L.accessory_kits if line.is_accessory_kit else (line.category_name or "—") ~ (" / " ~ line.subcategory_name if line.subcategory_name else "")))) %}
         {% if gname != ns.group %}{% set ns.group = gname %}
-        <tr class="cat"><td colspan="10">{{ gname }}</td></tr>{% endif %}
+        <tr class="cat"><td colspan="{{ 11 if combined else 10 }}">{{ gname }}</td></tr>{% endif %}
         <tr>
           <td>{{ line.name }}{% if line.is_kit %} ({{ L.kit }})
             {% for g in kit_content.get(line.id, []) %}<div style="color:#555">— {{ g.model_name }}: {% for it in g.items %}{{ it.barcode or it.serial_number or "—" }}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endfor %}
@@ -79,7 +85,7 @@
           {% if line.is_kit or line.is_accessory_kit %}
           <td colspan="2">—</td>
           {% else %}
-            {% set shown_items = (line.serial_items|selectattr('confirmed_by_scan')|list) or line.serial_items %}
+            {% set shown_items = line.shown_serial_items %}
             {% set n = shown_items|length %}
             {% if n == 0 %}
             <td colspan="2">—</td>
@@ -96,6 +102,7 @@
               {% if cols == 1 %}<td></td>{% endif %}
             {% endif %}
           {% endif %}
+          {% if combined %}<td>{% for t in line.stands_lines() %}<div>{{ t }}</div>{% endfor %}</td>{% endif %}
           <td class="num">{{ c.packed }}{% if c.packages %} <span style="color:#666">/ {{ c.packages }} {{ L.packages_unit }}</span>{% endif %}</td>
           <td class="num">{{ c.unpacked }}</td>
           <td>{{ fmt_weight(c.equipment_weight) }} + {{ fmt_weight(c.packaging_weight) }} = <b>{{ fmt_weight(c.total_weight) }}</b></td>
@@ -112,9 +119,9 @@
     </tbody>
   </table>
 
-  {% if packing.shortage_comment %}
-  <div class="shortage">{{ L.shortage }}: {{ packing.shortage_comment }}</div>
-  {% endif %}
+  {% for stand, text in shortages %}
+  <div class="shortage">{{ L.shortage }}{% if stand %} ({{ stand }}){% endif %}: {{ text }}</div>
+  {% endfor %}
 
   <table class="items" style="margin-top:10px">
     <thead><tr>

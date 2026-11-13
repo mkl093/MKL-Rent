@@ -34,8 +34,9 @@
     <td class="num" width="25%">{% if logo_uri %}<img class="logo" src="{{ logo_uri }}" alt="">{% endif %}</td>
   </tr></table>
 
-  <h1>{{ L.picking }} {{ packing.number }}</h1>
+  <h1>{{ L.picking }} {{ title_number }}{% if combined %} — {{ L.all_stands }}{% endif %}</h1>
   {% if section_name %}<div class="meta"><b>{{ L.stand }}: {{ section_name }}</b></div>{% endif %}
+  {% if stands %}<div class="meta"><b>{{ L.stands }}: {{ stands }}</b></div>{% endif %}
   <div class="meta">
     {{ L.date }}: {{ fmt_date(generated_at.date()) }} ·
     {{ L.project }}: {{ project.name }} ({{ project.number }}) ·
@@ -45,21 +46,29 @@
 
   <table class="items">
     <thead><tr>
+      {% if combined %}
+      <th width="40%">{{ L.name }}</th>
+      <th class="num" width="15%">{{ L.plan }}/{{ L.fact }}</th>
+      <th width="20%">{{ L.stands }} ({{ L.plan }}/{{ L.fact }})</th>
+      <th width="25%">{{ L.location }}</th>
+      {% else %}
       <th width="50%">{{ L.name }}</th>
       <th class="num" width="20%">{{ L.plan }}/{{ L.fact }}</th>
       <th width="30%">{{ L.location }}</th>
+      {% endif %}
     </tr></thead>
     <tbody>
       {% set ns = namespace(group=None) %}
       {% for line, location, planned, fact in rows %}
         {% set gname = (L.additional if line.is_custom else (L.kits if line.is_kit else (line.category_name or "—") ~ (" / " ~ line.subcategory_name if line.subcategory_name else ""))) %}
         {% if gname != ns.group %}{% set ns.group = gname %}
-        <tr class="cat"><td colspan="3">{{ gname }}</td></tr>{% endif %}
+        <tr class="cat"><td colspan="{{ 4 if combined else 3 }}">{{ gname }}</td></tr>{% endif %}
         {% set missing = [0, planned - fact]|max %}
         {% set over = [0, fact - planned]|max %}
         <tr>
           <td>{{ line.name }}{% if line.is_kit %} ({{ L.kit }}){% endif %}</td>
           <td class="num">{{ planned }} / {{ fact }}{% if missing %} <span style="color:#b00">−{{ missing }}</span>{% endif %}{% if over %} <span style="color:#a60">+{{ over }}</span>{% endif %}</td>
+          {% if combined %}<td>{% for t in line.stands_lines(true) %}<div>{{ t }}</div>{% endfor %}</td>{% endif %}
           <td>{{ location }}</td>
         </tr>
       {% endfor %}

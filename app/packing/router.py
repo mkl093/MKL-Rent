@@ -27,7 +27,7 @@ from app.inventory.services import categories as cat_service
 from app.inventory.services import equipment as eq_service
 from app.inventory.services import items as item_service
 from app.inventory.services import kits as kit_service
-from app.packing import service
+from app.packing import combined, service
 from app.packing.calc import compute_line
 from app.packing.enums import PackingStatus
 from app.packing.schemas import CustomPackingLine
@@ -908,6 +908,7 @@ def packing_overview(
         sections = [estimate_versions.ensure_default_section(db, project)]
     if len(sections) == 1:
         return redirect(_base(project_id, sections[0].id))
+    packings = service.list_packings(db, project)
     return render(
         request,
         "packing/overview.html",
@@ -915,6 +916,8 @@ def packing_overview(
             "page_title": "Packing-листы",
             "project": project,
             "summaries": service.section_summaries(db, project),
+            # Общий лист — когда листов стендов больше одного.
+            "combined": combined.build(db, packings) if len(packings) > 1 else None,
             "editable": not project.is_archived,
         },
         db=db,

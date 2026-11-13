@@ -24,12 +24,12 @@ from app.documents.models import GeneratedDocument
 from app.estimates.models import Estimate, ProjectSection
 from app.estimates.service import get_or_create_estimate, grouped_lines
 from app.estimates.service import totals as estimate_totals
+from app.packing import combined
 from app.packing.calc import compute_category_breakdown, compute_line, compute_totals
 from app.packing.models import PackingList
 from app.packing.service import (
     accessory_totals,
     backfill_quantity_barcodes,
-    get_packing,
     list_packings,
 )
 from app.projects.models import Project
@@ -81,6 +81,8 @@ LABELS = {
         "tax_number": "Налоговый номер",
         "grand_total": "Итого",
         "stand": "Стенд",
+        "stands": "Стенды",
+        "all_stands": "все стенды",
         "group_subtotal": "Итого по разделу",
         "quote_open": "«",
         "quote_close": "»",
@@ -151,6 +153,8 @@ LABELS = {
         "tax_number": "Tax number",
         "grand_total": "Grand total",
         "stand": "Stand",
+        "stands": "Stands",
+        "all_stands": "all stands",
         "group_subtotal": "Subtotal",
         "quote_open": "“",
         "quote_close": "”",
@@ -221,6 +225,8 @@ LABELS = {
         "tax_number": "Steuernummer",
         "grand_total": "Gesamt",
         "stand": "Stand",
+        "stands": "Stände",
+        "all_stands": "alle Stände",
         "group_subtotal": "Zwischensumme",
         "quote_open": "„",
         "quote_close": "“",
@@ -399,6 +405,18 @@ def _section_title(db: Session, project: Project, packing: PackingList) -> str |
     return name if sections_count > 1 or name != DEFAULT_SECTION_NAME else None
 
 
+def _stands_meta(packings: list[PackingList]) -> str:
+    """«A (PL-…), B (PL-…)» — листы стендов в шапке общего листа."""
+    return ", ".join(f"{pl.section.name} ({pl.number})" for pl in packings)
+
+
+def _project_packings(db: Session, project: Project) -> list[PackingList]:
+    packings = list_packings(db, project)
+    if not packings:
+        raise PdfUnavailable("Packing-лист не создан")
+    return packings
+
+
 def _packing_render(
     db: Session,
     project: Project,
@@ -406,29 +424,41 @@ def _packing_render(
     fontface: bool = True,
     packing: PackingList | None = None,
 ) -> tuple[str, str]:
+    """Packing-лист стенда (``packing``) или общий лист проекта (``packing=None``)."""
     company = get_company_settings(db)
-    if packing is None:
-        packing = get_packing(db, project)
-    if packing is None:
-        raise PdfUnavailable("Packing-лист не создан")
-    section_name = _section_title(db, project, packing)
+    labels = {
+        "custom_label": LABELS[lang]["additional"],
+        "kit_label": LABELS[lang]["kits"],
+        "accessory_kit_label": LABELS[lang]["accessory_kits"],
+        "no_category_label": LABELS[lang]["no_category"],
+    }
+    combined_view = packing is None
+    packings = _project_packings(db, project) if combined_view else [packing]
     if not project.is_archived:
         # Факт мог быть выставлен до появления штрих-кода в наличии/до правки
         # логики авто-подбора — довязываем недостающие заготовки перед сборкой
         # документа, а не только по явному скану/правке количества.
-        backfill_quantity_barcodes(db, packing)
+        for pl in packings:
+            backfill_quantity_barcodes(db, pl)
 
-    ordered = _packing_ordered_lines(packing)
-    rows = [(ln, compute_line(ln)) for ln in ordered]
-    totals = compute_totals(packing.lines)
-    breakdown = compute_category_breakdown(
-        packing.lines,
-        custom_label=LABELS[lang]["additional"],
-        kit_label=LABELS[lang]["kits"],
-        accessory_kit_label=LABELS[lang]["accessory_kits"],
-        no_category_label=LABELS[lang]["no_category"],
-    )
-    accessories = accessory_totals(db, packing)
+    if combined_view:
+        cp = combined.build(db, packings, **labels)
+        ordered = cp.lines
+        rows = [(c, c.calc) for c in ordered]
+        totals, breakdown, accessories = cp.totals, cp.breakdown, cp.accessories
+        shortages = cp.shortages
+        title_number, section_name, stands = project.number, None, _stands_meta(packings)
+        status_value = cp.status.value
+    else:
+        ordered = _packing_ordered_lines(packing)
+        rows = [(ln, compute_line(ln)) for ln in ordered]
+        totals = compute_totals(packing.lines)
+        breakdown = compute_category_breakdown(packing.lines, **labels)
+        accessories = accessory_totals(db, packing)
+        shortages = [(None, packing.shortage_comment)] if packing.shortage_comment else []
+        title_number, stands = packing.number, None
+        section_name = _section_title(db, project, packing)
+        status_value = packing.status.value
 
     # Перечень комплектации для строк-комплектов (структура «Комплект»).
     from app.accessory_kits import service as accessory_kit_service
@@ -446,62 +476,69 @@ def _packing_render(
             if ak is not None:
                 accessory_kit_content[ln.id] = ak.lines
 
-    fingerprint = json.dumps(
-        {
-            "company": [company.company_name, company.address, company.pdf_footer],
-            "project": [
-                project.number,
-                project.name,
-                str(project.start_date),
-                str(project.end_date),
-                str(project.shipped_date),
-                str(project.returned_date),
-            ],
-            "packing": [
-                packing.number,
-                packing.status.value,
-                packing.shortage_comment,
-                section_name,
-            ],
-            "accessories": [[g.category_name, g.items] for g in accessories],
-            "lines": [
+    data = {
+        "company": [company.company_name, company.address, company.pdf_footer],
+        "project": [
+            project.number,
+            project.name,
+            str(project.start_date),
+            str(project.end_date),
+            str(project.shipped_date),
+            str(project.returned_date),
+        ],
+        "packing": [
+            title_number,
+            status_value,
+            shortages if combined_view else packing.shortage_comment,
+            section_name,
+        ],
+        "accessories": [[g.category_name, g.items] for g in accessories],
+        "lines": [
+            [
+                ln.name,
+                ln.planned_quantity,
+                ln.fact_quantity,
+                ln.packed_quantity,
+                str(ln.unit_weight_kg),
+                ln.length_mm,
+                ln.width_mm,
+                ln.height_mm,
+                ln.has_packing,
+                ln.pack_length_mm,
+                ln.pack_width_mm,
+                ln.pack_height_mm,
+                ln.has_power,
+                ln.power_peak_w,
+                ln.power_nominal_w,
+                sorted((si.barcode, si.confirmed_by_scan) for si in ln.serial_items),
                 [
-                    ln.name,
-                    ln.planned_quantity,
-                    ln.fact_quantity,
-                    ln.packed_quantity,
-                    str(ln.unit_weight_kg),
-                    ln.length_mm,
-                    ln.width_mm,
-                    ln.height_mm,
-                    ln.has_packing,
-                    ln.pack_length_mm,
-                    ln.pack_width_mm,
-                    ln.pack_height_mm,
-                    ln.has_power,
-                    ln.power_peak_w,
-                    ln.power_nominal_w,
-                    sorted((si.barcode, si.confirmed_by_scan) for si in ln.serial_items),
-                    [
-                        [g.model_name, [it.barcode or it.serial_number or "" for it in g.items]]
-                        for g in kit_content.get(ln.id, [])
-                    ],
-                    [
-                        [cl.name, cl.quantity]
-                        for cl in accessory_kit_content.get(ln.id, [])
-                    ],
-                ]
-                for ln in ordered
-            ],
-        },
-        ensure_ascii=False,
-        sort_keys=True,
-    )
+                    [g.model_name, [it.barcode or it.serial_number or "" for it in g.items]]
+                    for g in kit_content.get(ln.id, [])
+                ],
+                [
+                    [cl.name, cl.quantity]
+                    for cl in accessory_kit_content.get(ln.id, [])
+                ],
+            ]
+            for ln in ordered
+        ],
+    }
+    if combined_view:
+        # Общий лист: стенды, распределение строк и упаковка как сумма по стендам.
+        data["stands"] = stands
+        data["shares"] = [
+            [c.stands_text, c.comment, c.calc.packages, str(c.calc.total_weight)]
+            for c in ordered
+        ]
+    fingerprint = json.dumps(data, ensure_ascii=False, sort_keys=True)
     html = _env.get_template("packing_pdf.html").render(
         company=company,
         project=project,
-        packing=packing,
+        title_number=title_number,
+        combined=combined_view,
+        stands=stands,
         section_name=section_name,
+        shortages=shortages,
         rows=rows,
         totals=totals,
         breakdown=breakdown,
@@ -566,14 +603,18 @@ def _picking_render(
     fontface: bool = True,
     packing: PackingList | None = None,
 ) -> tuple[str, str]:
+    """Лист комплектации стенда (``packing``) или общий по проекту (``packing=None``)."""
     company = get_company_settings(db)
-    if packing is None:
-        packing = get_packing(db, project)
-    if packing is None:
-        raise PdfUnavailable("Packing-лист не создан")
-    section_name = _section_title(db, project, packing)
+    combined_view = packing is None
+    if combined_view:
+        packings = _project_packings(db, project)
+        ordered = combined.combine_lines(packings)
+        title_number, section_name, stands = project.number, None, _stands_meta(packings)
+    else:
+        ordered = _packing_ordered_lines(packing)
+        title_number, stands = packing.number, None
+        section_name = _section_title(db, project, packing)
 
-    ordered = _packing_ordered_lines(packing)
     locations = _storage_locations(db, ordered)
     rows = [
         (
@@ -585,20 +626,22 @@ def _picking_render(
         for ln in ordered
     ]
 
-    fingerprint = json.dumps(
-        {
-            "company": [company.company_name, company.address, company.pdf_footer],
-            "project": [project.number, project.name],
-            "packing": [packing.number, section_name],
-            "lines": [[ln.name, planned, fact, loc] for ln, loc, planned, fact in rows],
-        },
-        ensure_ascii=False,
-        sort_keys=True,
-    )
+    data = {
+        "company": [company.company_name, company.address, company.pdf_footer],
+        "project": [project.number, project.name],
+        "packing": [title_number, section_name],
+        "lines": [[ln.name, planned, fact, loc] for ln, loc, planned, fact in rows],
+    }
+    if combined_view:
+        data["stands"] = stands
+        data["shares"] = [ln.stands_lines(True) for ln in ordered]
+    fingerprint = json.dumps(data, ensure_ascii=False, sort_keys=True)
     html = _env.get_template("picking_pdf.html").render(
         company=company,
         project=project,
-        packing=packing,
+        title_number=title_number,
+        combined=combined_view,
+        stands=stands,
         section_name=section_name,
         rows=rows,
         generated_at=utcnow(),
@@ -700,7 +743,7 @@ def render_html(
 ) -> tuple[str, str]:
     """HTML документа и отпечаток данных. ``estimate`` — версия сметы для PDF сметы
     (по умолчанию — активная версия первого стенда); ``packing`` — лист стенда для
-    packing-листа и листа комплектации (по умолчанию — лист первого стенда)."""
+    packing-листа и листа комплектации (без него — общий лист проекта)."""
     if doc_type == DocumentType.ESTIMATE:
         return _estimate_render(db, project, lang, fontface, estimate)
     if doc_type in _PACKING_DOCS:
@@ -717,7 +760,7 @@ def doc_scope(
     packing: PackingList | None = None,
 ) -> str:
     """Область хранения документа: смета — по версии, packing/picking — по листу
-    стенда, packing-лист по машинам — по проекту."""
+    стенда (общий лист и packing-лист по машинам — по проекту)."""
     if doc_type == DocumentType.ESTIMATE and estimate is not None:
         return f"estimate:{estimate.id}"
     if doc_type in _PACKING_DOCS and packing is not None:
@@ -850,14 +893,11 @@ def generate(
 
     PDF сметы хранится по версии сметы (``estimate``, по умолчанию — активная
     версия первого стенда), packing-лист и лист комплектации — по листу стенда
-    (``packing``, по умолчанию — лист первого стенда), остальное — по проекту.
+    (``packing``; без него — общий лист проекта по всем стендам), остальное — по
+    проекту.
     """
     if doc_type == DocumentType.ESTIMATE and estimate is None:
         estimate = default_estimate(db, project)
-    if doc_type in _PACKING_DOCS and packing is None:
-        packing = get_packing(db, project)
-        if packing is None:
-            raise PdfUnavailable("Packing-лист не создан")
     # @font-face нужен WeasyPrint; xhtml2pdf использует шрифт из своего реестра.
     html, fingerprint = render_html(
         db,
@@ -871,7 +911,11 @@ def generate(
     pdf = _html_to_pdf(html)
 
     scope = doc_scope(doc_type, estimate, packing)
-    if scope == "project":
+    if scope == "project" and doc_type in _PACKING_DOCS:
+        # Общий лист проекта. Имя {type}_{lang}.pdf занято PDF листа стенда,
+        # перенесённым миграцией 0031 из scope "project", — его не перезаписываем.
+        filename = f"{doc_type.value}_all_{lang}.pdf"
+    elif scope == "project":
         filename = f"{doc_type.value}_{lang}.pdf"
     elif doc_type == DocumentType.ESTIMATE:
         filename = f"{doc_type.value}_{estimate.id}_{lang}.pdf"
@@ -962,4 +1006,20 @@ def packing_status(db: Session, project: Project, packing: PackingList) -> list[
             result.append(
                 DocStatus(doc_type, lang, True, doc is not None, stale, doc, packing=packing)
             )
+    return result
+
+
+def combined_status(db: Session, project: Project) -> list[DocStatus]:
+    """Статусы общего packing-листа и листа комплектации проекта на всех языках."""
+    result: list[DocStatus] = []
+    for doc_type in _PACKING_DOCS:
+        try:
+            _, current_hash = render_html(db, project, doc_type, "ru")
+            available = True
+        except PdfUnavailable:
+            current_hash, available = None, False
+        for lang in Language:
+            doc = get_document(db, project.id, doc_type, lang, "project")
+            stale = bool(doc and current_hash and doc.content_hash != current_hash)
+            result.append(DocStatus(doc_type, lang, available, doc is not None, stale, doc))
     return result

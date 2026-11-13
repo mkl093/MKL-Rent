@@ -158,6 +158,13 @@ class PackingLine(Base):
     def unpacked_quantity(self) -> int:
         return max(0, self.fact_quantity - self.packed_quantity)
 
+    @property
+    def shown_serial_items(self) -> list[PackingSerialItem]:
+        """Экземпляры для документов: подтверждённые сканом, если такие есть, —
+        иначе все (включая незаменённые сканом заготовки, ТЗ §22)."""
+        confirmed = [si for si in self.serial_items if si.confirmed_by_scan]
+        return confirmed or list(self.serial_items)
+
 
 class PackingSerialItem(Base):
     """Назначенный в packing-лист экземпляр посерийной модели (ТЗ §17.7)."""

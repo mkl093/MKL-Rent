@@ -584,8 +584,8 @@ def test_picking_becomes_stale_when_storage_location_changes(db_session, tmp_pat
     est_service.add_model(db_session, estimate, project, model, 1)
     packing_service.create_from_estimate(db_session, project)
 
-    builder.generate(db_session, project, DocumentType.PICKING, "ru")
     packing = packing_service.get_packing(db_session, project)
+    builder.generate(db_session, project, DocumentType.PICKING, "ru", packing=packing)
 
     def picking_statuses():
         return {

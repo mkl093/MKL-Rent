@@ -81,15 +81,29 @@
 {% endfor %}
 <p class="text-secondary small mt-n2">PDF сметы — активной версии стенда; PDF другой версии формируется на странице этой версии сметы.</p>
 
-<h2 class="h5">Документы проекта</h2>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+  <h2 class="h5 m-0">Проект целиком</h2>
+  {% if combined_docs %}
+  <a class="btn btn-sm btn-outline-secondary" href="/projects/{{ project.id }}/documents/carnet"
+     title="ATA Carnet по всем стендам: одинаковые модели одной строкой, S/N — общим списком">Общий carnet (.xlsx)</a>
+  {% endif %}
+</div>
 <div class="card">
   <div class="table-responsive">
     <table class="table align-middle m-0">
       <thead><tr><th>Тип</th><th>Язык</th><th>Состояние</th><th class="text-end">Действия</th></tr></thead>
       <tbody>
+        {% for s in combined_docs %}
+        <tr>
+          <td>{% if s.language.value == "ru" %}{{ s.doc_type.label }} — <a href="/projects/{{ project.id }}/packing">все стенды</a>{% endif %}</td>
+          <td>{{ s.language.label }}</td>
+          <td>{{ doc_state(s) }}</td>
+          <td class="text-end">{{ doc_actions(s, project.id, None, None, csrf_token) }}</td>
+        </tr>
+        {% endfor %}
         {% for s in statuses %}
         <tr>
-          <td>{{ s.doc_type.label }}</td>
+          <td>{% if s.language.value == "ru" %}{{ s.doc_type.label }}{% endif %}</td>
           <td>{{ s.language.label }}</td>
           <td>{{ doc_state(s) }}</td>
           <td class="text-end">{{ doc_actions(s, project.id, None, None, csrf_token) }}</td>
@@ -99,5 +113,5 @@
     </table>
   </div>
 </div>
-<p class="text-secondary small mt-2">PDF хранит только последнюю версию каждого документа и языка. После изменения данных он помечается «устарел» — сформируйте заново. Packing-лист по машинам собирается из листов всех стендов.</p>
+<p class="text-secondary small mt-2">PDF хранит только последнюю версию каждого документа и языка. После изменения данных он помечается «устарел» — сформируйте заново. Packing-лист по машинам собирается из листов всех стендов; общий packing-лист и лист комплектации суммируют одинаковые модели всех стендов.</p>
 {% endblock %}

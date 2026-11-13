@@ -1386,10 +1386,15 @@ class AccessoryGroup:
 
 
 def accessory_totals(db: Session, packing: PackingList) -> list[AccessoryGroup]:
-    """Живой подсчёт аксессуаров комплектации по packing-листу.
+    """Живой подсчёт аксессуаров комплектации по packing-листу."""
+    return accessory_totals_for_lines(db, packing.lines)
+
+
+def accessory_totals_for_lines(db: Session, lines: list[PackingLine]) -> list[AccessoryGroup]:
+    """Живой подсчёт аксессуаров комплектации по строкам packing-листа(ов).
 
     Для строки-модели: количество аксессуара × факт строки. Для строки-комплекта —
-    аксессуары моделей каждой единицы содержимого × факт. Суммируется по всему листу
+    аксессуары моделей каждой единицы содержимого × факт. Суммируется по всем строкам
     и группируется по категориям справочника. Дополнительные позиции — без аксессуаров.
     """
     agg: dict[int, int] = {}
@@ -1403,7 +1408,7 @@ def accessory_totals(db: Session, packing: PackingList) -> list[AccessoryGroup]:
             agg[acc.id] = agg.get(acc.id, 0) + mult * ma.quantity
             meta[acc.id] = (acc.category.name, acc.name, acc.sort_order)
 
-    for line in packing.lines:
+    for line in lines:
         if line.is_custom:
             continue
         fact = line.fact_quantity

@@ -29,7 +29,7 @@
 <div class="card card-body mb-3">
   <div class="d-flex flex-wrap gap-2">
     <a href="/projects/{{ project.id }}/estimate" class="btn btn-primary">Смета</a>
-    <a href="/projects/{{ project.id }}/packing" class="btn btn-outline-primary">Packing-лист</a>
+    <a href="/projects/{{ project.id }}/packing" class="btn btn-outline-primary">{{ "Packing-листы (общий)" if packing_by_section|length > 1 else "Packing-лист" }}</a>
     <a href="/projects/{{ project.id }}/accessory-kits" class="btn btn-outline-primary">Комплекты аксессуаров</a>
     <a href="/projects/{{ project.id }}/returns" class="btn btn-outline-primary">Возврат</a>
     <a href="/projects/{{ project.id }}/transport" class="btn btn-outline-primary">Транспорт</a>
