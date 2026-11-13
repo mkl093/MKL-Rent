@@ -22,11 +22,16 @@
       </form>
       {% endif %}
       {% if in_packing %}
-      <span class="btn btn-outline-success disabled">В packing-листе</span>
+      <span class="btn btn-outline-success disabled">В packing-листе{% if packings|length > 1 %} стенда «{{ packing_with_kit.section.name }}»{% endif %}</span>
       {% elif packing_exists %}
-      <form method="post" action="/projects/{{ project.id }}/accessory-kits/{{ kit.id }}/add-to-packing" class="m-0">
+      <form method="post" action="/projects/{{ project.id }}/accessory-kits/{{ kit.id }}/add-to-packing" class="m-0 d-flex gap-1">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button class="btn btn-outline-primary">Добавить в packing-лист</button>
+        {% if packings|length > 1 %}
+        <select class="form-select" name="packing_id" aria-label="Packing-лист стенда">
+          {% for pl in packings %}<option value="{{ pl.id }}" {% if estimate_section and pl.section_id == estimate_section.id %}selected{% endif %}>{{ pl.section.name }}</option>{% endfor %}
+        </select>
+        {% endif %}
+        <button class="btn btn-outline-primary text-nowrap">Добавить в packing-лист</button>
       </form>
       {% endif %}
       <form method="post" action="/projects/{{ project.id }}/accessory-kits/{{ kit.id }}/delete" class="m-0"

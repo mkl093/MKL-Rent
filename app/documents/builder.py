@@ -25,7 +25,13 @@ from app.estimates.models import Estimate, ProjectSection
 from app.estimates.service import get_or_create_estimate, grouped_lines
 from app.estimates.service import totals as estimate_totals
 from app.packing.calc import compute_category_breakdown, compute_line, compute_totals
-from app.packing.service import accessory_totals, backfill_quantity_barcodes, get_packing
+from app.packing.models import PackingList
+from app.packing.service import (
+    accessory_totals,
+    backfill_quantity_barcodes,
+    get_packing,
+    list_packings,
+)
 from app.projects.models import Project
 from app.settings.service import get_company_settings
 
@@ -382,13 +388,30 @@ def _estimate_render(
     return html, _hash(fingerprint)
 
 
+def _section_title(db: Session, project: Project, packing: PackingList) -> str | None:
+    """Название стенда для шапки документа — если стендов несколько или стенд переименован."""
+    from app.estimates.versions import DEFAULT_SECTION_NAME
+
+    sections_count = db.scalar(
+        select(func.count(ProjectSection.id)).where(ProjectSection.project_id == project.id)
+    )
+    name = packing.section.name
+    return name if sections_count > 1 or name != DEFAULT_SECTION_NAME else None
+
+
 def _packing_render(
-    db: Session, project: Project, lang: str, fontface: bool = True
+    db: Session,
+    project: Project,
+    lang: str,
+    fontface: bool = True,
+    packing: PackingList | None = None,
 ) -> tuple[str, str]:
     company = get_company_settings(db)
-    packing = get_packing(db, project)
+    if packing is None:
+        packing = get_packing(db, project)
     if packing is None:
         raise PdfUnavailable("Packing-лист не создан")
+    section_name = _section_title(db, project, packing)
     if not project.is_archived:
         # Факт мог быть выставлен до появления штрих-кода в наличии/до правки
         # логики авто-подбора — довязываем недостающие заготовки перед сборкой
@@ -434,7 +457,12 @@ def _packing_render(
                 str(project.shipped_date),
                 str(project.returned_date),
             ],
-            "packing": [packing.number, packing.status.value, packing.shortage_comment],
+            "packing": [
+                packing.number,
+                packing.status.value,
+                packing.shortage_comment,
+                section_name,
+            ],
             "accessories": [[g.category_name, g.items] for g in accessories],
             "lines": [
                 [
@@ -473,6 +501,7 @@ def _packing_render(
         company=company,
         project=project,
         packing=packing,
+        section_name=section_name,
         rows=rows,
         totals=totals,
         breakdown=breakdown,
@@ -531,12 +560,18 @@ def _storage_locations(db: Session, ordered: list) -> dict[int, str]:
 
 
 def _picking_render(
-    db: Session, project: Project, lang: str, fontface: bool = True
+    db: Session,
+    project: Project,
+    lang: str,
+    fontface: bool = True,
+    packing: PackingList | None = None,
 ) -> tuple[str, str]:
     company = get_company_settings(db)
-    packing = get_packing(db, project)
+    if packing is None:
+        packing = get_packing(db, project)
     if packing is None:
         raise PdfUnavailable("Packing-лист не создан")
+    section_name = _section_title(db, project, packing)
 
     ordered = _packing_ordered_lines(packing)
     locations = _storage_locations(db, ordered)
@@ -554,7 +589,7 @@ def _picking_render(
         {
             "company": [company.company_name, company.address, company.pdf_footer],
             "project": [project.number, project.name],
-            "packing": [packing.number],
+            "packing": [packing.number, section_name],
             "lines": [[ln.name, planned, fact, loc] for ln, loc, planned, fact in rows],
         },
         ensure_ascii=False,
@@ -564,6 +599,7 @@ def _picking_render(
         company=company,
         project=project,
         packing=packing,
+        section_name=section_name,
         rows=rows,
         generated_at=utcnow(),
         logo_uri=_logo_uri(company),
@@ -580,9 +616,11 @@ def _transport_render(
     from app.transport import service as transport_service
 
     company = get_company_settings(db)
-    packing = get_packing(db, project)
-    if packing is None:
+    packings = list_packings(db, project)
+    if not packings:
         raise PdfUnavailable("Packing-лист не создан")
+    # Машины общие на проект: при нескольких стендах в заголовке — номер проекта.
+    title_number = packings[0].number if len(packings) == 1 else project.number
 
     board = transport_service.board(db, project)
     if not board.vehicles or not any(v.assignments for v in board.vehicles):
@@ -602,7 +640,7 @@ def _transport_render(
         {
             "company": [company.company_name, company.address, company.pdf_footer],
             "project": [project.number, project.name],
-            "packing": [packing.number],
+            "packing": [pl.number for pl in packings],
             "vehicles": [
                 [
                     v.project_vehicle.name,
@@ -627,7 +665,7 @@ def _transport_render(
     html = _env.get_template("transport_pdf.html").render(
         company=company,
         project=project,
-        packing=packing,
+        title_number=title_number,
         board=board,
         accessory_kit_content=accessory_kit_content,
         generated_at=utcnow(),
@@ -658,18 +696,32 @@ def render_html(
     *,
     fontface: bool = True,
     estimate: Estimate | None = None,
+    packing: PackingList | None = None,
 ) -> tuple[str, str]:
     """HTML документа и отпечаток данных. ``estimate`` — версия сметы для PDF сметы
-    (по умолчанию — активная версия первого стенда)."""
+    (по умолчанию — активная версия первого стенда); ``packing`` — лист стенда для
+    packing-листа и листа комплектации (по умолчанию — лист первого стенда)."""
     if doc_type == DocumentType.ESTIMATE:
         return _estimate_render(db, project, lang, fontface, estimate)
+    if doc_type in _PACKING_DOCS:
+        return _RENDERERS[doc_type](db, project, lang, fontface, packing)
     return _RENDERERS[doc_type](db, project, lang, fontface)
 
 
-def doc_scope(doc_type: DocumentType, estimate: Estimate | None) -> str:
-    """Область хранения документа: PDF сметы — по версии, остальное — по проекту."""
+_PACKING_DOCS = (DocumentType.PACKING, DocumentType.PICKING)
+
+
+def doc_scope(
+    doc_type: DocumentType,
+    estimate: Estimate | None = None,
+    packing: PackingList | None = None,
+) -> str:
+    """Область хранения документа: смета — по версии, packing/picking — по листу
+    стенда, packing-лист по машинам — по проекту."""
     if doc_type == DocumentType.ESTIMATE and estimate is not None:
         return f"estimate:{estimate.id}"
+    if doc_type in _PACKING_DOCS and packing is not None:
+        return f"packing:{packing.id}"
     return "project"
 
 
@@ -792,14 +844,20 @@ def generate(
     lang: str,
     *,
     estimate: Estimate | None = None,
+    packing: PackingList | None = None,
 ) -> GeneratedDocument:
     """Сгенерировать PDF и заменить предыдущую версию того же сочетания (ТЗ §26.6).
 
     PDF сметы хранится по версии сметы (``estimate``, по умолчанию — активная
-    версия первого стенда), остальные документы — по проекту.
+    версия первого стенда), packing-лист и лист комплектации — по листу стенда
+    (``packing``, по умолчанию — лист первого стенда), остальное — по проекту.
     """
     if doc_type == DocumentType.ESTIMATE and estimate is None:
         estimate = default_estimate(db, project)
+    if doc_type in _PACKING_DOCS and packing is None:
+        packing = get_packing(db, project)
+        if packing is None:
+            raise PdfUnavailable("Packing-лист не создан")
     # @font-face нужен WeasyPrint; xhtml2pdf использует шрифт из своего реестра.
     html, fingerprint = render_html(
         db,
@@ -808,14 +866,17 @@ def generate(
         lang,
         fontface=resolve_engine() == "weasyprint",
         estimate=estimate,
+        packing=packing,
     )
     pdf = _html_to_pdf(html)
 
-    scope = doc_scope(doc_type, estimate)
+    scope = doc_scope(doc_type, estimate, packing)
     if scope == "project":
         filename = f"{doc_type.value}_{lang}.pdf"
-    else:
+    elif doc_type == DocumentType.ESTIMATE:
         filename = f"{doc_type.value}_{estimate.id}_{lang}.pdf"
+    else:
+        filename = f"{doc_type.value}_pl{packing.id}_{lang}.pdf"
     target = _storage_dir(project.id) / filename
     target.write_bytes(pdf)
     rel = f"documents/project_{project.id}/{filename}"
@@ -847,17 +908,19 @@ class DocStatus:
     stale: bool
     document: GeneratedDocument | None
     estimate: Estimate | None = None  # версия сметы (для PDF сметы)
+    packing: PackingList | None = None  # лист стенда (packing-лист, лист комплектации)
 
 
 def status(db: Session, project: Project) -> list[DocStatus]:
-    """Статусы документов проекта (packing, picking, transport — без смет; ТЗ §26.6).
+    """Статусы документов проекта целиком — packing-лист по машинам (ТЗ §26.6).
 
-    Статусы PDF смет — по версиям, см. estimate_status().
+    PDF смет — по версиям (estimate_status), packing-лист и лист комплектации —
+    по листам стендов (packing_status).
     """
-    packing_exists = get_packing(db, project) is not None
+    packing_exists = bool(list_packings(db, project))
     result: list[DocStatus] = []
     for doc_type in DocumentType:
-        if doc_type == DocumentType.ESTIMATE:
+        if doc_type == DocumentType.ESTIMATE or doc_type in _PACKING_DOCS:
             continue
         available = packing_exists
         current_hash = None
@@ -884,4 +947,19 @@ def estimate_status(db: Session, project: Project, estimate: Estimate) -> list[D
         result.append(
             DocStatus(DocumentType.ESTIMATE, lang, True, doc is not None, stale, doc, estimate)
         )
+    return result
+
+
+def packing_status(db: Session, project: Project, packing: PackingList) -> list[DocStatus]:
+    """Статусы packing-листа и листа комплектации стенда на всех языках."""
+    result: list[DocStatus] = []
+    for doc_type in _PACKING_DOCS:
+        _, current_hash = render_html(db, project, doc_type, "ru", packing=packing)
+        scope = doc_scope(doc_type, packing=packing)
+        for lang in Language:
+            doc = get_document(db, project.id, doc_type, lang, scope)
+            stale = bool(doc and doc.content_hash != current_hash)
+            result.append(
+                DocStatus(doc_type, lang, True, doc is not None, stale, doc, packing=packing)
+            )
     return result

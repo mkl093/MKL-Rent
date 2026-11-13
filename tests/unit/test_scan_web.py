@@ -53,8 +53,13 @@ def _csrf(client, url) -> str:
     return re.search(r'name="csrf_token" value="([^"]+)"', client.get(url).text).group(1)
 
 
+def _packing_base(client, project_id) -> str:
+    """Адрес packing-листа единственного стенда (через редирект /projects/{id}/packing)."""
+    return client.get(f"/projects/{project_id}/packing").url.path
+
+
 def test_scan_page_and_submit(auth_client, packing):
-    base = f"/projects/{packing.id}/packing"
+    base = _packing_base(auth_client, packing.id)
     page = auth_client.get(f"{base}/scan")
     assert page.status_code == 200
     assert "Сканирование" in page.text
@@ -76,7 +81,7 @@ def test_scan_page_and_submit(auth_client, packing):
 
 
 def test_scan_not_found_json(auth_client, packing):
-    base = f"/projects/{packing.id}/packing"
+    base = _packing_base(auth_client, packing.id)
     token = _csrf(auth_client, f"{base}/scan")
     r = auth_client.post(f"{base}/scan", data={"barcode": "NOPE", "csrf_token": token})
     data = r.json()

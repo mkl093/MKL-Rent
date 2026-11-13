@@ -134,10 +134,12 @@ def remove_project_vehicle(db: Session, project_vehicle: ProjectVehicle) -> None
 
 def get_line(db: Session, project: Project, line_id: int) -> PackingLine | None:
     """Строка packing-листа этого проекта (защита от чужого/произвольного line_id)."""
-    packing = packing_service.get_packing(db, project)
-    if packing is None:
-        return None
-    return next((ln for ln in packing.lines if ln.id == line_id), None)
+    return next((ln for ln in _project_lines(db, project) if ln.id == line_id), None)
+
+
+def _project_lines(db: Session, project: Project) -> list[PackingLine]:
+    """Строки packing-листов всех стендов проекта (в порядке стендов)."""
+    return [ln for packing in packing_service.list_packings(db, project) for ln in packing.lines]
 
 
 def _project_assignments(db: Session, project: Project) -> list[TransportAssignment]:
@@ -257,11 +259,12 @@ class Board:
 
 def board(db: Session, project: Project) -> Board:
     """Собрать доску распределения: пул нераспределённого + машины с итогами."""
-    packing = packing_service.get_packing(db, project)
-    if packing is None:
+    # Оборудование всех стендов распределяется по общим машинам проекта.
+    lines = _project_lines(db, project)
+    if not lines and not packing_service.project_has_packing(db, project.id):
         return Board(unassigned=[], vehicles=[])
 
-    lines_by_id = {ln.id: ln for ln in packing.lines}
+    lines_by_id = {ln.id: ln for ln in lines}
     vehicles = list_project_vehicles(db, project)
     assignments = _project_assignments(db, project)
     pv_order = {pv.id: pv.sort_order for pv in vehicles}
@@ -296,7 +299,7 @@ def board(db: Session, project: Project) -> Board:
         assigned_total[a.packing_line_id] = assigned_total.get(a.packing_line_id, 0) + a.quantity
 
     ordered_lines = sorted(
-        packing.lines,
+        lines,
         key=lambda ln: (
             ln.is_custom,
             ln.category_name or "",

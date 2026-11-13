@@ -130,6 +130,7 @@ def create_app() -> FastAPI:
     from app.guests.admin_router import router as guest_admin_router
     from app.guests.router import router as guest_router
     from app.inventory.router import router as inventory_router
+    from app.packing.router import overview_router as packing_overview_router
     from app.packing.router import router as packing_router
     from app.projects.router import router as projects_router
     from app.returns.router import router as returns_router
@@ -145,6 +146,7 @@ def create_app() -> FastAPI:
     app.include_router(projects_router)
     app.include_router(estimates_router)
     app.include_router(packing_router)
+    app.include_router(packing_overview_router)
     app.include_router(returns_router)
     app.include_router(documents_router)
     app.include_router(inventory_router)

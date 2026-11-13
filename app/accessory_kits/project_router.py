@@ -162,8 +162,11 @@ def detail(
 
     from app.packing import service as packing_service
 
-    packing = packing_service.get_packing(db, project)
-    in_packing = packing is not None and any(ln.accessory_kit_id == kit.id for ln in packing.lines)
+    packings = packing_service.list_packings(db, project)
+    # Лист (стенд), в котором уже лежит этот кейс — он может быть только в одном.
+    packing_with_kit = next(
+        (pl for pl in packings if any(ln.accessory_kit_id == kit.id for ln in pl.lines)), None
+    )
 
     from app.estimates import versions as estimate_versions
 
@@ -192,8 +195,10 @@ def detail(
             "in_estimate": estimate_section is not None,
             "estimate_section": estimate_section,
             "sections": sections,
-            "packing_exists": packing is not None,
-            "in_packing": in_packing,
+            "packing_exists": bool(packings),
+            "packings": packings,
+            "in_packing": packing_with_kit is not None,
+            "packing_with_kit": packing_with_kit,
             "models": models,
             "q": q or "",
             "KitWeightMode": KitWeightMode,
@@ -334,10 +339,16 @@ def add_to_packing(
     request: Request,
     project_id: int,
     kit_id: int,
+    packing_id: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    """Добавить комплект аксессуаров сразу в packing-лист, минуя смету."""
+    """Добавить комплект аксессуаров сразу в packing-лист стенда, минуя смету.
+
+    Лист выбирается в форме, если в проекте их несколько; по умолчанию — лист
+    стенда, в активной смете которого стоит этот кейс, иначе первый лист.
+    """
+    from app.estimates import versions as estimate_versions
     from app.packing import service as packing_service
 
     project, editable = _load(db, project_id)
@@ -346,21 +357,44 @@ def add_to_packing(
     kit = service.get_kit(db, project, kit_id)
     if kit is None:
         return redirect(f"/projects/{project_id}/accessory-kits")
-    packing = packing_service.get_packing(db, project)
+    back = f"/projects/{project_id}/accessory-kits/{kit_id}"
+    packings = packing_service.list_packings(db, project)
+    if not packings:
+        flash(request, "Сначала создайте packing-лист стенда.", "warning")
+        return redirect(back)
+    packing = None
+    if packing_id and packing_id.strip().isdigit():
+        packing = next((pl for pl in packings if pl.id == int(packing_id)), None)
     if packing is None:
-        flash(request, "Сначала создайте packing-лист проекта.", "warning")
-        return redirect(f"/projects/{project_id}/accessory-kits/{kit_id}")
+        owner = next(
+            (
+                s.id
+                for s in estimate_versions.list_sections(db, project)
+                if s.active_version
+                and any(ln.accessory_kit_id == kit.id for ln in s.active_version.lines)
+            ),
+            None,
+        )
+        packing = next((pl for pl in packings if pl.section_id == owner), packings[0])
 
-    line = packing_service.add_accessory_kit(db, packing, kit)
+    try:
+        line = packing_service.add_accessory_kit(db, packing, kit)
+    except packing_service.PackingError as exc:
+        flash(request, str(exc), "danger")
+        return redirect(back)
     if line is not None:
         audit_log(
             db, user, EventType.PACKING_ADD,
             f"Packing {packing.number}: добавлен комплект аксессуаров «{kit.name}» напрямую",
             object_type="packing_list", object_id=packing.id,
         )
-        flash(request, f"«{kit.name}» добавлен в packing-лист.", "success")
+        flash(
+            request,
+            f"«{kit.name}» добавлен в packing-лист стенда «{packing.section.name}».",
+            "success",
+        )
     else:
-        flash(request, f"«{kit.name}» уже в packing-листе.", "info")
+        flash(request, f"«{kit.name}» уже в packing-листе стенда «{packing.section.name}».", "info")
     return redirect(f"/projects/{project_id}/accessory-kits/{kit_id}")
 
 

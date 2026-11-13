@@ -35,6 +35,7 @@
   </tr></table>
 
   <h1>{{ L.picking }} {{ packing.number }}</h1>
+  {% if section_name %}<div class="meta"><b>{{ L.stand }}: {{ section_name }}</b></div>{% endif %}
   <div class="meta">
     {{ L.date }}: {{ fmt_date(generated_at.date()) }} ·
     {{ L.project }}: {{ project.name }} ({{ project.number }}) ·

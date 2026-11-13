@@ -29,6 +29,11 @@ def _csrf(client, url) -> str:
     return re.search(r'name="csrf_token" value="([^"]+)"', client.get(url).text).group(1)
 
 
+def _packing_base(client, project_id) -> str:
+    """Адрес packing-листа единственного стенда (через редирект /projects/{id}/packing)."""
+    return client.get(f"/projects/{project_id}/packing").url.path
+
+
 @pytest.fixture
 def env(db_session):
     db = db_session
@@ -100,7 +105,7 @@ def test_web_add_to_packing_button_and_scan(auth_client, db_session, env):
     page = auth_client.get(base).text
     assert "В packing-листе" in page
 
-    scan_base = f"/projects/{project.id}/packing"
+    scan_base = _packing_base(auth_client, project.id)
     scan_token = _csrf(auth_client, f"{scan_base}/scan")
     resp = auth_client.post(
         f"{scan_base}/scan",

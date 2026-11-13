@@ -370,6 +370,7 @@ def project_detail(
                 }
             )
     from app.estimates import versions as estimate_versions
+    from app.packing import service as packing_service
 
     return render(
         request,
@@ -379,6 +380,9 @@ def project_detail(
             "project": project,
             "rows": rows,
             "sections": estimate_versions.section_summaries(db, project),
+            "packing_by_section": {
+                pl.section_id: pl for pl in packing_service.list_packings(db, project)
+            },
             "ProjectStatus": ProjectStatus,
             "staff_assignments": staff_service.list_project_assignments(db, project.id),
         },

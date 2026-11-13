@@ -32,6 +32,11 @@ def _csrf(client, url) -> str:
     return re.search(r'name="csrf_token" value="([^"]+)"', client.get(url).text).group(1)
 
 
+def _packing_base(client, project_id) -> str:
+    """Адрес packing-листа единственного стенда (через редирект /projects/{id}/packing)."""
+    return client.get(f"/projects/{project_id}/packing").url.path
+
+
 @pytest.fixture
 def project_and_model(db_session):
     cat = cat_service.create_category(db_session, "Кабели")
@@ -126,10 +131,11 @@ def test_packing_page_renders_accessory_kit_line(auth_client, db_session, projec
     estimate = est_service.get_or_create_estimate(db_session, project)
     est_service.add_accessory_kit_line(db_session, estimate, project, kit)
 
-    token = _csrf(auth_client, f"/projects/{project.id}/packing")
-    auth_client.post(f"/projects/{project.id}/packing/create", data={"csrf_token": token}, follow_redirects=False)
+    packing_base = _packing_base(auth_client, project.id)
+    token = _csrf(auth_client, packing_base)
+    auth_client.post(f"{packing_base}/create", data={"csrf_token": token}, follow_redirects=False)
 
-    page = auth_client.get(f"/projects/{project.id}/packing")
+    page = auth_client.get(packing_base)
     assert page.status_code == 200
     assert "Кабелярка FOH" in page.text
     assert "XLR 10м" in page.text  # содержимое видно живьём в packing-листе

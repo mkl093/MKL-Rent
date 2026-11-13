@@ -20,18 +20,27 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base, TimestampMixin
+from app.estimates.models import ProjectSection
 from app.inventory.models import _enum_column
 from app.packing.enums import PackingStatus
 
 
 class PackingList(Base, TimestampMixin):
-    """Packing-лист проекта — один на проект (ТЗ §17)."""
+    """Packing-лист стенда — один на стенд (ТЗ §17); план — активная версия сметы стенда."""
 
     __tablename__ = "packing_lists"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Денормализовано: все листы проекта (транспорт, приёмка, общий лист).
     project_id: Mapped[int] = mapped_column(
-        ForeignKey("projects.id", ondelete="CASCADE"), unique=True, nullable=False, index=True
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Стенд, которому принадлежит лист. RESTRICT — стенд с листом не удаляется.
+    section_id: Mapped[int] = mapped_column(
+        ForeignKey("project_sections.id", ondelete="RESTRICT"),
+        unique=True,
+        nullable=False,
+        index=True,
     )
     number: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
     status: Mapped[PackingStatus] = mapped_column(
@@ -40,6 +49,7 @@ class PackingList(Base, TimestampMixin):
     # Причина недокомплекта при переводе в «Скомплектован» (ТЗ §17.4).
     shortage_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    section: Mapped[ProjectSection] = relationship()
     lines: Mapped[list[PackingLine]] = relationship(
         back_populates="packing_list",
         cascade="all, delete-orphan",

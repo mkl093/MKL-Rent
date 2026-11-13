@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h1 class="h3 m-0">Packing-листы</h1>
+    <div class="text-secondary"><a href="/projects/{{ project.id }}">{{ project.number }} · {{ project.name }}</a></div>
+  </div>
+  <a href="/projects/{{ project.id }}" class="btn btn-outline-secondary">К проекту</a>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table align-middle m-0">
+      <thead><tr><th>Стенд</th><th>Packing-лист</th><th>Статус</th>
+        <th class="text-end">Факт / план</th><th class="text-end">Вес, кг</th><th></th></tr></thead>
+      <tbody>
+        {% for s in summaries %}
+        <tr>
+          <td class="fw-semibold">{{ s.section.name }}</td>
+          {% if s.packing %}
+          <td>{{ s.packing.number }}</td>
+          <td><span class="badge text-bg-{{ s.packing.status.badge }}">{{ s.packing.status.label }}</span></td>
+          <td class="text-end {% if s.fact < s.planned %}text-danger{% endif %}">{{ s.fact }} / {{ s.planned }}</td>
+          <td class="text-end">{{ '%.1f'|format(s.weight_kg) }}</td>
+          <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="/projects/{{ project.id }}/sections/{{ s.section.id }}/packing">Открыть</a></td>
+          {% else %}
+          <td colspan="4" class="text-secondary">не создан</td>
+          <td class="text-end">
+            {% if editable %}
+            <form method="post" action="/projects/{{ project.id }}/sections/{{ s.section.id }}/packing/create" class="m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-sm btn-primary">Создать из сметы</button>
+            </form>
+            {% endif %}
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="text-secondary small mt-2">У каждого стенда свой packing-лист, его план — активная версия сметы стенда. Один экземпляр оборудования может быть только в одном листе проекта.</p>
+{% endblock %}

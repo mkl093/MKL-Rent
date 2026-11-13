@@ -15,7 +15,7 @@ from app.inventory.services import items as item_service
 from app.inventory.services.items import _sql_normalized_barcode, normalize_barcode
 from app.numbering.models import DocType
 from app.numbering.service import next_number
-from app.packing.service import get_packing
+from app.packing.service import list_packings
 from app.projects.models import Project
 from app.returns.enums import ReturnCondition, ReturnStatus
 from app.returns.models import (
@@ -82,10 +82,11 @@ def create_from_packing(db: Session, project: Project) -> ReturnList:
     db.add(ret)
     db.flush()
 
-    packing = get_packing(db, project)
-    if packing is not None:
+    # Приёмка одна на проект: строки packing-листов всех стендов.
+    lines = [ln for packing in list_packings(db, project) for ln in packing.lines]
+    if lines:
         sort_order = 1
-        for line in packing.lines:
+        for line in lines:
             expected = line.fact_quantity
             if expected <= 0:
                 continue

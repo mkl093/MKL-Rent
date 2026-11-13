@@ -121,7 +121,7 @@
   <div class="table-responsive">
     <table class="table table-sm align-middle m-0">
       <thead><tr><th>Стенд</th><th>Смета</th><th>Активная версия</th>
-        <th class="text-end">Без VAT, €</th><th class="text-end">Итого, €</th><th></th></tr></thead>
+        <th class="text-end">Без VAT, €</th><th class="text-end">Итого, €</th><th>Packing-лист</th><th></th></tr></thead>
       <tbody>
         {% for s in sections %}
         <tr>
@@ -135,6 +135,12 @@
           </td>
           <td class="text-end">{{ '%.2f'|format(s.totals.after_discount) if s.totals else '—' }}</td>
           <td class="text-end fw-semibold">{{ '%.2f'|format(s.totals.total) if s.totals else '—' }}</td>
+          <td>
+            {% set pl = packing_by_section.get(s.section.id) %}
+            {% if pl %}<a href="/projects/{{ project.id }}/sections/{{ s.section.id }}/packing">{{ pl.number }}</a>
+              <span class="badge text-bg-{{ pl.status.badge }}">{{ pl.status.label }}</span>
+            {% else %}<a class="small text-secondary" href="/projects/{{ project.id }}/sections/{{ s.section.id }}/packing">не создан</a>{% endif %}
+          </td>
           <td class="text-end">
             {% if not project.is_archived and sections|length > 1 %}
             <div class="d-inline-flex gap-1">
@@ -155,7 +161,7 @@
         <td colspan="3">Всего по проекту</td>
         <td class="text-end">{{ '%.2f'|format(sections|selectattr('totals')|map(attribute='totals.after_discount')|sum) }}</td>
         <td class="text-end">{{ '%.2f'|format(sections|selectattr('totals')|map(attribute='totals.total')|sum) }}</td>
-        <td></td>
+        <td colspan="2"></td>
       </tr></tfoot>
       {% endif %}
     </table>

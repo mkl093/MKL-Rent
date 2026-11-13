@@ -54,9 +54,14 @@ def _csrf(client, url) -> str:
     return re.search(r'name="csrf_token" value="([^"]+)"', client.get(url).text).group(1)
 
 
+def _packing_base(client, project_id) -> str:
+    """Адрес packing-листа единственного стенда (через редирект /projects/{id}/packing)."""
+    return client.get(f"/projects/{project_id}/packing").url.path
+
+
 def test_packing_create_and_view(auth_client, project_with_estimate):
     pid = project_with_estimate.id
-    base = f"/projects/{pid}/packing"
+    base = _packing_base(auth_client, pid)
 
     # До создания — страница-заглушка с кнопкой
     page = auth_client.get(base)
@@ -81,7 +86,7 @@ def test_packing_create_and_view(auth_client, project_with_estimate):
 
 def test_packing_add_equipment_web(auth_client, project_with_estimate):
     pid = project_with_estimate.id
-    base = f"/projects/{pid}/packing"
+    base = _packing_base(auth_client, pid)
     token = _csrf(auth_client, base)
     auth_client.post(f"{base}/create", data={"csrf_token": token}, follow_redirects=False)
 
@@ -105,7 +110,7 @@ def test_packing_add_equipment_web(auth_client, project_with_estimate):
 
 def test_packing_blocks_project_delete(auth_client, project_with_estimate):
     pid = project_with_estimate.id
-    base = f"/projects/{pid}/packing"
+    base = _packing_base(auth_client, pid)
     token = _csrf(auth_client, base)
     auth_client.post(f"{base}/create", data={"csrf_token": token}, follow_redirects=False)
     # Попытка удалить проект-черновик с packing-листом — отклонена

@@ -21,11 +21,19 @@ from app.documents.enums import DocumentType, Language
 from app.estimates import versions as estimate_versions
 from app.estimates.service import get_project_estimate
 from app.packing import carnet
-from app.packing.service import backfill_quantity_barcodes, get_packing
+from app.packing.service import backfill_quantity_barcodes, list_packings
 from app.projects.service import get_project
 from app.templating import flash
 
 router = APIRouter(prefix="/projects/{project_id}/documents", tags=["documents"])
+
+
+def _project_packing(db: Session, project, packing_id: int | None):
+    """Packing-лист стенда этого проекта по id (None — лист первого стенда)."""
+    packings = list_packings(db, project)
+    if packing_id is None:
+        return packings[0] if packings else None
+    return next((pl for pl in packings if pl.id == packing_id), None)
 
 
 @router.get("")
@@ -40,43 +48,39 @@ def documents_page(
         flash(request, "Проект не найден.", "danger")
         return redirect("/projects")
     estimate_versions.ensure_default_section(db, project)
-    # PDF смет — по активной версии каждого стенда (неактивные — со страницы сметы).
-    estimate_blocks = [
-        (section, builder.estimate_status(db, project, section.active_version))
-        for section in estimate_versions.list_sections(db, project)
-        if section.active_version is not None
-    ]
+    packing_by_section = {pl.section_id: pl for pl in list_packings(db, project)}
+    # По каждому стенду: PDF активной версии сметы (неактивные — со страницы сметы),
+    # packing-лист и лист комплектации его packing-листа, carnet.
+    section_blocks = []
+    for section in estimate_versions.list_sections(db, project):
+        packing = packing_by_section.get(section.id)
+        section_blocks.append(
+            {
+                "section": section,
+                "estimate": builder.estimate_status(db, project, section.active_version)
+                if section.active_version is not None
+                else [],
+                "packing": packing,
+                "packing_docs": builder.packing_status(db, project, packing) if packing else [],
+            }
+        )
     return render(
         request,
         "documents/page.html",
         {
             "page_title": "Документы",
             "project": project,
-            "estimate_blocks": estimate_blocks,
+            "section_blocks": section_blocks,
             "statuses": builder.status(db, project),
-            "carnet_available": get_packing(db, project) is not None,
         },
         db=db,
         user=user,
     )
 
 
-@router.get("/carnet")
-def carnet_export(
-    project_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_login),
-):
-    """Экспорт паккинг-листа в формате ATA Carnet General List (Excel)."""
-    project = get_project(db, project_id)
-    if project is None:
-        raise HTTPException(status_code=404)
-    packing = get_packing(db, project)
-    if packing is None:
-        raise HTTPException(status_code=404)
+def _carnet_response(db: Session, project, packing):
     if not project.is_archived:
         backfill_quantity_barcodes(db, packing)
-
     rows = carnet.build_rows(db, packing)
     wb = carnet.build_workbook(project, packing, rows)
     buffer = io.BytesIO()
@@ -89,12 +93,64 @@ def carnet_export(
     )
 
 
+@router.get("/carnet")
+def carnet_export(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    """Экспорт packing-листа первого стенда в ATA Carnet General List (Excel)."""
+    project = get_project(db, project_id)
+    if project is None:
+        raise HTTPException(status_code=404)
+    packing = _project_packing(db, project, None)
+    if packing is None:
+        raise HTTPException(status_code=404)
+    return _carnet_response(db, project, packing)
+
+
+@router.get("/carnet/{packing_id}")
+def carnet_export_packing(
+    project_id: int,
+    packing_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    """Экспорт packing-листа стенда в ATA Carnet General List (Excel)."""
+    project = get_project(db, project_id)
+    if project is None:
+        raise HTTPException(status_code=404)
+    packing = _project_packing(db, project, packing_id)
+    if packing is None:
+        raise HTTPException(status_code=404)
+    return _carnet_response(db, project, packing)
+
+
 def _safe_back(project_id: int, back: str | None) -> str:
     """Куда вернуться после генерации: только внутрь этого проекта."""
     prefix = f"/projects/{project_id}/"
     if back and back.startswith(prefix) and "//" not in back and "\\" not in back:
         return back
     return f"/projects/{project_id}/documents"
+
+
+def _resolve_object(db: Session, project, dt: DocumentType, object_id: int | None):
+    """(estimate, packing) для документа: версия сметы или packing-лист стенда.
+
+    Без явного id — смета активной версии / лист первого стенда (старые ссылки).
+    Возвращает None, если объект не принадлежит проекту.
+    """
+    if dt == DocumentType.ESTIMATE:
+        estimate = (
+            get_project_estimate(db, project, object_id)
+            if object_id is not None
+            else builder.default_estimate(db, project)
+        )
+        return None if estimate is None else (estimate, None)
+    if dt in (DocumentType.PACKING, DocumentType.PICKING):
+        packing = _project_packing(db, project, object_id)
+        return None if packing is None else (None, packing)
+    return (None, None)
 
 
 @router.post("/generate", dependencies=[Depends(verify_csrf)])
@@ -104,6 +160,7 @@ def documents_generate(
     doc_type: str = Form(...),
     language: str = Form(...),
     estimate_id: str | None = Form(None),
+    packing_id: str | None = Form(None),
     back: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
@@ -117,17 +174,20 @@ def documents_generate(
         lang = Language(language).value
     except ValueError:
         return redirect(back_url)
-    estimate = None
-    if dt == DocumentType.ESTIMATE and estimate_id and estimate_id.strip().isdigit():
-        estimate = get_project_estimate(db, project, int(estimate_id))
-        if estimate is None:
-            return redirect(back_url)
+    raw_id = estimate_id if dt == DocumentType.ESTIMATE else packing_id
+    object_id = int(raw_id) if raw_id and raw_id.strip().isdigit() else None
+    resolved = _resolve_object(db, project, dt, object_id)
+    if resolved is None:
+        flash(request, "PDF не сформирован: Packing-лист не создан", "danger")
+        return redirect(back_url)
+    estimate, packing = resolved
     try:
-        builder.generate(db, project, dt, lang, estimate=estimate)
+        builder.generate(db, project, dt, lang, estimate=estimate, packing=packing)
         what = dt.label
-        if dt == DocumentType.ESTIMATE:
-            est = estimate or builder.default_estimate(db, project)
-            what = f"{dt.label} {est.display_number} («{est.section.name}»)"
+        if estimate is not None:
+            what = f"{dt.label} {estimate.display_number} («{estimate.section.name}»)"
+        elif packing is not None:
+            what = f"{dt.label} {packing.number} («{packing.section.name}»)"
         audit_log(
             db,
             user,
@@ -157,7 +217,7 @@ def _serve(
     language: str,
     *,
     download: bool,
-    estimate_id: int | None = None,
+    object_id: int | None = None,
 ):
     try:
         dt = DocumentType(doc_type)
@@ -167,29 +227,28 @@ def _serve(
     project = get_project(db, project_id)
     if project is None:
         return redirect(f"/projects/{project_id}/documents")
-    estimate = None
-    if dt == DocumentType.ESTIMATE:
-        # Без явной версии — PDF активной версии первого стенда (старые ссылки).
-        estimate = (
-            get_project_estimate(db, project, estimate_id)
-            if estimate_id is not None
-            else builder.default_estimate(db, project)
-        )
-        if estimate is None:
-            return redirect(f"/projects/{project_id}/documents")
-    doc = builder.get_document(db, project_id, dt, lang, builder.doc_scope(dt, estimate))
+    resolved = _resolve_object(db, project, dt, object_id)
+    if resolved is None:
+        return redirect(f"/projects/{project_id}/documents")
+    estimate, packing = resolved
+    doc = builder.get_document(
+        db, project_id, dt, lang, builder.doc_scope(dt, estimate, packing)
+    )
     if doc is None:
         return redirect(f"/projects/{project_id}/documents")
     path = Path(get_settings().storage_path) / doc.file_path
     if not path.exists():
         return redirect(f"/projects/{project_id}/documents")
     parts = [dt.value, _filename_part(project.number), _filename_part(project.name)]
+    multi_section = len(estimate_versions.list_sections(db, project)) > 1
     if estimate is not None:
         section = estimate.section
-        if len(estimate_versions.list_sections(db, project)) > 1:
+        if multi_section:
             parts.append(_filename_part(section.name))
         if len(section.versions) > 1:
             parts.append(f"v{estimate.version_no}")
+    elif packing is not None and multi_section:
+        parts.append(_filename_part(packing.section.name))
     filename = "_".join(parts) + f"_{lang}.pdf"
     return FileResponse(
         str(path),
@@ -199,27 +258,29 @@ def _serve(
     )
 
 
-@router.get("/estimate/{estimate_id}/{language}/view")
-def estimate_document_view(
+# Документ конкретного объекта: /estimate/{id_версии}/… или /packing|picking/{id_листа}/…
+@router.get("/{doc_type}/{object_id}/{language}/view")
+def object_document_view(
     project_id: int,
-    estimate_id: int,
+    doc_type: str,
+    object_id: int,
     language: str,
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    """PDF конкретной версии сметы."""
-    return _serve(db, project_id, "estimate", language, download=False, estimate_id=estimate_id)
+    return _serve(db, project_id, doc_type, language, download=False, object_id=object_id)
 
 
-@router.get("/estimate/{estimate_id}/{language}/download")
-def estimate_document_download(
+@router.get("/{doc_type}/{object_id}/{language}/download")
+def object_document_download(
     project_id: int,
-    estimate_id: int,
+    doc_type: str,
+    object_id: int,
     language: str,
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    return _serve(db, project_id, "estimate", language, download=True, estimate_id=estimate_id)
+    return _serve(db, project_id, doc_type, language, download=True, object_id=object_id)
 
 
 @router.get("/{doc_type}/{language}/view")

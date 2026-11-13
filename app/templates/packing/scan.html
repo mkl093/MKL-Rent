@@ -1,8 +1,7 @@
 {% extends "base.html" %}
-{% set base = "/projects/%s/packing"|format(project.id) %}
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-  <h1 class="h4 m-0">Сканирование · {{ packing.number }}</h1>
+  <h1 class="h4 m-0">Сканирование · {{ packing.number }} <span class="text-secondary fw-normal">· {{ section.name }}</span></h1>
   <a href="{{ base }}" class="btn btn-outline-secondary btn-sm">К packing-листу</a>
 </div>
 

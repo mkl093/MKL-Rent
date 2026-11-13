@@ -133,11 +133,15 @@ def move_section(db: Session, project: Project, section: ProjectSection, directi
 
 
 def delete_section(db: Session, project: Project, section: ProjectSection) -> None:
-    """Удалить можно только стенд, все версии которого пусты (версии не удаляются)."""
+    """Удалить можно только стенд без packing-листа, все версии которого пусты."""
     if any(v.lines for v in section.versions):
         raise service.EstimateError(
             "Стенд со строками в смете удалить нельзя — версии смет не удаляются"
         )
+    from app.packing import service as packing_service
+
+    if packing_service.get_section_packing(db, section) is not None:
+        raise service.EstimateError("У стенда есть packing-лист — стенд удалить нельзя")
     db.delete(section)
     db.commit()
     service.sync_reservations(db, project)
@@ -286,11 +290,13 @@ def preview_activation(db: Session, project: Project, version: Estimate) -> Acti
 
     from app.packing import service as packing_service
 
-    packing = packing_service.get_packing(db, project)
+    # Packing-лист этого стенда сверяется с его активной версией.
+    section = db.get(ProjectSection, version.section_id)
+    packing = packing_service.get_section_packing(db, section)
     if packing is not None:
         preview.packing_exists = True
         preview.packing_discrepancies = len(
-            packing_service.discrepancies(db, project, packing, versions=candidate)
+            packing_service.discrepancies(db, project, packing, versions=[version])
         )
     return preview
 

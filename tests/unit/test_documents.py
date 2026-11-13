@@ -153,10 +153,12 @@ def test_estimate_available_packing_not(db_session, project):
     est = {s.language.value: s for s in builder.estimate_status(db_session, project, estimate)}
     statuses = {(s.doc_type, s.language.value): s for s in builder.status(db_session, project)}
     est_ru = est["ru"]
-    pack_ru = statuses[(DocumentType.PACKING, "ru")]
-    assert (DocumentType.ESTIMATE, "ru") not in statuses  # PDF смет — по версиям
+    transport_ru = statuses[(DocumentType.TRANSPORT, "ru")]
+    # PDF смет — по версиям, packing/picking — по листам стендов.
+    assert (DocumentType.ESTIMATE, "ru") not in statuses
+    assert (DocumentType.PACKING, "ru") not in statuses
     assert est_ru.available and not est_ru.generated
-    assert not pack_ru.available  # packing-лист не создан
+    assert not transport_ru.available  # packing-листов нет
 
 
 def test_download_filename_includes_project_number_and_name(
@@ -583,12 +585,20 @@ def test_picking_becomes_stale_when_storage_location_changes(db_session, tmp_pat
     packing_service.create_from_estimate(db_session, project)
 
     builder.generate(db_session, project, DocumentType.PICKING, "ru")
-    statuses = {(s.doc_type, s.language.value): s for s in builder.status(db_session, project)}
+    packing = packing_service.get_packing(db_session, project)
+
+    def picking_statuses():
+        return {
+            (s.doc_type, s.language.value): s
+            for s in builder.packing_status(db_session, project, packing)
+        }
+
+    statuses = picking_statuses()
     assert not statuses[(DocumentType.PICKING, "ru")].stale
 
     model.storage_location = "Б-2"
     db_session.commit()
-    statuses = {(s.doc_type, s.language.value): s for s in builder.status(db_session, project)}
+    statuses = picking_statuses()
     assert statuses[(DocumentType.PICKING, "ru")].stale
 
 

@@ -306,7 +306,7 @@ def test_accessory_kit_belongs_to_one_section(db_session, env):
 # --- Packing и копирование ----------------------------------------------------
 
 
-def test_packing_plan_sums_active_versions(db_session, env):
+def test_packing_per_section_uses_its_active_version(db_session, env):
     project, spot, wash = env
     a = versions.create_section(db_session, project, "A")
     b = versions.create_section(db_session, project, "B")
@@ -317,24 +317,52 @@ def test_packing_plan_sums_active_versions(db_session, env):
     v2 = versions.create_version(db_session, project, a)
     service.add_model(db_session, v2, project, wash, 9)
 
-    packing = packing_service.create_from_estimate(db_session, project)
-    planned = {ln.model_id: ln.planned_quantity for ln in packing.lines}
-    assert planned == {spot.id: 5, wash.id: 1}
-    assert packing_service.discrepancies(db_session, project, packing) == []
+    pa = packing_service.create_from_estimate(db_session, project, a)
+    pb = packing_service.create_from_estimate(db_session, project, b)
+    assert pa.section_id == a.id and pb.section_id == b.id
+    assert {ln.model_id: ln.planned_quantity for ln in pa.lines} == {spot.id: 3}
+    assert {ln.model_id: ln.planned_quantity for ln in pb.lines} == {spot.id: 2, wash.id: 1}
+    assert packing_service.discrepancies(db_session, project, pa) == []
+    assert [pl.id for pl in packing_service.list_packings(db_session, project)] == [pa.id, pb.id]
+
+    with pytest.raises(packing_service.AlreadyExists):
+        packing_service.create_from_estimate(db_session, project, a)
+
+    # Смена активной версии стенда A затрагивает только его лист.
+    versions.activate_version(db_session, project, v2)
+    assert {d.name for d in packing_service.discrepancies(db_session, project, pa)} == {
+        "Прожектор",
+        "Заливка",
+    }
+    assert packing_service.discrepancies(db_session, project, pb) == []
 
 
-def test_estimate_sync_only_for_single_section(db_session, env):
+def test_estimate_sync_writes_into_own_section(db_session, env):
     project, spot, _ = env
     a = versions.create_section(db_session, project, "A")
+    b = versions.create_section(db_session, project, "B")
     service.add_model(db_session, a.active_version, project, spot, 3)
-    packing = packing_service.create_from_estimate(db_session, project)
-    packing.lines[0].quantity = 5
+    service.add_model(db_session, b.active_version, project, spot, 2)
+    pb = packing_service.create_from_estimate(db_session, project, b)
+    pb.lines[0].quantity = 5
     db_session.commit()
-    assert len(packing_service.estimate_discrepancies(db_session, project, packing)) == 1
 
+    items = packing_service.estimate_discrepancies(db_session, project, pb)
+    assert [(it.estimate_quantity, it.fact_quantity) for it in items] == [(2, 5)]
+    packing_service.apply_estimate_sync(db_session, project, pb, {it.key for it in items})
+    db_session.refresh(a.active_version)
+    db_session.refresh(b.active_version)
+    assert b.active_version.lines[0].quantity == 5
+    assert a.active_version.lines[0].quantity == 3  # смета другого стенда не тронута
+
+
+def test_section_with_packing_cannot_be_deleted(db_session, env):
+    project, _, _ = env
+    a = versions.create_section(db_session, project, "A")
     versions.create_section(db_session, project, "B")
-    assert packing_service.estimate_discrepancies(db_session, project, packing) == []
-    assert packing_service.apply_estimate_sync(db_session, project, packing, {"x"}) == []
+    packing_service.create_from_estimate(db_session, project, a)
+    with pytest.raises(service.EstimateError, match="packing"):
+        versions.delete_section(db_session, project, a)
 
 
 def test_estimate_sync_into_locked_version_rejected(db_session, env):

@@ -1,4 +1,8 @@
-"""Маршруты packing-листа внутри проекта (ТЗ §17–§20)."""
+"""Маршруты packing-листа стенда (ТЗ §17–§20).
+
+Лист стенда: /projects/{pid}/sections/{sid}/packing. Обзор листов проекта —
+/projects/{pid}/packing (при одном стенде — сразу его лист).
+"""
 
 from __future__ import annotations
 
@@ -31,7 +35,12 @@ from app.projects.availability import compute_availability, compute_kit_availabi
 from app.projects.service import get_project
 from app.templating import flash
 
-router = APIRouter(prefix="/projects/{project_id}/packing", tags=["packing"])
+router = APIRouter(prefix="/projects/{project_id}/sections/{section_id}/packing", tags=["packing"])
+overview_router = APIRouter(prefix="/projects/{project_id}", tags=["packing"])
+
+
+def _base(project_id: int, section_id: int) -> str:
+    return f"/projects/{project_id}/sections/{section_id}/packing"
 
 
 def _dec(value: str | None, default: str = "0") -> Decimal:
@@ -52,11 +61,14 @@ def _opt_id(value: str | None) -> int | None:
     return int(value) if value and value.strip() else None
 
 
-def _load(db: Session, project_id: int, *, require_editable: bool = False):
+def _load(db: Session, project_id: int, section_id: int, *, require_editable: bool = False):
     project = get_project(db, project_id)
     if project is None:
         return None, None, False
-    packing = service.get_packing(db, project)
+    section = estimate_versions.get_section(db, project, section_id)
+    if section is None:
+        return None, None, False
+    packing = service.get_section_packing(db, section)
     editable = not project.is_archived
     if require_editable and not editable:
         return project, packing, False
@@ -67,19 +79,27 @@ def _load(db: Session, project_id: int, *, require_editable: bool = False):
 def packing_page(
     request: Request,
     project_id: int,
+    section_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    project, packing, editable = _load(db, project_id)
+    project, packing, editable = _load(db, project_id, section_id)
     if project is None:
         flash(request, "Проект не найден.", "danger")
         return redirect("/projects")
 
+    section = estimate_versions.get_section(db, project, section_id)
     if packing is None:
         return render(
             request,
             "packing/empty.html",
-            {"page_title": "Packing-лист", "project": project, "editable": editable},
+            {
+                "page_title": f"Packing-лист · {section.name}",
+                "project": project,
+                "section": section,
+                "base": _base(project_id, section_id),
+                "editable": editable,
+            },
             db=db,
             user=user,
         )
@@ -98,9 +118,10 @@ def packing_page(
 
     # Доступные экземпляры для ручного выбора серийных строк (ТЗ §17.7).
     available: dict[int, list[EquipmentItem]] = {}
+    # Занятые экземпляры — во всех листах проекта (один экземпляр — один стенд).
+    assigned = service.project_used_item_ids(db, packing)
     for ln in packing.lines:
         if ln.is_serial and ln.model_id:
-            assigned = {si.item_id for si in ln.serial_items}
             items = (
                 db.execute(
                     select(EquipmentItem).where(
@@ -146,7 +167,9 @@ def packing_page(
                 ln for ln in service.sync_removals(db, project, packing) if ln.fact_quantity > 0
             ],
             "estimate_sync_items": service.estimate_discrepancies(db, project, packing),
-            # Обратная синхронизация доступна только при одном стенде (см. сервис).
+            "section": section,
+            "base": _base(project_id, section_id),
+            "estimate": service.section_estimate(db, packing),
             "multi_section": len(estimate_versions.list_sections(db, project)) > 1,
             "undercomplete": service.is_undercomplete(packing),
             "editable": editable,
@@ -161,39 +184,42 @@ def packing_page(
 def packing_create(
     request: Request,
     project_id: int,
+    section_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    project, _, editable = _load(db, project_id, require_editable=True)
+    project, _, editable = _load(db, project_id, section_id, require_editable=True)
     if project is None or not editable:
-        return redirect(f"/projects/{project_id}/packing")
+        return redirect(_base(project_id, section_id))
+    section = estimate_versions.get_section(db, project, section_id)
     try:
-        packing = service.create_from_estimate(db, project)
+        packing = service.create_from_estimate(db, project, section)
         audit_log(
             db,
             user,
             EventType.PACKING_CREATE,
-            f"Создан packing-лист {packing.number} для {project.number}",
+            f"Создан packing-лист {packing.number} для {project.number}, стенд «{section.name}»",
             object_type="packing_list",
             object_id=packing.id,
         )
         flash(request, f"Packing-лист {packing.number} создан.", "success")
     except service.AlreadyExists as exc:
         flash(request, str(exc), "warning")
-    return redirect(f"/projects/{project_id}/packing")
+    return redirect(_base(project_id, section_id))
 
 
 @router.post("/sync", dependencies=[Depends(verify_csrf)])
 def packing_sync(
     request: Request,
     project_id: int,
+    section_id: int,
     confirm: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    project, packing, editable = _load(db, project_id, require_editable=True)
+    project, packing, editable = _load(db, project_id, section_id, require_editable=True)
     if project is None or packing is None or not editable:
-        return redirect(f"/projects/{project_id}/packing")
+        return redirect(_base(project_id, section_id))
     try:
         service.apply_sync(db, project, packing, confirm_delete=confirm is not None)
     except service.SyncConfirmRequired as exc:
@@ -204,7 +230,7 @@ def packing_sync(
             + ". Подтвердите удаление и повторите синхронизацию.",
             "danger",
         )
-        return redirect(f"/projects/{project_id}/packing")
+        return redirect(_base(project_id, section_id))
     audit_log(
         db,
         user,
@@ -214,30 +240,31 @@ def packing_sync(
         object_id=packing.id,
     )
     flash(request, "План синхронизирован со сметой.", "success")
-    return redirect(f"/projects/{project_id}/packing")
+    return redirect(_base(project_id, section_id))
 
 
 @router.post("/estimate-sync", dependencies=[Depends(verify_csrf)])
 async def packing_estimate_sync(
     request: Request,
     project_id: int,
+    section_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    project, packing, editable = _load(db, project_id, require_editable=True)
+    project, packing, editable = _load(db, project_id, section_id, require_editable=True)
     if project is None or packing is None or not editable:
-        return redirect(f"/projects/{project_id}/packing")
+        return redirect(_base(project_id, section_id))
     form = await request.form()
     selected_keys = set(form.getlist("items"))
     if not selected_keys:
         flash(request, "Не отмечено ни одной позиции для переноса в смету.", "warning")
-        return redirect(f"/projects/{project_id}/packing")
-    estimate = service.single_section_estimate(db, project)
+        return redirect(_base(project_id, section_id))
+    estimate = service.section_estimate(db, packing)
     try:
         items = service.apply_estimate_sync(db, project, packing, selected_keys)
     except EstimateLocked as exc:
         flash(request, f"{exc}. Разморозьте её или сделайте активной другую версию.", "danger")
-        return redirect(f"/projects/{project_id}/packing")
+        return redirect(_base(project_id, section_id))
     if items and estimate is not None:
         audit_log(
             db,
@@ -251,13 +278,14 @@ async def packing_estimate_sync(
         flash(request, f"Смета обновлена по факту packing-листа: позиций {len(items)}.", "success")
     else:
         flash(request, "Расхождений нет — смета уже соответствует факту.", "info")
-    return redirect(f"/projects/{project_id}/packing")
+    return redirect(_base(project_id, section_id))
 
 
 @router.get("/add")
 def add_picker(
     request: Request,
     project_id: int,
+    section_id: int,
     q: str | None = None,
     category_id: str | None = None,
     subcategory_id: str | None = None,
@@ -266,10 +294,10 @@ def add_picker(
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    project, packing, editable = _load(db, project_id)
+    project, packing, editable = _load(db, project_id, section_id)
     if project is None or packing is None:
         flash(request, "Packing-лист не создан.", "warning")
-        return redirect(f"/projects/{project_id}/packing")
+        return redirect(_base(project_id, section_id))
 
     filters = eq_service.ModelFilters(
         query=q,
@@ -321,6 +349,8 @@ def add_picker(
             "page_title": "Добавить оборудование",
             "project": project,
             "packing": packing,
+            "section": estimate_versions.get_section(db, project, section_id),
+            "base": _base(project_id, section_id),
             "models": models,
             "kits": kits,
             "kit_in_packing": kit_in_packing,
@@ -344,12 +374,13 @@ def add_picker(
 async def add_submit(
     request: Request,
     project_id: int,
+    section_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    project, packing, editable = _load(db, project_id, require_editable=True)
+    project, packing, editable = _load(db, project_id, section_id, require_editable=True)
     if project is None or packing is None or not editable:
-        return redirect(f"/projects/{project_id}/packing")
+        return redirect(_base(project_id, section_id))
 
     form = await request.form()
     added = 0
@@ -367,8 +398,11 @@ async def add_submit(
             kit = kit_service.get_kit(db, kit_id)
             if kit is None:
                 continue
-            if service.add_kit(db, packing, kit) is not None:
-                added += 1
+            try:
+                if service.add_kit(db, packing, kit) is not None:
+                    added += 1
+            except service.PackingError as exc:
+                flash(request, str(exc), "danger")
     if added:
         audit_log(
             db,
@@ -379,11 +413,11 @@ async def add_submit(
             object_id=packing.id,
         )
     flash(request, f"Добавлено позиций: {added}.", "success" if added else "warning")
-    return redirect(f"/projects/{project_id}/packing")
+    return redirect(_base(project_id, section_id))
 
 
-def _line(db, project_id, line_id):
-    project, packing, editable = _load(db, project_id, require_editable=True)
+def _line(db, project_id, section_id, line_id):
+    project, packing, editable = _load(db, project_id, section_id, require_editable=True)
     if project is None or packing is None or not editable:
         return None, None, None
     return packing, service.get_line(db, packing, line_id), project
@@ -393,6 +427,7 @@ def _line(db, project_id, line_id):
 def line_quantity(
     request: Request,
     project_id: int,
+    section_id: int,
     line_id: int,
     fact_quantity: str = Form("0"),
     packed_quantity: str = Form("0"),
@@ -404,7 +439,7 @@ def line_quantity(
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    packing, line, _ = _line(db, project_id, line_id)
+    packing, line, _ = _line(db, project_id, section_id, line_id)
     if line is not None and not line.is_serial:
         service.update_quantity_line(
             db,
@@ -418,36 +453,38 @@ def line_quantity(
             height_mm=_int(height_mm) if height_mm is not None else None,
         )
         flash(request, "Строка обновлена.", "success")
-    return redirect(f"/projects/{project_id}/packing")
+    return redirect(_base(project_id, section_id))
 
 
 @router.post("/lines/{line_id}/distribution", dependencies=[Depends(verify_csrf)])
 def line_distribution(
     request: Request,
     project_id: int,
+    section_id: int,
     line_id: int,
     packed_quantity: str = Form("0"),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    packing, line, _ = _line(db, project_id, line_id)
+    packing, line, _ = _line(db, project_id, section_id, line_id)
     if line is not None:
         service.set_distribution(db, line, _int(packed_quantity))
         flash(request, "Распределение по упаковке обновлено.", "success")
-    return redirect(f"/projects/{project_id}/packing")
+    return redirect(_base(project_id, section_id))
 
 
 @router.post("/lines/{line_id}/serial", dependencies=[Depends(verify_csrf)])
 def line_serial_add(
     request: Request,
     project_id: int,
+    section_id: int,
     line_id: int,
     barcode: str = Form(...),
     allow_over: int = Form(0),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    packing, line, _ = _line(db, project_id, line_id)
+    packing, line, _ = _line(db, project_id, section_id, line_id)
     if line is not None:
         result = service.add_serial_item(db, line, barcode, allow_over=bool(allow_over))
         messages = {
@@ -455,6 +492,10 @@ def line_serial_add(
             service.SerialResult.OVER_PLAN: ("Добавлено сверх плана.", "warning"),
             service.SerialResult.DUPLICATE: ("Экземпляр уже в листе.", "warning"),
             service.SerialResult.WRONG_MODEL: ("Штрих-код другой модели.", "danger"),
+            service.SerialResult.IN_OTHER_PACKING: (
+                "Экземпляр уже в packing-листе другого стенда.",
+                "danger",
+            ),
             service.SerialResult.BLOCKED: ("Экземпляр в ремонте или списан.", "danger"),
             service.SerialResult.NOT_FOUND: ("Штрих-код не найден.", "danger"),
         }
@@ -474,59 +515,63 @@ def line_serial_add(
                     object_type="packing_list",
                     object_id=packing.id,
                 )
-    return redirect(f"/projects/{project_id}/packing")
+    return redirect(_base(project_id, section_id))
 
 
 @router.post("/lines/{line_id}/serial/{si_id}/delete", dependencies=[Depends(verify_csrf)])
 def line_serial_remove(
     request: Request,
     project_id: int,
+    section_id: int,
     line_id: int,
     si_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    packing, line, _ = _line(db, project_id, line_id)
+    packing, line, _ = _line(db, project_id, section_id, line_id)
     if line is not None:
         service.remove_serial_item(db, line, si_id)
         flash(request, "Экземпляр убран.", "info")
-    return redirect(f"/projects/{project_id}/packing")
+    return redirect(_base(project_id, section_id))
 
 
 @router.post("/lines/{line_id}/move", dependencies=[Depends(verify_csrf)])
 def line_move(
     request: Request,
     project_id: int,
+    section_id: int,
     line_id: int,
     direction: int = Form(...),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    packing, line, _ = _line(db, project_id, line_id)
+    packing, line, _ = _line(db, project_id, section_id, line_id)
     if line is not None:
         service.move_line(db, packing, line, 1 if direction > 0 else -1)
-    return redirect(f"/projects/{project_id}/packing")
+    return redirect(_base(project_id, section_id))
 
 
 @router.post("/lines/{line_id}/delete", dependencies=[Depends(verify_csrf)])
 def line_delete(
     request: Request,
     project_id: int,
+    section_id: int,
     line_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    packing, line, _ = _line(db, project_id, line_id)
+    packing, line, _ = _line(db, project_id, section_id, line_id)
     if line is not None:
         service.delete_line(db, line)
         flash(request, "Строка удалена.", "info")
-    return redirect(f"/projects/{project_id}/packing")
+    return redirect(_base(project_id, section_id))
 
 
 @router.post("/custom", dependencies=[Depends(verify_csrf)])
 def custom_add(
     request: Request,
     project_id: int,
+    section_id: int,
     name: str = Form(...),
     quantity: str = Form("1"),
     unit_weight_kg: str = Form("0"),
@@ -537,9 +582,9 @@ def custom_add(
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    project, packing, editable = _load(db, project_id, require_editable=True)
+    project, packing, editable = _load(db, project_id, section_id, require_editable=True)
     if project is None or packing is None or not editable:
-        return redirect(f"/projects/{project_id}/packing")
+        return redirect(_base(project_id, section_id))
     service.add_custom_line(
         db,
         packing,
@@ -554,7 +599,7 @@ def custom_add(
         ),
     )
     flash(request, "Дополнительная позиция добавлена.", "success")
-    return redirect(f"/projects/{project_id}/packing")
+    return redirect(_base(project_id, section_id))
 
 
 # --- Сканирование (ТЗ §22) ----------------------------------------------
@@ -564,11 +609,21 @@ _SCAN_MESSAGES = {
     service.SerialResult.OVER_PLAN: "Добавлено сверх плана",
     service.SerialResult.DUPLICATE: "Уже в листе",
     service.SerialResult.WRONG_MODEL: "Модели нет в packing-листе",
+    service.SerialResult.IN_OTHER_PACKING: "Уже в packing-листе другого стенда",
     service.SerialResult.BLOCKED: "Экземпляр в ремонте или списан",
     service.SerialResult.NOT_FOUND: "Штрих-код не найден",
     service.SerialResult.ACCESSORY_KIT_CONFIRMED: "Кейс подтверждён",
     service.SerialResult.ACCESSORY_KIT_NOT_IN_LIST: "Комплект аксессуаров не в этом packing-листе",
 }
+
+def _scan_message(outcome) -> str:
+    """Текст результата скана; для листов других стендов — с названием стенда."""
+    if outcome.result == service.SerialResult.IN_OTHER_PACKING and outcome.other_section:
+        return f"Уже в packing-листе стенда «{outcome.other_section}»"
+    if outcome.result == service.SerialResult.WRONG_MODEL and outcome.other_section:
+        return f"Модели нет в этом листе (есть в листе стенда «{outcome.other_section}»)"
+    return _SCAN_MESSAGES[outcome.result]
+
 
 _REMOVE_MESSAGES = {
     service.RemoveResult.OK: "Убрано",
@@ -581,13 +636,14 @@ _REMOVE_MESSAGES = {
 def scan_page(
     request: Request,
     project_id: int,
+    section_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    project, packing, editable = _load(db, project_id)
+    project, packing, editable = _load(db, project_id, section_id)
     if project is None or packing is None:
         flash(request, "Packing-лист не создан.", "warning")
-        return redirect(f"/projects/{project_id}/packing")
+        return redirect(_base(project_id, section_id))
     serial_lines = [ln for ln in packing.lines if ln.is_serial]
     total_planned = sum(ln.planned_quantity for ln in serial_lines)
     total_fact = sum(ln.fact_quantity for ln in serial_lines)
@@ -598,6 +654,8 @@ def scan_page(
             "page_title": f"Сканирование {packing.number}",
             "project": project,
             "packing": packing,
+            "section": estimate_versions.get_section(db, project, section_id),
+            "base": _base(project_id, section_id),
             "editable": editable,
             "total_planned": total_planned,
             "total_fact": total_fact,
@@ -611,12 +669,13 @@ def scan_page(
 def scan_submit(
     request: Request,
     project_id: int,
+    section_id: int,
     barcode: str = Form(...),
     allow_over: int = Form(0),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    project, packing, editable = _load(db, project_id, require_editable=True)
+    project, packing, editable = _load(db, project_id, section_id, require_editable=True)
     if project is None or packing is None or not editable:
         return JSONResponse({"ok": False, "message": "Недоступно"}, status_code=400)
 
@@ -653,7 +712,7 @@ def scan_submit(
             "ok": outcome.ok,
             "result": outcome.result.value,
             "over": outcome.result == service.SerialResult.OVER_PLAN,
-            "message": _SCAN_MESSAGES[outcome.result],
+            "message": _scan_message(outcome),
             "barcode": outcome.barcode,
             "model": outcome.model_name,
             "planned": outcome.planned,
@@ -668,12 +727,13 @@ def scan_submit(
 def scan_add_model(
     request: Request,
     project_id: int,
+    section_id: int,
     barcode: str = Form(...),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
     """Подтверждённое добавление новой строки плана по сканированию (WRONG_MODEL → «Добавить»)."""
-    project, packing, editable = _load(db, project_id, require_editable=True)
+    project, packing, editable = _load(db, project_id, section_id, require_editable=True)
     if project is None or packing is None or not editable:
         return JSONResponse({"ok": False, "message": "Недоступно"}, status_code=400)
 
@@ -698,7 +758,7 @@ def scan_add_model(
         {
             "ok": outcome.ok,
             "result": outcome.result.value,
-            "message": _SCAN_MESSAGES[outcome.result],
+            "message": _scan_message(outcome),
             "barcode": outcome.barcode,
             "model": outcome.model_name,
             "planned": outcome.planned,
@@ -713,11 +773,12 @@ def scan_add_model(
 def scan_undo(
     request: Request,
     project_id: int,
+    section_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
     last = request.session.get("last_scan")
-    project, packing, editable = _load(db, project_id, require_editable=True)
+    project, packing, editable = _load(db, project_id, section_id, require_editable=True)
     if not last or last.get("project_id") != project_id or packing is None or not editable:
         return JSONResponse({"ok": False, "message": "Нечего отменять"})
     line = service.get_line(db, packing, last["line_id"])
@@ -747,12 +808,13 @@ def scan_undo(
 def scan_remove(
     request: Request,
     project_id: int,
+    section_id: int,
     barcode: str = Form(...),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
     """Убрать конкретный экземпляр из packing-листа по штрих-коду (не обязательно последний)."""
-    project, packing, editable = _load(db, project_id, require_editable=True)
+    project, packing, editable = _load(db, project_id, section_id, require_editable=True)
     if project is None or packing is None or not editable:
         return JSONResponse({"ok": False, "message": "Недоступно"}, status_code=400)
 
@@ -787,19 +849,20 @@ def scan_remove(
 def packing_status(
     request: Request,
     project_id: int,
+    section_id: int,
     status: str = Form(...),
     shortage_comment: str | None = Form(None),
     confirm_undercomplete: int = Form(0),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    project, packing, editable = _load(db, project_id, require_editable=True)
+    project, packing, editable = _load(db, project_id, section_id, require_editable=True)
     if project is None or packing is None or not editable:
-        return redirect(f"/projects/{project_id}/packing")
+        return redirect(_base(project_id, section_id))
     try:
         new_status = PackingStatus(status)
     except ValueError:
-        return redirect(f"/projects/{project_id}/packing")
+        return redirect(_base(project_id, section_id))
     try:
         service.set_status(
             db,
@@ -822,4 +885,38 @@ def packing_status(
         flash(request, f"Статус: {new_status.label}.", "info")
     except service.UndercompleteError:
         flash(request, "Недокомплект: подтвердите и укажите причину.", "danger")
-    return redirect(f"/projects/{project_id}/packing")
+    return redirect(_base(project_id, section_id))
+
+
+# --- Обзор листов проекта ------------------------------------------------------
+
+
+@overview_router.get("/packing")
+def packing_overview(
+    request: Request,
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
+    """Packing-листы стендов проекта; при одном стенде — сразу его лист."""
+    project = get_project(db, project_id)
+    if project is None:
+        flash(request, "Проект не найден.", "danger")
+        return redirect("/projects")
+    sections = estimate_versions.list_sections(db, project)
+    if not sections:
+        sections = [estimate_versions.ensure_default_section(db, project)]
+    if len(sections) == 1:
+        return redirect(_base(project_id, sections[0].id))
+    return render(
+        request,
+        "packing/overview.html",
+        {
+            "page_title": "Packing-листы",
+            "project": project,
+            "summaries": service.section_summaries(db, project),
+            "editable": not project.is_archived,
+        },
+        db=db,
+        user=user,
+    )
