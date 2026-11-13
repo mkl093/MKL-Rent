@@ -263,3 +263,32 @@ def test_web_create_packing_for_stand(auth_client, db_session):
     assert service.get_section_packing(db, a) is not None
     overview = auth_client.get(f"/projects/{project.id}/packing").text
     assert "не создан" in overview  # у стенда B листа нет
+
+
+def test_stand_fingerprint_only_when_stand_is_shown(db_session, tmp_path, monkeypatch):
+    """Имя стенда входит в отпечаток, только когда выводится в шапке: у проекта с
+    одним «Основным стендом» PDF, сформированные до стендов, не устаревают."""
+    db = db_session
+    monkeypatch.setattr(builder, "_html_to_pdf", lambda html: b"%PDF-1.4 test")
+    monkeypatch.setattr(builder, "_storage_dir", lambda pid: tmp_path)
+    project = create_project(db, ProjectInput(name="Один стенд"))
+    est = est_service.get_or_create_estimate(db, project)
+    section = est.section
+    packing = service.create_from_estimate(db, project, section)
+
+    def stale():
+        return {
+            s.doc_type: s.stale
+            for s in builder.packing_status(db, project, packing)
+            if s.language.value == "ru"
+        }
+
+    for dt in (DocumentType.PACKING, DocumentType.PICKING):
+        html, _ = builder.render_html(db, project, dt, "ru", packing=packing)
+        assert "Стенд:" not in html
+        builder.generate(db, project, dt, "ru", packing=packing)
+    assert stale() == {DocumentType.PACKING: False, DocumentType.PICKING: False}
+
+    # Переименованный стенд появляется в шапке — PDF устаревает.
+    versions.rename_section(db, section, "Hall 1")
+    assert stale() == {DocumentType.PACKING: True, DocumentType.PICKING: True}

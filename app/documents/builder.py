@@ -486,12 +486,15 @@ def _packing_render(
             str(project.shipped_date),
             str(project.returned_date),
         ],
+        # Стенд — только когда он выводится в шапке: у проекта с одним
+        # «Основным стендом» отпечаток совпадает с прежним, и PDF, сформированные
+        # до появления стендов, не помечаются «устаревшими» без причины.
         "packing": [
             title_number,
             status_value,
             shortages if combined_view else packing.shortage_comment,
-            section_name,
-        ],
+        ]
+        + ([section_name] if section_name else []),
         "accessories": [[g.category_name, g.items] for g in accessories],
         "lines": [
             [
@@ -629,7 +632,7 @@ def _picking_render(
     data = {
         "company": [company.company_name, company.address, company.pdf_footer],
         "project": [project.number, project.name],
-        "packing": [title_number, section_name],
+        "packing": [title_number] + ([section_name] if section_name else []),
         "lines": [[ln.name, planned, fact, loc] for ln, loc, planned, fact in rows],
     }
     if combined_view:
