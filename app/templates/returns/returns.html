@@ -34,7 +34,7 @@
         {% elif line.is_accessory_kit %}<a href="/projects/{{ project.id }}/accessory-kits/{{ line.accessory_kit_id }}">{{ line.name }}</a> <span class="badge text-bg-info">комплект аксессуаров</span>
         {% elif line.model_id %}<a href="/inventory/models/{{ line.model_id }}">{{ line.name }}</a>{% else %}{{ line.name }}{% endif %}
         {% if line.missing_quantity > 0 %}<span class="badge text-bg-danger">недостача −{{ line.missing_quantity }}</span>{% endif %}
-        {% if line.section_label %}<div class="small fw-normal text-secondary" title="Выдано по стендам">Стенды: {{ line.section_label }}</div>{% endif %}
+        {% if line.section_label %}<div class="small fw-normal text-secondary" title="Выдано по площадкам">Площадки: {{ line.section_label }}</div>{% endif %}
       </div>
       <div class="text-secondary small">ожидается {{ line.expected_quantity }} · принято {{ line.fact_quantity }}</div>
     </div>

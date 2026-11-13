@@ -154,7 +154,7 @@ def test_estimate_available_packing_not(db_session, project):
     statuses = {(s.doc_type, s.language.value): s for s in builder.status(db_session, project)}
     est_ru = est["ru"]
     transport_ru = statuses[(DocumentType.TRANSPORT, "ru")]
-    # PDF смет — по версиям, packing/picking — по листам стендов.
+    # PDF смет — по версиям, packing/picking — по листам площадок.
     assert (DocumentType.ESTIMATE, "ru") not in statuses
     assert (DocumentType.PACKING, "ru") not in statuses
     assert est_ru.available and not est_ru.generated

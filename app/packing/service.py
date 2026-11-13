@@ -1,7 +1,7 @@
 """Бизнес-логика packing-листа (ТЗ §17–§20).
 
-Packing-лист — у каждого стенда проекта свой (packing_lists.section_id); его план —
-активная версия сметы этого стенда. Физический экземпляр может быть только в одном
+Packing-лист — у каждой площадки проекта свой (packing_lists.section_id); его план —
+активная версия сметы этой площадки. Физический экземпляр может быть только в одном
 листе проекта: проверки скана/ручного выбора/автоподбора — по всем листам проекта.
 """
 
@@ -75,7 +75,7 @@ def _packing_query():
 
 
 def list_packings(db: Session, project: Project) -> list[PackingList]:
-    """Все packing-листы проекта в порядке стендов."""
+    """Все packing-листы проекта в порядке площадок."""
     stmt = (
         _packing_query()
         .join(ProjectSection, ProjectSection.id == PackingList.section_id)
@@ -86,22 +86,22 @@ def list_packings(db: Session, project: Project) -> list[PackingList]:
 
 
 def get_section_packing(db: Session, section: ProjectSection) -> PackingList | None:
-    """Packing-лист стенда (или None, если ещё не создан)."""
+    """Packing-лист площадки (или None, если ещё не создан)."""
     stmt = _packing_query().where(PackingList.section_id == section.id)
     return db.execute(stmt).scalar_one_or_none()
 
 
 def get_packing(db: Session, project: Project) -> PackingList | None:
-    """Packing-лист первого стенда проекта — для проектов с одним стендом.
+    """Packing-лист первой площадки проекта — для проектов с одной площадкой.
 
-    Для работы с конкретным стендом — get_section_packing / list_packings.
+    Для работы с конкретной площадкой — get_section_packing / list_packings.
     """
     packings = list_packings(db, project)
     return packings[0] if packings else None
 
 
 def section_estimate(db: Session, packing: PackingList) -> Estimate | None:
-    """Активная версия сметы стенда этого листа — план листа и цель обновления по факту."""
+    """Активная версия сметы площадки этого листа — план листа и цель обновления по факту."""
     return db.execute(
         select(Estimate)
         .options(selectinload(Estimate.lines))
@@ -118,14 +118,14 @@ KIT_GROUP_NAME = "Комплекты"
 ACCESSORY_KIT_GROUP_NAME = "Комплекты аксессуаров"
 
 
-# План packing-листа — активная версия сметы его стенда (_plan_versions). Явный
+# План packing-листа — активная версия сметы его площадки (_plan_versions). Явный
 # список версий передаётся для предпросмотра активации другой версии
 # (estimates.versions.preview_activation).
 
 
 def _versions(db: Session, project: Project, versions: list[Estimate] | None) -> list[Estimate]:
     if versions is None:
-        raise ValueError("versions: передайте версии сметы стенда (_plan_versions)")
+        raise ValueError("versions: передайте версии сметы площадки (_plan_versions)")
     return versions
 
 
@@ -258,7 +258,7 @@ def _auto_assign_quantity_items(
     if count <= 0 or line.model_id is None:
         return
     # Занятые экземпляры — во всём проекте: этот лист (в т.ч. ещё не сохранённые
-    # строки) и листы других стендов.
+    # строки) и листы других площадок.
     used_ids = {si.item_id for other in packing.lines for si in other.serial_items}
     used_ids |= _items_in_other_packings(db, packing)
     items = (
@@ -381,14 +381,14 @@ def _new_line_from_estimate_custom(est_line: EstimateLine, sort_order: int) -> P
 def create_from_estimate(
     db: Session, project: Project, section: ProjectSection | None = None
 ) -> PackingList:
-    """Создать packing-лист стенда из активной версии его сметы (ТЗ §17.1).
+    """Создать packing-лист площадки из активной версии её сметы (ТЗ §17.1).
 
-    ``section`` по умолчанию — первый стенд проекта (проект с одним стендом).
+    ``section`` по умолчанию — первая площадка проекта (проект с одной площадкой).
     """
     if section is None:
         section = estimate_versions.ensure_default_section(db, project)
     if get_section_packing(db, section) is not None:
-        raise AlreadyExists(f"Packing-лист стенда «{section.name}» уже создан")
+        raise AlreadyExists(f"Packing-лист площадки «{section.name}» уже создан")
 
     packing = PackingList(
         project_id=project.id,
@@ -454,7 +454,7 @@ def discrepancies(
     *,
     versions: list[Estimate] | None = None,
 ) -> list[Discrepancy]:
-    """Расхождения плана packing-листа с активной сметой его стенда (ТЗ §17.2).
+    """Расхождения плана packing-листа с активной сметой его площадки (ТЗ §17.2).
 
     ``versions`` — явный набор версий смет (предпросмотр активации другой версии).
     """
@@ -660,7 +660,7 @@ def estimate_discrepancies(
     что созданы из сметы (estimate_line_id). Комплекты не участвуют — их
     количество в смете всегда 1 («Комплект»). Позиции сметы без соответствующей
     строки в packing-листе не считаются расхождением — packing может быть ещё
-    не собран. Смета — активная версия стенда этого листа.
+    не собран. Смета — активная версия площадки этого листа.
     """
     estimate = section_estimate(db, packing)
     if estimate is None:
@@ -715,7 +715,7 @@ def apply_estimate_sync(
     Позиции сметы без соответствующей строки в packing-листе не трогает. Экспорт
     в смету идёт не всегда по всем позициям — применяются только те, чей
     EstimateSyncItem.key присутствует в selected_keys (отмечены пользователем
-    в форме подтверждения). Смета — активная версия стенда этого листа.
+    в форме подтверждения). Смета — активная версия площадки этого листа.
     """
     estimate = section_estimate(db, packing)
     if estimate is None:
@@ -783,13 +783,13 @@ def add_kit(db: Session, packing: PackingList, kit: Kit) -> PackingLine | None:
     """Добавить комплект в packing-лист вручную (структура «Комплект»).
 
     Комплект — одна позиция; повторно тот же комплект не добавляется. Комплект
-    физически едет на один стенд — в лист другого стенда его добавить нельзя.
+    физически едет на одну площадку — в лист другой площадки его добавить нельзя.
     """
     if any(ln.kit_id == kit.id for ln in packing.lines):
         return None
     other = _other_packing_with(db, packing, kit_id=kit.id)
     if other is not None:
-        raise PackingError(f"Комплект «{kit.name}» уже в packing-листе стенда «{other}»")
+        raise PackingError(f"Комплект «{kit.name}» уже в packing-листе площадки «{other}»")
     sort_order = max((ln.sort_order for ln in packing.lines), default=0) + 1
     line = _new_line_from_kit(kit, sort_order)
     line.is_manual = True
@@ -812,7 +812,7 @@ def add_accessory_kit(db: Session, packing: PackingList, kit: AccessoryKit) -> P
     other = _other_packing_with(db, packing, accessory_kit_id=kit.id)
     if other is not None:
         raise PackingError(
-            f"Комплект аксессуаров «{kit.name}» уже в packing-листе стенда «{other}»"
+            f"Комплект аксессуаров «{kit.name}» уже в packing-листе площадки «{other}»"
         )
     sort_order = max((ln.sort_order for ln in packing.lines), default=0) + 1
     line = _new_line_from_accessory_kit(kit, sort_order)
@@ -878,7 +878,7 @@ class SerialResult(enum.Enum):
     OVER_PLAN = "over_plan"  # добавлено сверх плана (ТЗ §17.8)
     DUPLICATE = "duplicate"  # уже в листе (ТЗ §22)
     WRONG_MODEL = "wrong_model"
-    IN_OTHER_PACKING = "in_other_packing"  # экземпляр уже в листе другого стенда
+    IN_OTHER_PACKING = "in_other_packing"  # экземпляр уже в листе другой площадки
     BLOCKED = "blocked"  # списан/в ремонте (ТЗ §22)
     NOT_FOUND = "not_found"
     # Скан штрих-кода кейса кабелярки (ТЗ §22) — комплект и так в плане/факте
@@ -1031,7 +1031,7 @@ class ScanOutcome:
     model_name: str | None = None
     planned: int = 0
     fact: int = 0
-    # Стенд другого листа: где уже лежит экземпляр (IN_OTHER_PACKING) или где есть
+    # Площадка другого листа: где уже лежит экземпляр (IN_OTHER_PACKING) или где есть
     # строка модели (подсказка к WRONG_MODEL).
     other_section: str | None = None
 
@@ -1455,7 +1455,7 @@ def _other_packings_filter(packing: PackingList):
 
 
 def _items_in_other_packings(db: Session, packing: PackingList) -> set[int]:
-    """Экземпляры, назначенные в packing-листы других стендов проекта."""
+    """Экземпляры, назначенные в packing-листы других площадок проекта."""
     stmt = (
         select(PackingSerialItem.item_id)
         .join(PackingLine, PackingLine.id == PackingSerialItem.packing_line_id)
@@ -1466,13 +1466,13 @@ def _items_in_other_packings(db: Session, packing: PackingList) -> set[int]:
 
 
 def project_used_item_ids(db: Session, packing: PackingList) -> set[int]:
-    """Все экземпляры, занятые в packing-листах проекта (этот лист и другие стенды)."""
+    """Все экземпляры, занятые в packing-листах проекта (этот лист и другие площадки)."""
     used = {si.item_id for ln in packing.lines for si in ln.serial_items}
     return used | _items_in_other_packings(db, packing)
 
 
 def _claim_from_other_packing(db: Session, packing: PackingList, item_id: int) -> str | None:
-    """Экземпляр в листе другого стенда: вернуть название стенда, если он там занят.
+    """Экземпляр в листе другой площадки: вернуть название площадки, если он там занят.
 
     Занят — подтверждён сканом (или назначен в серийную строку). Если там лишь
     заготовка количественной строки (автоподбор без скана), реальный скан забирает
@@ -1505,7 +1505,7 @@ def _other_packing_with(
     accessory_kit_id: int | None = None,
     model_id: int | None = None,
 ) -> str | None:
-    """Название стенда, в packing-листе которого уже есть комплект/кейс/модель."""
+    """Название площадки, в packing-листе которой уже есть комплект/кейс/модель."""
     stmt = (
         select(ProjectSection.name)
         .join(PackingList, PackingList.section_id == ProjectSection.id)
@@ -1525,7 +1525,7 @@ def _other_packing_with(
 
 @dataclass
 class SectionPackingSummary:
-    """Строка обзора листов проекта: стенд, его лист (если создан) и итоги."""
+    """Строка обзора листов проекта: площадка, её лист (если создан) и итоги."""
 
     section: ProjectSection
     packing: PackingList | None

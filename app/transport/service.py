@@ -138,7 +138,7 @@ def get_line(db: Session, project: Project, line_id: int) -> PackingLine | None:
 
 
 def _project_lines(db: Session, project: Project) -> list[PackingLine]:
-    """Строки packing-листов всех стендов проекта (в порядке стендов)."""
+    """Строки packing-листов всех площадок проекта (в порядке площадок)."""
     return [ln for packing in packing_service.list_packings(db, project) for ln in packing.lines]
 
 
@@ -235,7 +235,7 @@ def move(db: Session, assignment: TransportAssignment, target: ProjectVehicle, q
 class PoolItem:
     line: PackingLine
     remaining: int
-    section_name: str | None = None  # стенд строки (только при нескольких листах)
+    section_name: str | None = None  # площадка строки (только при нескольких листах)
 
 
 @dataclass
@@ -243,11 +243,11 @@ class VehicleAssignmentRow:
     assignment: TransportAssignment
     line: PackingLine
     calc: LineCalc
-    section_name: str | None = None  # стенд строки (только при нескольких листах)
+    section_name: str | None = None  # площадка строки (только при нескольких листах)
 
 
 def _by_section(rows: list) -> list[tuple[str | None, list]]:
-    """Подряд идущие строки одного стенда — группами [(стенд, строки)]."""
+    """Подряд идущие строки одной площадки — группами [(площадка, строки)]."""
     groups: list[tuple[str | None, list]] = []
     for row in rows:
         if groups and groups[-1][0] == row.section_name:
@@ -272,7 +272,7 @@ class VehicleBoard:
 class Board:
     unassigned: list[PoolItem]
     vehicles: list[VehicleBoard]
-    # Названия стендов — когда у проекта несколько packing-листов, иначе пусто.
+    # Названия площадок — когда у проекта несколько packing-листов, иначе пусто.
     sections: list[str] = field(default_factory=list)
 
     @property
@@ -287,9 +287,9 @@ class Board:
 def board(db: Session, project: Project) -> Board:
     """Собрать доску распределения: пул нераспределённого + машины с итогами.
 
-    Оборудование всех стендов распределяется по общим машинам проекта. При
-    нескольких листах строки помечены стендом: пул и строки машины идут по
-    стендам (в порядке стендов), внутри — как раньше.
+    Оборудование всех площадок распределяется по общим машинам проекта. При
+    нескольких листах строки помечены площадкой: пул и строки машины идут по
+    площадкам (в порядке площадок), внутри — как раньше.
     """
     packings = packing_service.list_packings(db, project)
     lines = [ln for packing in packings for ln in packing.lines]
@@ -333,7 +333,7 @@ def board(db: Session, project: Project) -> Board:
             for a in pv.assignments
             if a.packing_line_id in lines_by_id
         ]
-        # По стендам; внутри стенда — прежний порядок (сортировка устойчивая).
+        # По площадкам; внутри площадки — прежний порядок (сортировка устойчивая).
         rows.sort(key=lambda r: section_pos[r.line.id])
         vehicle_boards.append(
             VehicleBoard(

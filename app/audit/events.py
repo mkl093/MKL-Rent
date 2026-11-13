@@ -59,7 +59,7 @@ class EventType(enum.StrEnum):
             "project_delete": "Удалён проект",
             "estimate_change": "Изменение сметы",
             "estimate_version": "Версия сметы",
-            "section_manage": "Стенд проекта",
+            "section_manage": "Площадка проекта",
             "packing_create": "Создан packing-лист",
             "packing_add": "Добавление оборудования в packing-лист",
             "packing_sync": "Синхронизация packing-листа",

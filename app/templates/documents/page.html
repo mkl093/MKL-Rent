@@ -71,7 +71,7 @@
         </tr>
         {% endfor %}
         {% if not b.packing %}
-        <tr><td colspan="4" class="text-secondary small">Packing-лист стенда не создан —
+        <tr><td colspan="4" class="text-secondary small">Packing-лист площадки не создан —
           <a href="/projects/{{ project.id }}/sections/{{ b.section.id }}/packing">создать</a>.</td></tr>
         {% endif %}
       </tbody>
@@ -79,13 +79,13 @@
   </div>
 </div>
 {% endfor %}
-<p class="text-secondary small mt-n2">PDF сметы — активной версии стенда; PDF другой версии формируется на странице этой версии сметы.</p>
+<p class="text-secondary small mt-n2">PDF сметы — активной версии площадки; PDF другой версии формируется на странице этой версии сметы.</p>
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
   <h2 class="h5 m-0">Проект целиком</h2>
   {% if combined_docs %}
   <a class="btn btn-sm btn-outline-secondary" href="/projects/{{ project.id }}/documents/carnet"
-     title="ATA Carnet по всем стендам: одинаковые модели одной строкой, S/N — общим списком">Общий carnet (.xlsx)</a>
+     title="ATA Carnet по всем площадкам: одинаковые модели одной строкой, S/N — общим списком">Общий carnet (.xlsx)</a>
   {% endif %}
 </div>
 <div class="card">
@@ -95,7 +95,7 @@
       <tbody>
         {% for s in combined_docs %}
         <tr>
-          <td>{% if s.language.value == "ru" %}{{ s.doc_type.label }} — <a href="/projects/{{ project.id }}/packing">все стенды</a>{% endif %}</td>
+          <td>{% if s.language.value == "ru" %}{{ s.doc_type.label }} — <a href="/projects/{{ project.id }}/packing">все площадки</a>{% endif %}</td>
           <td>{{ s.language.label }}</td>
           <td>{{ doc_state(s) }}</td>
           <td class="text-end">{{ doc_actions(s, project.id, None, None, csrf_token) }}</td>
@@ -113,5 +113,5 @@
     </table>
   </div>
 </div>
-<p class="text-secondary small mt-2">PDF хранит только последнюю версию каждого документа и языка. После изменения данных он помечается «устарел» — сформируйте заново. Packing-лист по машинам собирается из листов всех стендов; общий packing-лист и лист комплектации суммируют одинаковые модели всех стендов.</p>
+<p class="text-secondary small mt-2">PDF хранит только последнюю версию каждого документа и языка. После изменения данных он помечается «устарел» — сформируйте заново. Packing-лист по машинам собирается из листов всех площадок; общий packing-лист и лист комплектации суммируют одинаковые модели всех площадок.</p>
 {% endblock %}

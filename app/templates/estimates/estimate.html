@@ -14,7 +14,7 @@
       <a href="/projects/{{ project.id }}">{{ project.number }} · {{ project.name }}</a>
       <span class="badge text-bg-{{ project.status.badge }}">{{ project.status.label }}</span>
       {% if not project.is_archived %}
-      · <a href="#" class="small" data-bs-toggle="collapse" data-bs-target="#rename-section">переименовать стенд</a>
+      · <a href="#" class="small" data-bs-toggle="collapse" data-bs-target="#rename-section">переименовать площадку</a>
       {% endif %}
     </div>
   </div>
@@ -29,7 +29,7 @@
   <form method="post" action="/projects/{{ project.id }}/sections/{{ section.id }}/rename" class="d-flex flex-wrap gap-2">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="back" value="{{ base }}">
-    <input class="form-control" style="max-width:22rem" name="name" value="{{ section.name }}" required aria-label="Название стенда">
+    <input class="form-control" style="max-width:22rem" name="name" value="{{ section.name }}" required aria-label="Название площадки">
     <button class="btn btn-outline-primary">Сохранить</button>
   </form>
 </div>

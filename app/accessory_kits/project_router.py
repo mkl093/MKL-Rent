@@ -163,7 +163,7 @@ def detail(
     from app.packing import service as packing_service
 
     packings = packing_service.list_packings(db, project)
-    # Лист (стенд), в котором уже лежит этот кейс — он может быть только в одном.
+    # Лист (площадка), в котором уже лежит этот кейс — он может быть только в одном.
     packing_with_kit = next(
         (pl for pl in packings if any(ln.accessory_kit_id == kit.id for ln in pl.lines)), None
     )
@@ -171,7 +171,7 @@ def detail(
     from app.estimates import versions as estimate_versions
 
     sections = estimate_versions.list_sections(db, project)
-    # Стенд, в АКТИВНОЙ смете которого уже есть этот комплект аксессуаров.
+    # Площадка, в АКТИВНОЙ смете которой уже есть этот комплект аксессуаров.
     estimate_section = next(
         (
             s
@@ -297,7 +297,7 @@ def add_to_estimate(
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    """Добавить комплект аксессуаров в АКТИВНУЮ версию сметы выбранного стенда."""
+    """Добавить комплект аксессуаров в АКТИВНУЮ версию сметы выбранной площадки."""
     from app.estimates import versions as estimate_versions
     from app.estimates.service import EstimateError, add_accessory_kit_line
 
@@ -314,7 +314,7 @@ def add_to_estimate(
         section = estimate_versions.ensure_default_section(db, project)
     estimate = section.active_version if section else None
     if estimate is None:
-        flash(request, "Стенд не найден.", "warning")
+        flash(request, "Площадка не найдена.", "warning")
         return redirect(back)
     try:
         line = add_accessory_kit_line(db, estimate, project, kit)
@@ -324,13 +324,13 @@ def add_to_estimate(
     if line is not None:
         audit_log(
             db, user, EventType.ESTIMATE_CHANGE,
-            f"Смета {estimate.display_number} (стенд «{section.name}»): "
+            f"Смета {estimate.display_number} (площадка «{section.name}»): "
             f"добавлен комплект аксессуаров «{kit.name}»",
             object_type="estimate", object_id=estimate.id,
         )
-        flash(request, f"«{kit.name}» добавлен в смету стенда «{section.name}».", "success")
+        flash(request, f"«{kit.name}» добавлен в смету площадки «{section.name}».", "success")
     else:
-        flash(request, f"«{kit.name}» уже в смете стенда «{section.name}».", "info")
+        flash(request, f"«{kit.name}» уже в смете площадки «{section.name}».", "info")
     return redirect(back)
 
 
@@ -343,10 +343,10 @@ def add_to_packing(
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    """Добавить комплект аксессуаров сразу в packing-лист стенда, минуя смету.
+    """Добавить комплект аксессуаров сразу в packing-лист площадки, минуя смету.
 
     Лист выбирается в форме, если в проекте их несколько; по умолчанию — лист
-    стенда, в активной смете которого стоит этот кейс, иначе первый лист.
+    площадки, в активной смете которой стоит этот кейс, иначе первый лист.
     """
     from app.estimates import versions as estimate_versions
     from app.packing import service as packing_service
@@ -360,7 +360,7 @@ def add_to_packing(
     back = f"/projects/{project_id}/accessory-kits/{kit_id}"
     packings = packing_service.list_packings(db, project)
     if not packings:
-        flash(request, "Сначала создайте packing-лист стенда.", "warning")
+        flash(request, "Сначала создайте packing-лист площадки.", "warning")
         return redirect(back)
     packing = None
     if packing_id and packing_id.strip().isdigit():
@@ -390,11 +390,15 @@ def add_to_packing(
         )
         flash(
             request,
-            f"«{kit.name}» добавлен в packing-лист стенда «{packing.section.name}».",
+            f"«{kit.name}» добавлен в packing-лист площадки «{packing.section.name}».",
             "success",
         )
     else:
-        flash(request, f"«{kit.name}» уже в packing-листе стенда «{packing.section.name}».", "info")
+        flash(
+            request,
+            f"«{kit.name}» уже в packing-листе площадки «{packing.section.name}».",
+            "info",
+        )
     return redirect(f"/projects/{project_id}/accessory-kits/{kit_id}")
 
 

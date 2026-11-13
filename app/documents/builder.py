@@ -80,9 +80,9 @@ LABELS = {
         "vat_id": "VAT ID",
         "tax_number": "Налоговый номер",
         "grand_total": "Итого",
-        "stand": "Стенд",
-        "stands": "Стенды",
-        "all_stands": "все стенды",
+        "stand": "Площадка",
+        "stands": "Площадки",
+        "all_stands": "все площадки",
         "group_subtotal": "Итого по разделу",
         "quote_open": "«",
         "quote_close": "»",
@@ -152,9 +152,9 @@ LABELS = {
         "vat_id": "VAT ID",
         "tax_number": "Tax number",
         "grand_total": "Grand total",
-        "stand": "Stand",
-        "stands": "Stands",
-        "all_stands": "all stands",
+        "stand": "Venue",
+        "stands": "Venues",
+        "all_stands": "all venues",
         "group_subtotal": "Subtotal",
         "quote_open": "“",
         "quote_close": "”",
@@ -224,9 +224,9 @@ LABELS = {
         "vat_id": "USt-IdNr.",
         "tax_number": "Steuernummer",
         "grand_total": "Gesamt",
-        "stand": "Stand",
-        "stands": "Stände",
-        "all_stands": "alle Stände",
+        "stand": "Bereich",
+        "stands": "Bereiche",
+        "all_stands": "alle Bereiche",
         "group_subtotal": "Zwischensumme",
         "quote_open": "„",
         "quote_close": "“",
@@ -301,7 +301,7 @@ def _l10n_helpers(lang: str) -> dict:
 
 
 def default_estimate(db: Session, project: Project) -> Estimate:
-    """Смета «по умолчанию» для документов: активная версия первого стенда."""
+    """Смета «по умолчанию» для документов: активная версия первой площадки."""
     return get_or_create_estimate(db, project)
 
 
@@ -321,8 +321,8 @@ def _estimate_render(
     sections_count = db.scalar(
         select(func.count(ProjectSection.id)).where(ProjectSection.project_id == project.id)
     )
-    # Название стенда — если стендов несколько или стенд переименован; номер
-    # версии — если у стенда больше одной версии.
+    # Название площадки — если площадок несколько или площадка переименована; номер
+    # версии — если у площадки больше одной версии.
     show_section = sections_count > 1 or section.name != DEFAULT_SECTION_NAME
     show_version = len(section.versions) > 1
     title_number = estimate.display_number if show_version else section.number
@@ -395,7 +395,8 @@ def _estimate_render(
 
 
 def _section_title(db: Session, project: Project, packing: PackingList) -> str | None:
-    """Название стенда для шапки документа — если стендов несколько или стенд переименован."""
+    """Название площадки для шапки документа — если площадок несколько или
+    площадка переименована."""
     from app.estimates.versions import DEFAULT_SECTION_NAME
 
     sections_count = db.scalar(
@@ -406,7 +407,7 @@ def _section_title(db: Session, project: Project, packing: PackingList) -> str |
 
 
 def _stands_meta(packings: list[PackingList]) -> str:
-    """«A (PL-…), B (PL-…)» — листы стендов в шапке общего листа."""
+    """«A (PL-…), B (PL-…)» — листы площадок в шапке общего листа."""
     return ", ".join(f"{pl.section.name} ({pl.number})" for pl in packings)
 
 
@@ -424,7 +425,7 @@ def _packing_render(
     fontface: bool = True,
     packing: PackingList | None = None,
 ) -> tuple[str, str]:
-    """Packing-лист стенда (``packing``) или общий лист проекта (``packing=None``)."""
+    """Packing-лист площадки (``packing``) или общий лист проекта (``packing=None``)."""
     company = get_company_settings(db)
     labels = {
         "custom_label": LABELS[lang]["additional"],
@@ -486,9 +487,9 @@ def _packing_render(
             str(project.shipped_date),
             str(project.returned_date),
         ],
-        # Стенд — только когда он выводится в шапке: у проекта с одним
-        # «Основным стендом» отпечаток совпадает с прежним, и PDF, сформированные
-        # до появления стендов, не помечаются «устаревшими» без причины.
+        # Площадка — только когда она выводится в шапке: у проекта с одним
+        # «Основной площадкой» отпечаток совпадает с прежним, и PDF, сформированные
+        # до появления площадок, не помечаются «устаревшими» без причины.
         "packing": [
             title_number,
             status_value,
@@ -527,7 +528,7 @@ def _packing_render(
         ],
     }
     if combined_view:
-        # Общий лист: стенды, распределение строк и упаковка как сумма по стендам.
+        # Общий лист: площадки, распределение строк и упаковка как сумма по площадкам.
         data["stands"] = stands
         data["shares"] = [
             [c.stands_text, c.comment, c.calc.packages, str(c.calc.total_weight)]
@@ -606,7 +607,7 @@ def _picking_render(
     fontface: bool = True,
     packing: PackingList | None = None,
 ) -> tuple[str, str]:
-    """Лист комплектации стенда (``packing``) или общий по проекту (``packing=None``)."""
+    """Лист комплектации площадки (``packing``) или общий по проекту (``packing=None``)."""
     company = get_company_settings(db)
     combined_view = packing is None
     if combined_view:
@@ -665,7 +666,7 @@ def _transport_render(
     packings = list_packings(db, project)
     if not packings:
         raise PdfUnavailable("Packing-лист не создан")
-    # Машины общие на проект: при нескольких стендах в заголовке — номер проекта.
+    # Машины общие на проект: при нескольких площадках в заголовке — номер проекта.
     title_number = packings[0].number if len(packings) == 1 else project.number
 
     board = transport_service.board(db, project)
@@ -706,7 +707,7 @@ def _transport_render(
     }
     stands = None
     if board.multi_section:
-        # Несколько стендов: строки машин и пула сгруппированы по стендам.
+        # Несколько площадок: строки машин и пула сгруппированы по площадкам.
         stands = _stands_meta(packings)
         data["stands"] = stands
         data["sections"] = [
@@ -752,7 +753,7 @@ def render_html(
     packing: PackingList | None = None,
 ) -> tuple[str, str]:
     """HTML документа и отпечаток данных. ``estimate`` — версия сметы для PDF сметы
-    (по умолчанию — активная версия первого стенда); ``packing`` — лист стенда для
+    (по умолчанию — активная версия первой площадки); ``packing`` — лист площадки для
     packing-листа и листа комплектации (без него — общий лист проекта)."""
     if doc_type == DocumentType.ESTIMATE:
         return _estimate_render(db, project, lang, fontface, estimate)
@@ -770,7 +771,7 @@ def doc_scope(
     packing: PackingList | None = None,
 ) -> str:
     """Область хранения документа: смета — по версии, packing/picking — по листу
-    стенда (общий лист и packing-лист по машинам — по проекту)."""
+    площадки (общий лист и packing-лист по машинам — по проекту)."""
     if doc_type == DocumentType.ESTIMATE and estimate is not None:
         return f"estimate:{estimate.id}"
     if doc_type in _PACKING_DOCS and packing is not None:
@@ -902,8 +903,8 @@ def generate(
     """Сгенерировать PDF и заменить предыдущую версию того же сочетания (ТЗ §26.6).
 
     PDF сметы хранится по версии сметы (``estimate``, по умолчанию — активная
-    версия первого стенда), packing-лист и лист комплектации — по листу стенда
-    (``packing``; без него — общий лист проекта по всем стендам), остальное — по
+    версия первой площадки), packing-лист и лист комплектации — по листу площадки
+    (``packing``; без него — общий лист проекта по всем площадкам), остальное — по
     проекту.
     """
     if doc_type == DocumentType.ESTIMATE and estimate is None:
@@ -922,7 +923,7 @@ def generate(
 
     scope = doc_scope(doc_type, estimate, packing)
     if scope == "project" and doc_type in _PACKING_DOCS:
-        # Общий лист проекта. Имя {type}_{lang}.pdf занято PDF листа стенда,
+        # Общий лист проекта. Имя {type}_{lang}.pdf занято PDF листа площадки,
         # перенесённым миграцией 0031 из scope "project", — его не перезаписываем.
         filename = f"{doc_type.value}_all_{lang}.pdf"
     elif scope == "project":
@@ -962,14 +963,14 @@ class DocStatus:
     stale: bool
     document: GeneratedDocument | None
     estimate: Estimate | None = None  # версия сметы (для PDF сметы)
-    packing: PackingList | None = None  # лист стенда (packing-лист, лист комплектации)
+    packing: PackingList | None = None  # лист площадки (packing-лист, лист комплектации)
 
 
 def status(db: Session, project: Project) -> list[DocStatus]:
     """Статусы документов проекта целиком — packing-лист по машинам (ТЗ §26.6).
 
     PDF смет — по версиям (estimate_status), packing-лист и лист комплектации —
-    по листам стендов (packing_status).
+    по листам площадок (packing_status).
     """
     packing_exists = bool(list_packings(db, project))
     result: list[DocStatus] = []
@@ -1005,7 +1006,7 @@ def estimate_status(db: Session, project: Project, estimate: Estimate) -> list[D
 
 
 def packing_status(db: Session, project: Project, packing: PackingList) -> list[DocStatus]:
-    """Статусы packing-листа и листа комплектации стенда на всех языках."""
+    """Статусы packing-листа и листа комплектации площадки на всех языках."""
     result: list[DocStatus] = []
     for doc_type in _PACKING_DOCS:
         _, current_hash = render_html(db, project, doc_type, "ru", packing=packing)

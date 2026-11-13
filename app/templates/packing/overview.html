@@ -9,7 +9,7 @@
     {% if combined %}
     <a href="/projects/{{ project.id }}/documents" class="btn btn-outline-secondary">PDF общего листа</a>
     <a href="/projects/{{ project.id }}/documents/carnet" class="btn btn-outline-secondary"
-       title="ATA Carnet по всем стендам: одинаковые модели одной строкой">Общий carnet (.xlsx)</a>
+       title="ATA Carnet по всем площадкам: одинаковые модели одной строкой">Общий carnet (.xlsx)</a>
     {% endif %}
     <a href="/projects/{{ project.id }}" class="btn btn-outline-secondary">К проекту</a>
   </div>
@@ -18,7 +18,7 @@
 <div class="card">
   <div class="table-responsive">
     <table class="table align-middle m-0">
-      <thead><tr><th>Стенд</th><th>Packing-лист</th><th>Статус</th>
+      <thead><tr><th>Площадка</th><th>Packing-лист</th><th>Статус</th>
         <th class="text-end">Факт / план</th><th class="text-end">Вес, кг</th><th></th></tr></thead>
       <tbody>
         {% for s in summaries %}
@@ -57,19 +57,19 @@
     </table>
   </div>
 </div>
-<p class="text-secondary small mt-2">У каждого стенда свой packing-лист, его план — активная версия сметы стенда. Один экземпляр оборудования может быть только в одном листе проекта.</p>
+<p class="text-secondary small mt-2">У каждой площадки свой packing-лист, его план — активная версия сметы площадки. Один экземпляр оборудования может быть только в одном листе проекта.</p>
 
 {% if combined %}
 <h2 class="h5 mt-4">Общий packing-лист проекта</h2>
-<p class="text-secondary small">Сводка листов всех стендов, только просмотр. Одинаковые модели — одной строкой
-  с распределением по стендам; упаковки, вес и объём — сумма по стендам. Комплекты, кабелярка и дополнительные
-  позиции — отдельными строками своего стенда. Сканирование и правки — в листах стендов.</p>
+<p class="text-secondary small">Сводка листов всех площадок, только просмотр. Одинаковые модели — одной строкой
+  с распределением по площадкам; упаковки, вес и объём — сумма по площадкам. Комплекты, кабелярка и дополнительные
+  позиции — отдельными строками своей площадки. Сканирование и правки — в листах площадок.</p>
 <div class="row g-3">
   <div class="col-12 col-xl-8">
     <div class="card"><div class="table-responsive">
       <table class="table table-sm align-middle m-0">
         <thead><tr>
-          <th>Наименование</th><th>Стенды <span class="fw-normal text-secondary small">(план / факт)</span></th>
+          <th>Наименование</th><th>Площадки <span class="fw-normal text-secondary small">(план / факт)</span></th>
           <th class="text-end">План</th><th class="text-end">Факт</th>
           <th class="text-end">В упак. / упак.</th>
           <th class="text-end">Вес, кг</th><th class="text-end">Объём, м³</th>

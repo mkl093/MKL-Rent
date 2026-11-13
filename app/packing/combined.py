@@ -1,14 +1,14 @@
-"""Общий packing-лист проекта: сводка листов всех стендов (только чтение).
+"""Общий packing-лист проекта: сводка листов всех площадок (только чтение).
 
-Строки складских моделей разных стендов сливаются по ``model_id``: план, факт и
-«в упаковке» суммируются, штрих-коды объединяются, распределение по стендам видно
+Строки складских моделей разных площадок сливаются по ``model_id``: план, факт и
+«в упаковке» суммируются, штрих-коды объединяются, распределение по площадкам видно
 в ``by_section``. Упаковки, вес и объём — **сумма расчётов строк-источников**
-(``LineCalc``), а не пересчёт от суммарного количества: кейсы стендов физически
+(``LineCalc``), а не пересчёт от суммарного количества: кейсы площадок физически
 разные. Комплекты, комплекты аксессуаров и дополнительные позиции не сливаются и
-помечены своим стендом.
+помечены своей площадкой.
 
 ``CombinedLine`` повторяет атрибуты ``PackingLine``, которые читают шаблоны
-документов и carnet, поэтому лист стенда и общий лист выводятся одними шаблонами.
+документов и carnet, поэтому лист площадки и общий лист выводятся одними шаблонами.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from app.projects.models import Project
 
 @dataclass
 class SectionShare:
-    """Доля стенда в строке общего листа."""
+    """Доля площадки в строке общего листа."""
 
     section_id: int
     section_name: str
@@ -66,12 +66,12 @@ def sum_calcs(calcs: list[LineCalc]) -> LineCalc:
 
 @dataclass
 class CombinedLine:
-    """Строка общего листа: одна или несколько строк листов стендов."""
+    """Строка общего листа: одна или несколько строк листов площадок."""
 
     sources: list[PackingLine]
     by_section: list[SectionShare]
     merged: bool  # строка складской модели (сливается по model_id)
-    position: int = 0  # порядок стенда первой строки-источника
+    position: int = 0  # порядок площадки первой строки-источника
     calc: LineCalc | None = None  # сумма LineCalc источников (см. combine_lines)
 
     # --- атрибуты PackingLine (по первой строке-источнику) ---------------------
@@ -100,8 +100,8 @@ class CombinedLine:
 
     @property
     def shown_serial_items(self) -> list[PackingSerialItem]:
-        # «Подтверждённые, иначе все» — по каждому стенду отдельно: заготовки
-        # стенда B не должны пропасть из-за того, что стенд A уже отсканирован.
+        # «Подтверждённые, иначе все» — по каждой площадке отдельно: заготовки
+        # площадки B не должны пропасть из-за того, что площадка A уже отсканирована.
         return [si for ln in self.sources for si in ln.shown_serial_items]
 
     @property
@@ -118,9 +118,9 @@ class CombinedLine:
         return "; ".join(f"{name}: {text}" for name, text in comments)
 
     def stands_lines(self, plan_fact: bool = False) -> list[str]:
-        """Распределение по стендам, строка на стенд. Для моделей — «A: 4» по факту
+        """Распределение по площадкам, строка на площадку. Для моделей — «A: 4» по факту
         (по плану, пока факта нет) или «A: 4 / 3» (план / факт) при ``plan_fact``;
-        для комплектов и дополнительных позиций — только имя стенда."""
+        для комплектов и дополнительных позиций — только имя площадки."""
         if not self.merged:
             return [self.by_section[0].section_name]
         if plan_fact:
@@ -130,7 +130,7 @@ class CombinedLine:
 
     @property
     def stands_text(self) -> str:
-        """«A: 4 · B: 2» — распределение по стендам одной строкой."""
+        """«A: 4 · B: 2» — распределение по площадкам одной строкой."""
         return " · ".join(self.stands_lines())
 
 
@@ -177,7 +177,7 @@ def _share(packing: PackingList, line: PackingLine) -> SectionShare:
 
 
 def combine_lines(packings: list[PackingList]) -> list[CombinedLine]:
-    """Строки общего листа в порядке вывода (категория → подкатегория → имя → стенд)."""
+    """Строки общего листа в порядке вывода (категория → подкатегория → имя → площадка)."""
     by_model: dict[int, CombinedLine] = {}
     result: list[CombinedLine] = []
     for pos, packing in enumerate(packings):
@@ -234,7 +234,7 @@ class CombinedPacking:
     totals: PackingTotals
     breakdown: list[CategoryTotal]
     accessories: list[AccessoryGroup]
-    shortages: list[tuple[str, str]]  # (стенд, комментарий о недостаче)
+    shortages: list[tuple[str, str]]  # (площадка, комментарий о недостаче)
     status: PackingStatus
 
     @property
@@ -247,7 +247,7 @@ class CombinedPacking:
 
     @property
     def source_lines(self) -> list[PackingLine]:
-        """Строки листов стендов в порядке общего листа."""
+        """Строки листов площадок в порядке общего листа."""
         return [ln for c in self.lines for ln in c.sources]
 
 
@@ -256,11 +256,11 @@ def build(
     packings: list[PackingList],
     **breakdown_labels: str,
 ) -> CombinedPacking:
-    """Общий лист по заданным листам стендов. ``breakdown_labels`` — локализованные
+    """Общий лист по заданным листам площадок. ``breakdown_labels`` — локализованные
     метки групп разбивки (см. ``compute_category_breakdown``)."""
     lines = combine_lines(packings)
     source = [ln for c in lines for ln in c.sources]
-    # Итоги и разбивка — сумма по строкам листов стендов (= сумма LineCalc источников).
+    # Итоги и разбивка — сумма по строкам листов площадок (= сумма LineCalc источников).
     return CombinedPacking(
         packings=packings,
         lines=lines,
@@ -275,5 +275,5 @@ def build(
 
 
 def combined_packing(db: Session, project: Project, **breakdown_labels: str) -> CombinedPacking:
-    """Общий packing-лист проекта по листам всех стендов."""
+    """Общий packing-лист проекта по листам всех площадок."""
     return build(db, list_packings(db, project), **breakdown_labels)

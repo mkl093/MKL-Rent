@@ -69,7 +69,7 @@ def _serial_text(barcodes: list[str]) -> str:
 def _carnet_barcodes(line: PackingLine) -> list[str]:
     """Штрих-коды строки для carnet: подтверждённые сканом, если такие есть —
     иначе все имеющиеся (включая незаменённые сканом заготовки, ТЗ §22).
-    В общем листе проекта — так же, но по каждому стенду отдельно."""
+    В общем листе проекта — так же, но по каждой площадке отдельно."""
     return [si.barcode for si in line.shown_serial_items]
 
 
@@ -120,8 +120,8 @@ def build_rows(db: Session, source: PackingList | list) -> list[CarnetRow]:
     Комплект аксессуаров в смете виден одной строкой без содержимого (ТЗ), но в carnet
     декларируется реальное количество провозимого — поэтому здесь именно содержимое.
 
-    ``source`` — лист стенда или готовый список строк (общий лист проекта, где
-    строки одной модели разных стендов уже слиты — см. ``app.packing.combined``)."""
+    ``source`` — лист площадки или готовый список строк (общий лист проекта, где
+    строки одной модели разных площадок уже слиты — см. ``app.packing.combined``)."""
     if isinstance(source, PackingList):
         ordered = sorted(source.lines, key=lambda ln: (ln.sort_order, ln.id))
     else:
@@ -154,7 +154,7 @@ def build_rows(db: Session, source: PackingList | list) -> list[CarnetRow]:
 
 
 def build_workbook(project: Project, packing_title: str, rows: list[CarnetRow]) -> Workbook:
-    """``packing_title`` — номер листа стенда или перечень листов общего carnet."""
+    """``packing_title`` — номер листа площадки или перечень листов общего carnet."""
     wb = Workbook()
     ws = wb.active
     ws.title = "General List"

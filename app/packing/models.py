@@ -26,7 +26,7 @@ from app.packing.enums import PackingStatus
 
 
 class PackingList(Base, TimestampMixin):
-    """Packing-лист стенда — один на стенд (ТЗ §17); план — активная версия сметы стенда."""
+    """Packing-лист площадки — один на площадку (ТЗ §17); план — активная версия сметы площадки."""
 
     __tablename__ = "packing_lists"
 
@@ -35,7 +35,7 @@ class PackingList(Base, TimestampMixin):
     project_id: Mapped[int] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    # Стенд, которому принадлежит лист. RESTRICT — стенд с листом не удаляется.
+    # Площадка, которой принадлежит лист. RESTRICT — площадка с листом не удаляется.
     section_id: Mapped[int] = mapped_column(
         ForeignKey("project_sections.id", ondelete="RESTRICT"),
         unique=True,

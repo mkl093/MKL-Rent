@@ -1,4 +1,4 @@
-"""Packing-листы стендов: экземпляр — в одном листе проекта, транспорт/приёмка/документы."""
+"""Packing-листы площадок: экземпляр — в одном листе проекта, транспорт/приёмка/документы."""
 
 import re
 from datetime import date
@@ -29,7 +29,7 @@ from app.transport import service as transport_service
 
 @pytest.fixture
 def env(db_session):
-    """Проект с двумя стендами: в смете A — 2 микшера (серийные) и 2 колонки,
+    """Проект с двумя площадками: в смете A — 2 микшера (серийные) и 2 колонки,
     в смете B — 1 микшер и 1 колонка. На складе по 3 экземпляра со штрих-кодами."""
     db = db_session
     cat = cat_service.create_category(db, "Звук")
@@ -100,7 +100,7 @@ def test_scan_claims_unconfirmed_placeholder_from_other_stand(env):
     line_b = next(ln for ln in pb.lines if ln.model_id == speaker.id)
     fact_b = line_b.fact_quantity
 
-    # Реальный скан на стенде A забирает автоподобранный (не подтверждённый) экземпляр B.
+    # Реальный скан на площадке A забирает автоподобранный (не подтверждённый) экземпляр B.
     outcome = service.scan(db, pa, placeholder_b)
     assert outcome.result == service.SerialResult.OK
     db.expire_all()
@@ -178,7 +178,7 @@ def test_packing_documents_per_stand(env, tmp_path, monkeypatch):
     monkeypatch.setattr(builder, "_storage_dir", lambda pid: tmp_path)
 
     html, _ = builder.render_html(db, project, DocumentType.PACKING, "ru", packing=pb)
-    assert pb.number in html and "Стенд: B" in html
+    assert pb.number in html and "Площадка: B" in html
     builder.generate(db, project, DocumentType.PACKING, "ru", packing=pb)
     builder.generate(db, project, DocumentType.PICKING, "ru", packing=pa)
     assert (tmp_path / f"packing_pl{pb.id}_ru.pdf").exists()
@@ -212,7 +212,7 @@ def _csrf(client, url) -> str:
 
 def test_web_stand_packing_pages(auth_client, env):
     db, project, a, b, pa, pb, mixer, speaker = env
-    # Несколько стендов — обзор листов.
+    # Несколько площадок — обзор листов.
     overview = auth_client.get(f"/projects/{project.id}/packing")
     assert overview.status_code == 200
     assert pa.number in overview.text and pb.number in overview.text
@@ -230,7 +230,7 @@ def test_web_stand_packing_pages(auth_client, env):
     assert data["result"] == "in_other_packing"
     assert "«A»" in data["message"]
 
-    # Чужой стенд в адресе — 303 на обзор (не 404/500), лист другого проекта не открыть.
+    # Чужой площадка в адресе — 303 на обзор (не 404/500), лист другого проекта не открыть.
     other = create_project(db, ProjectInput(name="Другой"))
     other_section = versions.create_section(db, other, "X")
     resp = auth_client.get(
@@ -238,11 +238,11 @@ def test_web_stand_packing_pages(auth_client, env):
     )
     assert resp.status_code in (302, 303, 307)
 
-    # Карточка проекта показывает листы стендов.
+    # Карточка проекта показывает листы площадок.
     detail = auth_client.get(f"/projects/{project.id}").text
     assert pa.number in detail and pb.number in detail
 
-    # Документы: блоки стендов с packing-листом и carnet.
+    # Документы: блоки площадок с packing-листом и carnet.
     docs = auth_client.get(f"/projects/{project.id}/documents").text
     assert f"/documents/carnet/{pb.id}" in docs
     carnet = auth_client.get(f"/projects/{project.id}/documents/carnet/{pb.id}")
@@ -262,16 +262,16 @@ def test_web_create_packing_for_stand(auth_client, db_session):
     assert resp.status_code == 303
     assert service.get_section_packing(db, a) is not None
     overview = auth_client.get(f"/projects/{project.id}/packing").text
-    assert "не создан" in overview  # у стенда B листа нет
+    assert "не создан" in overview  # у площадки B листа нет
 
 
 def test_stand_fingerprint_only_when_stand_is_shown(db_session, tmp_path, monkeypatch):
-    """Имя стенда входит в отпечаток, только когда выводится в шапке: у проекта с
-    одним «Основным стендом» PDF, сформированные до стендов, не устаревают."""
+    """Имя площадки входит в отпечаток, только когда выводится в шапке: у проекта с
+    одним «Основной площадкой» PDF, сформированные до площадок, не устаревают."""
     db = db_session
     monkeypatch.setattr(builder, "_html_to_pdf", lambda html: b"%PDF-1.4 test")
     monkeypatch.setattr(builder, "_storage_dir", lambda pid: tmp_path)
-    project = create_project(db, ProjectInput(name="Один стенд"))
+    project = create_project(db, ProjectInput(name="Один площадка"))
     est = est_service.get_or_create_estimate(db, project)
     section = est.section
     packing = service.create_from_estimate(db, project, section)
@@ -285,18 +285,18 @@ def test_stand_fingerprint_only_when_stand_is_shown(db_session, tmp_path, monkey
 
     for dt in (DocumentType.PACKING, DocumentType.PICKING):
         html, _ = builder.render_html(db, project, dt, "ru", packing=packing)
-        assert "Стенд:" not in html
+        assert "Площадка:" not in html
         builder.generate(db, project, dt, "ru", packing=packing)
     assert stale() == {DocumentType.PACKING: False, DocumentType.PICKING: False}
 
-    # Переименованный стенд появляется в шапке — PDF устаревает.
+    # Переименованный площадка появляется в шапке — PDF устаревает.
     versions.rename_section(db, section, "Hall 1")
     assert stale() == {DocumentType.PACKING: True, DocumentType.PICKING: True}
 
 
 def test_batch_backfill_does_not_share_items_between_stands(db_session):
     """Скрипт бэкфилла идёт по листам одной транзакцией (commit=False): заготовки
-    одного стенда должны быть видны следующему, иначе экземпляр попадёт в два листа."""
+    одной площадки должны быть видны следующему, иначе экземпляр попадёт в два листа."""
     db = db_session
     cat = cat_service.create_category(db, "Свет")
     lamp = eq_service.create_model(

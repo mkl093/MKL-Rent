@@ -25,7 +25,7 @@ def auth_client(client, db_session):
 
 
 def _version_url(client, pid) -> str:
-    """Адрес активной версии сметы единственного стенда (через редирект /estimate)."""
+    """Адрес активной версии сметы единственной площадки (через редирект /estimate)."""
     resp = client.get(f"/projects/{pid}/estimate")
     assert resp.status_code == 200
     return resp.url.path

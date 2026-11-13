@@ -590,7 +590,7 @@ def project_copy(
     if project is None:
         return redirect("/projects")
     copy = service.copy_project(db, project)
-    # Копируются стенды с активными версиями смет (ТЗ §13.8).
+    # Копируются площадки с активными версиями смет (ТЗ §13.8).
     from app.estimates.versions import copy_sections
 
     copy_sections(db, project, copy)

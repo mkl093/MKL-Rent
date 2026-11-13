@@ -111,16 +111,16 @@
   </div>
 </div>
 
-{# --- Стенды и сметы --- #}
+{# --- Площадки и сметы --- #}
 <div class="card mb-3" id="sections">
   <div class="card-header d-flex justify-content-between align-items-center">
-    <span>Стенды и сметы</span>
+    <span>Площадки и сметы</span>
     <span class="small text-secondary">бронь и packing-лист — по активным версиям</span>
   </div>
   {% if sections %}
   <div class="table-responsive">
     <table class="table table-sm align-middle m-0">
-      <thead><tr><th>Стенд</th><th>Смета</th><th>Активная версия</th>
+      <thead><tr><th>Площадка</th><th>Смета</th><th>Активная версия</th>
         <th class="text-end">Без VAT, €</th><th class="text-end">Итого, €</th><th>Packing-лист</th><th></th></tr></thead>
       <tbody>
         {% for s in sections %}
@@ -168,15 +168,15 @@
   </div>
   {% else %}
   <div class="card-body pb-0">
-    <p class="text-secondary">Смет ещё нет. <a href="/projects/{{ project.id }}/estimate">Открыть смету</a> — будет создан «Основной стенд».</p>
+    <p class="text-secondary">Смет ещё нет. <a href="/projects/{{ project.id }}/estimate">Открыть смету</a> — будет создана «Основная площадка».</p>
   </div>
   {% endif %}
   {% if not project.is_archived %}
   <div class="card-body border-top">
     <form method="post" action="/projects/{{ project.id }}/sections/create" class="d-flex flex-wrap gap-2 m-0">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input class="form-control" style="max-width:22rem" name="name" placeholder="Название стенда / площадки" required aria-label="Название стенда">
-      <button class="btn btn-outline-primary">Новый стенд</button>
+      <input class="form-control" style="max-width:22rem" name="name" placeholder="Название площадки" required aria-label="Название площадки">
+      <button class="btn btn-outline-primary">Новая площадка</button>
     </form>
   </div>
   {% endif %}

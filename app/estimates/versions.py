@@ -1,8 +1,8 @@
-"""Стенды проекта и версии смет: создание, активация, заморозка, копирование.
+"""Площадки проекта и версии смет: создание, активация, заморозка, копирование.
 
-Стенд (ProjectSection) — площадка/стенд проекта с номером сметы EST-YYYY-NNN.
-У стенда одна или несколько версий сметы (Estimate), ровно одна активна:
-только активные версии всех стендов дают бронь проекта (estimates.service.
+Площадка (ProjectSection) — площадка проекта с номером сметы EST-YYYY-NNN.
+У площадки одна или несколько версий сметы (Estimate), ровно одна активна:
+только активные версии всех площадок дают бронь проекта (estimates.service.
 sync_reservations) и план packing-листа. Версии не удаляются; заморозка
 делает версию только для просмотра (estimates.service.ensure_editable).
 """
@@ -25,7 +25,7 @@ from app.numbering.models import DocType
 from app.numbering.service import next_number
 from app.projects.models import Project
 
-DEFAULT_SECTION_NAME = "Основной стенд"
+DEFAULT_SECTION_NAME = "Основная площадка"
 
 
 def _current_year() -> int:
@@ -35,14 +35,14 @@ def _current_year() -> int:
 
 
 def _version_number(section: ProjectSection, version_no: int) -> str:
-    """Номер версии: v1 — номер стенда (EST-2026-015), далее «EST-2026-015-v2»."""
+    """Номер версии: v1 — номер площадки (EST-2026-015), далее «EST-2026-015-v2»."""
     return section.number if version_no == 1 else f"{section.number}-v{version_no}"
 
 
 def _clean_name(name: str) -> str:
     name = (name or "").strip()
     if not name:
-        raise service.EstimateError("Укажите название стенда")
+        raise service.EstimateError("Укажите название площадки")
     return name[:255]
 
 
@@ -51,7 +51,7 @@ def _clean_label(label: str | None) -> str | None:
     return label[:255] or None
 
 
-# --- Стенды ----------------------------------------------------------------
+# --- Площадки ----------------------------------------------------------------
 
 
 def list_sections(db: Session, project: Project) -> list[ProjectSection]:
@@ -76,7 +76,7 @@ def get_section(db: Session, project: Project, section_id: int) -> ProjectSectio
 def create_section(
     db: Session, project: Project, name: str, *, user: User | None = None
 ) -> ProjectSection:
-    """Новый стенд с номером EST-YYYY-NNN и пустой активной версией v1."""
+    """Новая площадка с номером EST-YYYY-NNN и пустой активной версией v1."""
     name = _clean_name(name)
     sort_order = max((s.sort_order for s in list_sections(db, project)), default=-1) + 1
     section = ProjectSection(
@@ -107,7 +107,7 @@ def create_section(
 
 
 def ensure_default_section(db: Session, project: Project) -> ProjectSection:
-    """Первый стенд проекта; пустой проект получает «Основной стенд»."""
+    """Первая площадка проекта; пустой проект получает «Основную площадку»."""
     sections = list_sections(db, project)
     if sections:
         return sections[0]
@@ -121,7 +121,7 @@ def rename_section(db: Session, section: ProjectSection, name: str) -> None:
 
 def move_section(db: Session, project: Project, section: ProjectSection, direction: int) -> None:
     sections = list_sections(db, project)
-    # Нормализуем порядок (у стендов из миграции он может совпадать).
+    # Нормализуем порядок (у площадок из миграции он может совпадать).
     for i, s in enumerate(sections):
         s.sort_order = i
     idx = next(i for i, s in enumerate(sections) if s.id == section.id)
@@ -133,15 +133,15 @@ def move_section(db: Session, project: Project, section: ProjectSection, directi
 
 
 def delete_section(db: Session, project: Project, section: ProjectSection) -> None:
-    """Удалить можно только стенд без packing-листа, все версии которого пусты."""
+    """Удалить можно только площадку без packing-листа, все версии которой пусты."""
     if any(v.lines for v in section.versions):
         raise service.EstimateError(
-            "Стенд со строками в смете удалить нельзя — версии смет не удаляются"
+            "Площадку со строками в смете удалить нельзя — версии смет не удаляются"
         )
     from app.packing import service as packing_service
 
     if packing_service.get_section_packing(db, section) is not None:
-        raise service.EstimateError("У стенда есть packing-лист — стенд удалить нельзя")
+        raise service.EstimateError("У площадки есть packing-лист — площадку удалить нельзя")
     db.delete(section)
     db.commit()
     service.sync_reservations(db, project)
@@ -169,7 +169,7 @@ def create_version(
     activate: bool = False,
     user: User | None = None,
 ) -> Estimate:
-    """Новая версия стенда: копия ``source`` (строки, скидка, коэффициент, «скрыть
+    """Новая версия площадки: копия ``source`` (строки, скидка, коэффициент, «скрыть
     стоимость») или пустая. Новая версия не заморожена; активной становится только
     при ``activate=True``.
     """
@@ -290,7 +290,7 @@ def preview_activation(db: Session, project: Project, version: Estimate) -> Acti
 
     from app.packing import service as packing_service
 
-    # Packing-лист этого стенда сверяется с его активной версией.
+    # Packing-лист этой площадки сверяется с её активной версией.
     section = db.get(ProjectSection, version.section_id)
     packing = packing_service.get_section_packing(db, section)
     if packing is not None:
@@ -328,7 +328,7 @@ def section_summaries(db: Session, project: Project) -> list[SectionSummary]:
 
 
 def copy_sections(db: Session, source: Project, target: Project) -> None:
-    """Копия проекта (ТЗ §13.8): стенды и только их АКТИВНЫЕ версии (в копии — v1).
+    """Копия проекта (ТЗ §13.8): площадки и только их АКТИВНЫЕ версии (в копии — v1).
 
     Строки комплектов аксессуаров не копируются: комплект аксессуаров проектный
     (app.accessory_kits), в копии проекта его нет.

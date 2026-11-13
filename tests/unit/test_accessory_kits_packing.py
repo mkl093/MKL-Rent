@@ -30,7 +30,7 @@ def _csrf(client, url) -> str:
 
 
 def _packing_base(client, project_id) -> str:
-    """Адрес packing-листа единственного стенда (через редирект /projects/{id}/packing)."""
+    """Адрес packing-листа единственной площадки (через редирект /projects/{id}/packing)."""
     return client.get(f"/projects/{project_id}/packing").url.path
 
 

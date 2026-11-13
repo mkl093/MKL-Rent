@@ -32,7 +32,7 @@ from app.projects.service import create_project
 
 @pytest.fixture
 def env(db_session):
-    """Два стенда. Колонка (количественная, кейс на 4 шт., 10 кг + кейс 5 кг):
+    """Два площадки. Колонка (количественная, кейс на 4 шт., 10 кг + кейс 5 кг):
     A — 2, B — 2. Микшер (серийный): A — 2, B — 1. В B — произвольная строка,
     в A — складской комплект."""
     db = db_session
@@ -91,7 +91,7 @@ def test_models_merge_with_distribution_and_summed_packaging(env):
     assert (spk.planned_quantity, spk.fact_quantity, spk.packed_quantity) == (4, 4, 4)
     assert [(s.section_name, s.fact) for s in spk.by_section] == [("A", 2), ("B", 2)]
     assert spk.stands_text == "A: 2 · B: 2"
-    # Кейсы стендов разные: 1 + 1, а не ceil(4 / 4) = 1.
+    # Кейсы площадок разные: 1 + 1, а не ceil(4 / 4) = 1.
     assert spk.calc.packages == 2
     assert spk.calc.total_weight == Decimal("50.0")  # 4 × 10 + 2 кейса × 5
 
@@ -109,7 +109,7 @@ def test_kits_and_custom_lines_are_not_merged(env):
     assert not custom.merged and custom.stands_text == "B"
     kit = _line(cp, "Кейс света")
     assert not kit.merged and kit.is_kit and kit.stands_text == "A"
-    # Дополнительные позиции — в конце, как в листе стенда.
+    # Дополнительные позиции — в конце, как в листе площадки.
     assert cp.lines[-1] is custom
 
 
@@ -130,7 +130,7 @@ def test_serials_union_per_stand_confirmation(env):
     a_placeholder = next(
         si.barcode for ln in pa.lines if ln.model_id == speaker.id for si in ln.serial_items
     )
-    service.scan(db, pa, a_placeholder)  # подтверждаем одну заготовку стенда A
+    service.scan(db, pa, a_placeholder)  # подтверждаем одну заготовку площадки A
     db.expire_all()
     cp = combined.combined_packing(db, project)
     assert {si.barcode for si in _line(cp, "Микшер").shown_serial_items} == {"M1", "M3"}
@@ -172,13 +172,13 @@ def pdf_env(env, tmp_path, monkeypatch):
 def test_combined_packing_pdf(pdf_env):
     (db, project, a, b, pa, pb, speaker, mixer), tmp_path = pdf_env
     html, _ = builder.render_html(db, project, DocumentType.PACKING, "ru")
-    assert f"{project.number} — все стенды" in html
+    assert f"{project.number} — все площадки" in html
     assert f"A ({pa.number}), B ({pb.number})" in html
     assert "<div>A: 2</div><div>B: 2</div>" in html
     html_en, _ = builder.render_html(db, project, DocumentType.PACKING, "en")
-    assert "all stands" in html_en and "Stands" in html_en
+    assert "all venues" in html_en and "Venues" in html_en
 
-    # Лист стенда и общий лист хранятся раздельно и не перезаписывают друг друга.
+    # Лист площадки и общий лист хранятся раздельно и не перезаписывают друг друга.
     builder.generate(db, project, DocumentType.PACKING, "ru", packing=pa)
     doc = builder.generate(db, project, DocumentType.PACKING, "ru")
     assert doc.scope == "project"
@@ -190,7 +190,7 @@ def test_combined_packing_pdf(pdf_env):
     assert not status[(DocumentType.PACKING, "ru")].stale
     assert not status[(DocumentType.PICKING, "ru")].generated
 
-    # Изменение листа любого стенда делает общий PDF устаревшим.
+    # Изменение листа любого площадки делает общий PDF устаревшим.
     service.scan(db, pb, "M3")
     status = {(s.doc_type, s.language.value): s for s in builder.combined_status(db, project)}
     assert status[(DocumentType.PACKING, "ru")].stale
@@ -199,9 +199,9 @@ def test_combined_packing_pdf(pdf_env):
 def test_combined_picking_pdf(pdf_env):
     (db, project, a, b, pa, pb, speaker, mixer), tmp_path = pdf_env
     html, _ = builder.render_html(db, project, DocumentType.PICKING, "ru")
-    assert "все стенды" in html
+    assert "все площадки" in html
     assert "4 / 4" in html  # колонки: план/факт суммой
-    assert "<div>A: 2 / 0</div><div>B: 1 / 0</div>" in html  # микшер: план / факт по стендам
+    assert "<div>A: 2 / 0</div><div>B: 1 / 0</div>" in html  # микшер: план / факт по площадкам
     builder.generate(db, project, DocumentType.PICKING, "ru")
     assert (tmp_path / "picking_all_ru.pdf").exists()
 
@@ -209,7 +209,7 @@ def test_combined_picking_pdf(pdf_env):
 def test_stand_pdf_unchanged_by_combined(pdf_env):
     (db, project, a, b, pa, pb, speaker, mixer), tmp_path = pdf_env
     html, _ = builder.render_html(db, project, DocumentType.PACKING, "ru", packing=pb)
-    assert "все стенды" not in html and "Стенд: B" in html
+    assert "все площадки" not in html and "Площадка: B" in html
 
 
 # --- Carnet -------------------------------------------------------------------
@@ -225,7 +225,7 @@ def test_combined_carnet_merges_models(env):
     assert len(mixer_rows) == 1
     assert mixer_rows[0].quantity == 2
     assert "M1" in mixer_rows[0].description and "M3" in mixer_rows[0].description
-    # По стенду — как раньше.
+    # По площадке — как раньше.
     rows_b = carnet.build_rows(db, pb)
     assert [r.quantity for r in rows_b if r.description.startswith("Микшер")] == [1]
 
@@ -287,7 +287,7 @@ def test_web_documents_combined(auth_client, env, tmp_path, monkeypatch):
 
     docs_url = f"/projects/{project.id}/documents"
     docs = auth_client.get(docs_url).text
-    assert "Общий carnet" in docs and "все стенды" in docs
+    assert "Общий carnet" in docs and "все площадки" in docs
 
     token = _csrf(auth_client, docs_url)
     resp = auth_client.post(

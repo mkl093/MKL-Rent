@@ -1,4 +1,4 @@
-"""Стенды проекта и версии смет: активация, заморозка, бронь, packing, копирование."""
+"""Площадки проекта и версии смет: активация, заморозка, бронь, packing, копирование."""
 
 from datetime import date
 from decimal import Decimal
@@ -64,13 +64,13 @@ def _reservations(db, project) -> dict[int, int]:
     return {r.model_id: r.quantity for r in rows if r.model_id is not None}
 
 
-# --- Стенды ------------------------------------------------------------------
+# --- Площадки ------------------------------------------------------------------
 
 
 def test_create_section_has_active_v1(db_session, env):
     project, _, _ = env
-    section = versions.create_section(db_session, project, "  Стенд A  ")
-    assert section.name == "Стенд A"
+    section = versions.create_section(db_session, project, "  Площадка A  ")
+    assert section.name == "Площадка A"
     assert section.number.startswith("EST-")
     (v1,) = section.versions
     assert v1.version_no == 1 and v1.is_active and not v1.is_locked
@@ -91,7 +91,7 @@ def test_get_or_create_estimate_makes_default_section(db_session, env):
     (section,) = versions.list_sections(db_session, project)
     assert section.name == versions.DEFAULT_SECTION_NAME
     assert estimate.section_id == section.id and estimate.is_active
-    # повторный вызов не создаёт второй стенд
+    # повторный вызов не создаёт второй площадка
     assert service.get_or_create_estimate(db_session, project).id == estimate.id
     assert len(versions.list_sections(db_session, project)) == 1
 
@@ -288,7 +288,7 @@ def test_kit_belongs_to_one_section(db_session, env):
     assert service.add_kit_line(db_session, a.active_version, project, kit) is not None
     with pytest.raises(service.EstimateError, match="«A»"):
         service.add_kit_line(db_session, b.active_version, project, kit)
-    # в другую версию своего стенда — можно
+    # в другую версию своей площадки — можно
     v2 = versions.create_version(db_session, project, a)
     assert service.add_kit_line(db_session, v2, project, kit) is not None
 
@@ -328,7 +328,7 @@ def test_packing_per_section_uses_its_active_version(db_session, env):
     with pytest.raises(packing_service.AlreadyExists):
         packing_service.create_from_estimate(db_session, project, a)
 
-    # Смена активной версии стенда A затрагивает только его лист.
+    # Смена активной версии площадки A затрагивает только его лист.
     versions.activate_version(db_session, project, v2)
     assert {d.name for d in packing_service.discrepancies(db_session, project, pa)} == {
         "Прожектор",
@@ -353,7 +353,7 @@ def test_estimate_sync_writes_into_own_section(db_session, env):
     db_session.refresh(a.active_version)
     db_session.refresh(b.active_version)
     assert b.active_version.lines[0].quantity == 5
-    assert a.active_version.lines[0].quantity == 3  # смета другого стенда не тронута
+    assert a.active_version.lines[0].quantity == 3  # смета другой площадки не тронута
 
 
 def test_section_with_packing_cannot_be_deleted(db_session, env):
@@ -404,18 +404,18 @@ def test_copy_sections_copies_active_versions_only(db_session, env):
 
 def test_estimate_pdf_shows_section_and_version(db_session, env):
     project, spot, _ = env
-    a = versions.create_section(db_session, project, "Стенд A")
+    a = versions.create_section(db_session, project, "Площадка A")
     service.add_model(db_session, a.active_version, project, spot, 2)
     html, _ = builder.render_html(
         db_session, project, DocumentType.ESTIMATE, "ru", estimate=a.active_version
     )
-    assert "Стенд: Стенд A" in html
+    assert "Площадка: Площадка A" in html
     assert f"Смета {a.number}<" in html  # одна версия — без «· v1»
 
     v2 = versions.create_version(db_session, project, a, source=a.active_version)
     html, _ = builder.render_html(db_session, project, DocumentType.ESTIMATE, "en", estimate=v2)
     assert f"{a.number} · v2" in html
-    assert "Stand: Стенд A" in html
+    assert "Venue: Площадка A" in html
 
 
 def test_default_section_name_hidden_in_pdf(db_session, env):
@@ -423,4 +423,4 @@ def test_default_section_name_hidden_in_pdf(db_session, env):
     estimate = service.get_or_create_estimate(db_session, project)
     service.add_model(db_session, estimate, project, spot, 2)
     html, _ = builder.render_html(db_session, project, DocumentType.ESTIMATE, "ru")
-    assert "Стенд:" not in html
+    assert "Площадка:" not in html

@@ -29,7 +29,7 @@ router = APIRouter(prefix="/projects/{project_id}/documents", tags=["documents"]
 
 
 def _project_packing(db: Session, project, packing_id: int):
-    """Packing-лист стенда этого проекта по id."""
+    """Packing-лист площадки этого проекта по id."""
     return next((pl for pl in list_packings(db, project) if pl.id == packing_id), None)
 
 
@@ -47,7 +47,7 @@ def documents_page(
     estimate_versions.ensure_default_section(db, project)
     packings = list_packings(db, project)
     packing_by_section = {pl.section_id: pl for pl in packings}
-    # По каждому стенду: PDF активной версии сметы (неактивные — со страницы сметы),
+    # По каждой площадке: PDF активной версии сметы (неактивные — со страницы сметы),
     # packing-лист и лист комплектации его packing-листа, carnet.
     section_blocks = []
     for section in estimate_versions.list_sections(db, project):
@@ -70,7 +70,7 @@ def documents_page(
             "project": project,
             "section_blocks": section_blocks,
             "statuses": builder.status(db, project),
-            # Общий packing-лист проекта — только при нескольких листах стендов.
+            # Общий packing-лист проекта — только при нескольких листах площадок.
             "combined_docs": builder.combined_status(db, project) if len(packings) > 1 else [],
         },
         db=db,
@@ -79,7 +79,7 @@ def documents_page(
 
 
 def _carnet_response(db: Session, project, packings: list):
-    """Carnet листа стенда (один лист) или общий по проекту (строки одной модели слиты)."""
+    """Carnet листа площадки (один лист) или общий по проекту (строки одной модели слиты)."""
     if not project.is_archived:
         for pl in packings:
             backfill_quantity_barcodes(db, pl)
@@ -110,7 +110,7 @@ def carnet_export(
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    """ATA Carnet General List (Excel) по проекту: общий по всем листам стендов
+    """ATA Carnet General List (Excel) по проекту: общий по всем листам площадок
     (при одном листе — carnet этого листа)."""
     project = get_project(db, project_id)
     if project is None:
@@ -128,7 +128,7 @@ def carnet_export_packing(
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    """Экспорт packing-листа стенда в ATA Carnet General List (Excel)."""
+    """Экспорт packing-листа площадки в ATA Carnet General List (Excel)."""
     project = get_project(db, project_id)
     if project is None:
         raise HTTPException(status_code=404)
@@ -147,11 +147,11 @@ def _safe_back(project_id: int, back: str | None) -> str:
 
 
 def _resolve_object(db: Session, project, dt: DocumentType, object_id: int | None):
-    """(estimate, packing) для документа: версия сметы или packing-лист стенда.
+    """(estimate, packing) для документа: версия сметы или packing-лист площадки.
 
-    Без явного id — смета активной версии первого стенда (старые ссылки); для
+    Без явного id — смета активной версии первой площадки (старые ссылки); для
     packing-листа и листа комплектации — общий лист проекта при нескольких листах
-    (packing=None) или лист единственного стенда.
+    (packing=None) или лист единственной площадки.
     Возвращает None, если объекта нет или он не принадлежит проекту.
     """
     if dt == DocumentType.ESTIMATE:
@@ -208,7 +208,7 @@ def documents_generate(
         elif packing is not None:
             what = f"{dt.label} {packing.number} («{packing.section.name}»)"
         elif dt in (DocumentType.PACKING, DocumentType.PICKING):
-            what = f"{dt.label} — все стенды"
+            what = f"{dt.label} — все площадки"
         audit_log(
             db,
             user,

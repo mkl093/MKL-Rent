@@ -74,8 +74,8 @@ class ReturnLine(Base):
 
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    # Снимок распределения по стендам (только при нескольких packing-листах):
-    # «A: 4 · B: 2» у слитой строки модели, имя стенда — у прочих строк.
+    # Снимок распределения по площадкам (только при нескольких packing-листах):
+    # «A: 4 · B: 2» у слитой строки модели, имя площадки — у прочих строк.
     section_label: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     return_list: Mapped[ReturnList] = relationship(back_populates="lines")
@@ -107,7 +107,7 @@ class ReturnLine(Base):
 
     @property
     def display_name(self) -> str:
-        """Название для сообщений скана: с метками стендов, если они есть."""
+        """Название для сообщений скана: с метками площадок, если они есть."""
         return f"{self.name} ({self.section_label})" if self.section_label else self.name
 
 

@@ -1,9 +1,9 @@
-"""Маршруты смет внутри проекта: стенды, версии, строки (ТЗ §16).
+"""Маршруты смет внутри проекта: площадки, версии, строки (ТЗ §16).
 
-Смета открывается по стенду и номеру версии:
+Смета открывается по площадке и номеру версии:
 /projects/{pid}/sections/{sid}/estimate/v/{n}. Старый адрес
-/projects/{pid}/estimate ведёт на единственный стенд (или на карточку проекта,
-если стендов несколько).
+/projects/{pid}/estimate ведёт на единственную площадку (или на карточку проекта,
+если площадок несколько).
 """
 
 from __future__ import annotations
@@ -106,7 +106,7 @@ def _audit(db: Session, user: User, estimate: Estimate, text: str) -> None:
         db,
         user,
         EventType.ESTIMATE_CHANGE,
-        f"Смета {estimate.display_number} (стенд «{estimate.section.name}»): {text}",
+        f"Смета {estimate.display_number} (площадка «{estimate.section.name}»): {text}",
         object_type="estimate",
         object_id=estimate.id,
     )
@@ -154,7 +154,7 @@ def estimate_add_legacy(
     return _single_section_redirect(db, project, "/add")
 
 
-# --- Стенды ------------------------------------------------------------------
+# --- Площадки ------------------------------------------------------------------
 
 
 @router.post("/sections/create", dependencies=[Depends(verify_csrf)])
@@ -180,11 +180,11 @@ def section_create(
         db,
         user,
         EventType.SECTION_MANAGE,
-        f"Проект {project.number}: создан стенд «{section.name}» (смета {section.number})",
+        f"Проект {project.number}: создана площадка «{section.name}» (смета {section.number})",
         object_type="project",
         object_id=project.id,
     )
-    flash(request, f"Стенд «{section.name}» создан.", "success")
+    flash(request, f"Площадка «{section.name}» создана.", "success")
     return redirect(_version_url(project_id, section.id, 1))
 
 
@@ -217,11 +217,11 @@ def section_rename(
         db,
         user,
         EventType.SECTION_MANAGE,
-        f"Проект {project.number}: стенд «{old}» переименован в «{section.name}»",
+        f"Проект {project.number}: площадка «{old}» переименована в «{section.name}»",
         object_type="project",
         object_id=project.id,
     )
-    flash(request, "Стенд переименован.", "success")
+    flash(request, "Площадка переименована.", "success")
     return redirect(target)
 
 
@@ -264,11 +264,11 @@ def section_delete(
         db,
         user,
         EventType.SECTION_MANAGE,
-        f"Проект {project.number}: удалён стенд «{name}»",
+        f"Проект {project.number}: удалена площадка «{name}»",
         object_type="project",
         object_id=project.id,
     )
-    flash(request, f"Стенд «{name}» удалён.", "info")
+    flash(request, f"Площадка «{name}» удалена.", "info")
     return redirect(_project_url(project_id))
 
 
@@ -280,10 +280,10 @@ def section_estimate(
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    """Смета стенда → его активная версия."""
+    """Смета площадки → её активная версия."""
     project, section = _load_section(db, project_id, section_id)
     if project is None or section is None or section.active_version is None:
-        flash(request, "Стенд не найден.", "warning")
+        flash(request, "Площадка не найдена.", "warning")
         return redirect(_project_url(project_id))
     return redirect(_version_url(project_id, section_id, section.active_version.version_no))
 
@@ -320,7 +320,7 @@ def version_create(
         db,
         user,
         EventType.ESTIMATE_VERSION,
-        f"Смета {version.display_number} (стенд «{section.name}»): создана версия ({origin})"
+        f"Смета {version.display_number} (площадка «{section.name}»): создана версия ({origin})"
         + (", сделана активной" if version.is_active else ""),
         object_type="estimate",
         object_id=version.id,
@@ -364,7 +364,7 @@ def version_activate(
         db,
         user,
         EventType.ESTIMATE_VERSION,
-        f"Смета {version.display_number} (стенд «{section.name}»): версия сделана активной",
+        f"Смета {version.display_number} (площадка «{section.name}»): версия сделана активной",
         object_type="estimate",
         object_id=version.id,
     )
@@ -441,7 +441,7 @@ def version_lock(
         db,
         user,
         EventType.ESTIMATE_VERSION,
-        f"Смета {estimate.display_number} (стенд «{section.name}»): версия заморожена",
+        f"Смета {estimate.display_number} (площадка «{section.name}»): версия заморожена",
         object_type="estimate",
         object_id=estimate.id,
     )
@@ -473,7 +473,7 @@ def version_unlock(
         db,
         user,
         EventType.ESTIMATE_VERSION,
-        f"Смета {estimate.display_number} (стенд «{section.name}»): версия разморожена",
+        f"Смета {estimate.display_number} (площадка «{section.name}»): версия разморожена",
         object_type="estimate",
         object_id=estimate.id,
     )
@@ -542,7 +542,7 @@ def add_picker(
     for ln in estimate.lines:
         if ln.model_id is not None:
             model_in_estimate[ln.model_id] = model_in_estimate.get(ln.model_id, 0) + ln.quantity
-    # Сколько модели в активных сметах всех стендов проекта (бронь проекта).
+    # Сколько модели в активных сметах всех площадок проекта (бронь проекта).
     model_in_project: dict[int, int] = {}
     for active in service.active_versions(db, project):
         for ln in active.lines:

@@ -9,12 +9,12 @@
     <a href="/projects/{{ project.id }}/accessory-kits" class="btn btn-outline-secondary">К списку</a>
     {% if editable %}
       {% if in_estimate %}
-      <span class="btn btn-outline-success disabled">В смете{% if sections|length > 1 %} стенда «{{ estimate_section.name }}»{% endif %}</span>
+      <span class="btn btn-outline-success disabled">В смете{% if sections|length > 1 %} площадки «{{ estimate_section.name }}»{% endif %}</span>
       {% else %}
       <form method="post" action="/projects/{{ project.id }}/accessory-kits/{{ kit.id }}/add-to-estimate" class="m-0 d-flex gap-1">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         {% if sections|length > 1 %}
-        <select class="form-select" name="section_id" aria-label="Стенд" title="Смета стенда (активная версия)">
+        <select class="form-select" name="section_id" aria-label="Площадка" title="Смета площадки (активная версия)">
           {% for s in sections %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
         </select>
         {% endif %}
@@ -22,12 +22,12 @@
       </form>
       {% endif %}
       {% if in_packing %}
-      <span class="btn btn-outline-success disabled">В packing-листе{% if packings|length > 1 %} стенда «{{ packing_with_kit.section.name }}»{% endif %}</span>
+      <span class="btn btn-outline-success disabled">В packing-листе{% if packings|length > 1 %} площадки «{{ packing_with_kit.section.name }}»{% endif %}</span>
       {% elif packing_exists %}
       <form method="post" action="/projects/{{ project.id }}/accessory-kits/{{ kit.id }}/add-to-packing" class="m-0 d-flex gap-1">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         {% if packings|length > 1 %}
-        <select class="form-select" name="packing_id" aria-label="Packing-лист стенда">
+        <select class="form-select" name="packing_id" aria-label="Packing-лист площадки">
           {% for pl in packings %}<option value="{{ pl.id }}" {% if estimate_section and pl.section_id == estimate_section.id %}selected{% endif %}>{{ pl.section.name }}</option>{% endfor %}
         </select>
         {% endif %}

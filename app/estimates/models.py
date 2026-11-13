@@ -1,8 +1,8 @@
-"""Модели сметы (ТЗ §16): стенды проекта и версии смет.
+"""Модели сметы (ТЗ §16): площадки проекта и версии смет.
 
-Проект делится на стенды/площадки (ProjectSection). У стенда — номер сметы
+Проект делится на площадки (ProjectSection). У площадки — номер сметы
 EST-YYYY-NNN и одна или несколько версий сметы (Estimate), ровно одна из них
-активна: только активная версия влияет на бронь, packing-лист и документы стенда
+активна: только активная версия влияет на бронь, packing-лист и документы площадки
 по умолчанию. Версии не удаляются; версию можно заморозить (только просмотр).
 
 В строках хранятся снимки данных модели на момент добавления (название, категория,
@@ -33,7 +33,7 @@ from app.database import Base, TimestampMixin
 
 
 class ProjectSection(Base, TimestampMixin):
-    """Стенд/площадка проекта: владеет номером сметы и её версиями."""
+    """Площадка проекта: владеет номером сметы и её версиями."""
 
     __tablename__ = "project_sections"
 
@@ -42,7 +42,7 @@ class ProjectSection(Base, TimestampMixin):
         ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    # Номер сметы стенда EST-YYYY-NNN (ТЗ §14); у версий — «{number}-vN».
+    # Номер сметы площадки EST-YYYY-NNN (ТЗ §14); у версий — «{number}-vN».
     number: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
@@ -58,12 +58,12 @@ class ProjectSection(Base, TimestampMixin):
 
 
 class Estimate(Base, TimestampMixin):
-    """Версия сметы стенда (ТЗ §16). Активна ровно одна версия на стенд."""
+    """Версия сметы площадки (ТЗ §16). Активна ровно одна версия на площадку."""
 
     __tablename__ = "estimates"
     __table_args__ = (
         UniqueConstraint("section_id", "version_no", name="uq_estimate_section_version"),
-        # Одна активная версия на стенд — частичный уникальный индекс (PG и SQLite).
+        # Одна активная версия на площадку — частичный уникальный индекс (PG и SQLite).
         Index(
             "uq_estimates_active_per_section",
             "section_id",
@@ -74,7 +74,7 @@ class Estimate(Base, TimestampMixin):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    # Денормализовано для выборок «все сметы проекта» (стенд тоже ссылается на проект).
+    # Денормализовано для выборок «все сметы проекта» (площадка тоже ссылается на проект).
     project_id: Mapped[int] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -125,7 +125,7 @@ class Estimate(Base, TimestampMixin):
 
     @property
     def display_number(self) -> str:
-        """«EST-2026-015 · v2» — номер сметы стенда и номер версии."""
+        """«EST-2026-015 · v2» — номер сметы площадки и номер версии."""
         return f"{self.section.number} · v{self.version_no}"
 
 

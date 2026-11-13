@@ -1,7 +1,7 @@
-"""Маршруты packing-листа стенда (ТЗ §17–§20).
+"""Маршруты packing-листа площадки (ТЗ §17–§20).
 
-Лист стенда: /projects/{pid}/sections/{sid}/packing. Обзор листов проекта —
-/projects/{pid}/packing (при одном стенде — сразу его лист).
+Лист площадки: /projects/{pid}/sections/{sid}/packing. Обзор листов проекта —
+/projects/{pid}/packing (при одной площадке — сразу её лист).
 """
 
 from __future__ import annotations
@@ -118,7 +118,7 @@ def packing_page(
 
     # Доступные экземпляры для ручного выбора серийных строк (ТЗ §17.7).
     available: dict[int, list[EquipmentItem]] = {}
-    # Занятые экземпляры — во всех листах проекта (один экземпляр — один стенд).
+    # Занятые экземпляры — во всех листах проекта (один экземпляр — одна площадка).
     assigned = service.project_used_item_ids(db, packing)
     for ln in packing.lines:
         if ln.is_serial and ln.model_id:
@@ -198,7 +198,7 @@ def packing_create(
             db,
             user,
             EventType.PACKING_CREATE,
-            f"Создан packing-лист {packing.number} для {project.number}, стенд «{section.name}»",
+            f"Создан packing-лист {packing.number} для {project.number}, площадка «{section.name}»",
             object_type="packing_list",
             object_id=packing.id,
         )
@@ -493,7 +493,7 @@ def line_serial_add(
             service.SerialResult.DUPLICATE: ("Экземпляр уже в листе.", "warning"),
             service.SerialResult.WRONG_MODEL: ("Штрих-код другой модели.", "danger"),
             service.SerialResult.IN_OTHER_PACKING: (
-                "Экземпляр уже в packing-листе другого стенда.",
+                "Экземпляр уже в packing-листе другой площадки.",
                 "danger",
             ),
             service.SerialResult.BLOCKED: ("Экземпляр в ремонте или списан.", "danger"),
@@ -609,7 +609,7 @@ _SCAN_MESSAGES = {
     service.SerialResult.OVER_PLAN: "Добавлено сверх плана",
     service.SerialResult.DUPLICATE: "Уже в листе",
     service.SerialResult.WRONG_MODEL: "Модели нет в packing-листе",
-    service.SerialResult.IN_OTHER_PACKING: "Уже в packing-листе другого стенда",
+    service.SerialResult.IN_OTHER_PACKING: "Уже в packing-листе другой площадки",
     service.SerialResult.BLOCKED: "Экземпляр в ремонте или списан",
     service.SerialResult.NOT_FOUND: "Штрих-код не найден",
     service.SerialResult.ACCESSORY_KIT_CONFIRMED: "Кейс подтверждён",
@@ -617,11 +617,11 @@ _SCAN_MESSAGES = {
 }
 
 def _scan_message(outcome) -> str:
-    """Текст результата скана; для листов других стендов — с названием стенда."""
+    """Текст результата скана; для листов других площадок — с названием площадки."""
     if outcome.result == service.SerialResult.IN_OTHER_PACKING and outcome.other_section:
-        return f"Уже в packing-листе стенда «{outcome.other_section}»"
+        return f"Уже в packing-листе площадки «{outcome.other_section}»"
     if outcome.result == service.SerialResult.WRONG_MODEL and outcome.other_section:
-        return f"Модели нет в этом листе (есть в листе стенда «{outcome.other_section}»)"
+        return f"Модели нет в этом листе (есть в листе площадки «{outcome.other_section}»)"
     return _SCAN_MESSAGES[outcome.result]
 
 
@@ -898,7 +898,7 @@ def packing_overview(
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    """Packing-листы стендов проекта; при одном стенде — сразу его лист."""
+    """Packing-листы площадок проекта; при одной площадке — сразу её лист."""
     project = get_project(db, project_id)
     if project is None:
         flash(request, "Проект не найден.", "danger")
@@ -916,7 +916,7 @@ def packing_overview(
             "page_title": "Packing-листы",
             "project": project,
             "summaries": service.section_summaries(db, project),
-            # Общий лист — когда листов стендов больше одного.
+            # Общий лист — когда листов площадок больше одного.
             "combined": combined.build(db, packings) if len(packings) > 1 else None,
             "editable": not project.is_archived,
         },

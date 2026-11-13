@@ -46,7 +46,7 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <div class="list-group mb-2">
             {% for section_name, items in board.pool_groups %}
-            {% if section_name %}<div class="list-group-item list-group-item-secondary py-1 small fw-semibold">Стенд: {{ section_name }} <span class="fw-normal">· {{ items|length }}</span></div>{% endif %}
+            {% if section_name %}<div class="list-group-item list-group-item-secondary py-1 small fw-semibold">Площадка: {{ section_name }} <span class="fw-normal">· {{ items|length }}</span></div>{% endif %}
             {% for item in items %}
             <label class="list-group-item d-flex align-items-center gap-2 mkl-drag-item" draggable="{{ 'true' if editable else 'false' }}"
                    data-line-id="{{ item.line.id }}" data-source="pool">
@@ -116,7 +116,7 @@
             {% if vb.assignments %}
             <div class="list-group">
               {% for section_name, rows in vb.groups %}
-              {% if section_name %}<div class="list-group-item list-group-item-secondary py-1 small fw-semibold">Стенд: {{ section_name }}</div>{% endif %}
+              {% if section_name %}<div class="list-group-item list-group-item-secondary py-1 small fw-semibold">Площадка: {{ section_name }}</div>{% endif %}
               {% for row in rows %}
               <div class="list-group-item d-flex align-items-center gap-2 mkl-drag-item" draggable="{{ 'true' if editable else 'false' }}"
                    data-line-id="{{ row.line.id }}" data-source="{{ vb.project_vehicle.id }}">

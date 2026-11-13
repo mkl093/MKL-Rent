@@ -1,4 +1,4 @@
-"""Транспорт и приёмка при нескольких стендах: группировка по стендам, слияние моделей."""
+"""Транспорт и приёмка при нескольких площадках: группировка по площадкам, слияние моделей."""
 
 import re
 from datetime import date
@@ -50,7 +50,7 @@ def _models(db):
 
 @pytest.fixture
 def env(db_session):
-    """Стенды A и B. A: микшер 2, колонка 2, складской комплект; B: микшер 1,
+    """Площадки A и B. A: микшер 2, колонка 2, складской комплект; B: микшер 1,
     колонка 1, дополнительная позиция. Отсканированы M1 (A) и M3 (B)."""
     db = db_session
     mixer, speaker = _models(db)
@@ -100,7 +100,7 @@ def test_board_pool_grouped_by_stand(env):
 def test_vehicle_rows_grouped_by_stand(env):
     db, project, pa, pb, mixer, speaker = env
     pv = _vehicle(db, project)
-    # Сначала строка стенда B, потом той же модели стенда A — в машине A идёт первым.
+    # Сначала строка площадки B, потом той же модели площадки A — в машине A идёт первым.
     transport_service.assign(db, project, pv, _line(pb, speaker), 1)
     transport_service.assign(db, project, pv, _line(pa, speaker), 2)
     vb = transport_service.board(db, project).vehicles[0]
@@ -118,15 +118,15 @@ def test_transport_pdf_has_stand_headers(env):
     pv = _vehicle(db, project)
     transport_service.assign(db, project, pv, _line(pb, speaker), 1)
     html, _ = builder.render_html(db, project, DocumentType.TRANSPORT, "ru")
-    assert f"Стенды: A ({pa.number}), B ({pb.number})" in html
-    assert "Стенд: B" in html  # подзаголовок в машине
-    assert "Стенд: A" in html  # подзаголовок в «Не распределено»
+    assert f"Площадки: A ({pa.number}), B ({pb.number})" in html
+    assert "Площадка: B" in html  # подзаголовок в машине
+    assert "Площадка: A" in html  # подзаголовок в «Не распределено»
 
 
 def test_single_stand_board_and_pdf_unchanged(db_session):
     db = db_session
     mixer, speaker = _models(db)
-    project = create_project(db, ProjectInput(name="Один стенд"))
+    project = create_project(db, ProjectInput(name="Один площадка"))
     est = est_service.get_or_create_estimate(db, project)
     est_service.add_model(db, est, project, speaker, 2)
     packing = packing_service.create_from_estimate(db, project)
@@ -136,7 +136,7 @@ def test_single_stand_board_and_pdf_unchanged(db_session):
     assert not board.multi_section and board.sections == []
     assert [name for name, _ in board.pool_groups] == [None]
     html, _ = builder.render_html(db, project, DocumentType.TRANSPORT, "ru")
-    assert "Стенд:" not in html and "Стенды:" not in html
+    assert "Площадка:" not in html and "Площадки:" not in html
 
     ret = returns_service.create_from_packing(db, project)
     assert [ln.section_label for ln in ret.lines] == [None]
@@ -197,8 +197,8 @@ def test_web_transport_and_returns_show_stands(auth_client, env):
     pv = _vehicle(db, project)
     transport_service.assign(db, project, pv, _line(pb, speaker), 1)
     board_page = auth_client.get(f"/projects/{project.id}/transport").text
-    assert "Стенд: A" in board_page and "Стенд: B" in board_page
+    assert "Площадка: A" in board_page and "Площадка: B" in board_page
 
     returns_service.create_from_packing(db, project)
     page = auth_client.get(f"/projects/{project.id}/returns").text
-    assert "Стенды: A: 2 · B: 1" in page
+    assert "Площадки: A: 2 · B: 1" in page

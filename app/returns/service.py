@@ -66,8 +66,8 @@ def project_has_return(db: Session, project_id: int) -> bool:
 
 
 def _section_label(line: combined.CombinedLine) -> str:
-    """«A: 4 · B: 2» — сколько выдано по стендам (стенды без факта не упоминаются);
-    имя стенда — для комплекта, кабелярки и дополнительной позиции."""
+    """«A: 4 · B: 2» — сколько выдано по площадкам (площадки без факта не упоминаются);
+    имя площадки — для комплекта, кабелярки и дополнительной позиции."""
     if not line.merged:
         return line.by_section[0].section_name
     return " · ".join(f"{s.section_name}: {s.fact}" for s in line.by_section if s.fact > 0)
@@ -91,9 +91,9 @@ def create_from_packing(db: Session, project: Project) -> ReturnList:
     db.add(ret)
     db.flush()
 
-    # Приёмка одна на проект: оборудование всех стендов возвращается вместе.
+    # Приёмка одна на проект: оборудование всех площадок возвращается вместе.
     # При нескольких листах одинаковые модели — одной строкой (склад считает
-    # возврат одной цифрой), распределение по стендам — справочной меткой.
+    # возврат одной цифрой), распределение по площадкам — справочной меткой.
     packings = list_packings(db, project)
     if len(packings) > 1:
         lines = combined.combine_lines(packings)

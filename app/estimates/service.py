@@ -1,6 +1,6 @@
 """Бизнес-логика версии сметы: строки, итоги, синхронизация брони (ТЗ §16, §15).
 
-Стенды и версии (создание, активация, заморозка) — в app.estimates.versions.
+Площадки и версии (создание, активация, заморозка) — в app.estimates.versions.
 Все мутации версии проходят через ensure_editable: замороженную версию изменить
 нельзя ни через какой маршрут.
 """
@@ -38,10 +38,10 @@ def ensure_editable(estimate: Estimate) -> None:
 
 
 def get_estimate(db: Session, project: Project) -> Estimate | None:
-    """Активная версия сметы первого стенда проекта (или None, если стендов нет).
+    """Активная версия сметы первой площадки проекта (или None, если площадок нет).
 
-    Удобно для проектов с одним стендом (и обратной совместимости). Для работы с
-    конкретным стендом/версией — app.estimates.versions.
+    Удобно для проектов с одной площадкой (и обратной совместимости). Для работы с
+    конкретной площадкой/версией — app.estimates.versions.
     """
     stmt = (
         select(Estimate)
@@ -55,7 +55,7 @@ def get_estimate(db: Session, project: Project) -> Estimate | None:
 
 
 def get_or_create_estimate(db: Session, project: Project) -> Estimate:
-    """Активная версия первого стенда; пустой проект получает «Основной стенд»."""
+    """Активная версия первой площадки; пустой проект получает «Основную площадку»."""
     estimate = get_estimate(db, project)
     if estimate is not None:
         return estimate
@@ -77,7 +77,7 @@ def get_project_estimate(db: Session, project: Project, estimate_id: int) -> Est
 
 
 def active_versions(db: Session, project: Project) -> list[Estimate]:
-    """Активные версии всех стендов проекта (в порядке стендов)."""
+    """Активные версии всех площадок проекта (в порядке площадок)."""
     stmt = (
         select(Estimate)
         .join(ProjectSection, ProjectSection.id == Estimate.section_id)
@@ -154,8 +154,8 @@ def add_accessory_kit_line(
     Содержимое в смете не показывается (см. app.accessory_kits). Комплект
     аксессуаров существует в одном экземпляре проекта, количество всегда 1;
     цена — редактируемый снимок (по умолчанию 0), как и у складского Комплекта.
-    Кейс физически едет на один стенд: в смету другого стенда его добавить нельзя
-    (в другие версии своего стенда — можно).
+    Кейс физически едет на одну площадку: в смету другой площадки его добавить нельзя
+    (в другие версии своей площадки — можно).
     """
     ensure_editable(estimate)
     if any(ln.accessory_kit_id == kit.id for ln in estimate.lines):
@@ -163,7 +163,7 @@ def add_accessory_kit_line(
     owner = _owner_section_elsewhere(db, estimate, accessory_kit_id=kit.id)
     if owner is not None:
         raise EstimateError(
-            f"Комплект аксессуаров «{kit.name}» уже в смете стенда «{owner.name}»"
+            f"Комплект аксессуаров «{kit.name}» уже в смете площадки «{owner.name}»"
         )
     line = EstimateLine(
         estimate_id=estimate.id,
@@ -188,15 +188,15 @@ def add_kit_line(
 
     Комплект существует в одном экземпляре, поэтому количество всегда 1 и повторно
     один и тот же комплект не добавляется. Цена — редактируемый снимок (по умолчанию 0).
-    Комплект принадлежит одному стенду: в смету другого стенда его добавить нельзя
-    (в другие версии своего стенда — можно).
+    Комплект принадлежит одной площадке: в смету другой площадки его добавить нельзя
+    (в другие версии своей площадки — можно).
     """
     ensure_editable(estimate)
     if any(ln.kit_id == kit.id for ln in estimate.lines):
         return None
     owner = _owner_section_elsewhere(db, estimate, kit_id=kit.id)
     if owner is not None:
-        raise EstimateError(f"Комплект «{kit.name}» уже в смете стенда «{owner.name}»")
+        raise EstimateError(f"Комплект «{kit.name}» уже в смете площадки «{owner.name}»")
     line = EstimateLine(
         estimate_id=estimate.id,
         model_id=None,
@@ -403,7 +403,7 @@ def _owner_section_elsewhere(
     kit_id: int | None = None,
     accessory_kit_id: int | None = None,
 ) -> ProjectSection | None:
-    """Стенд проекта (кроме стенда этой версии), в смете которого уже есть комплект."""
+    """Площадка проекта (кроме площадки этой версии), в смете которой уже есть комплект."""
     stmt = (
         select(ProjectSection)
         .join(Estimate, Estimate.section_id == ProjectSection.id)
@@ -457,7 +457,7 @@ def wanted_reservations(
 
 
 def sync_reservations(db: Session, project: Project) -> None:
-    """Синхронизировать бронь проекта с АКТИВНЫМИ версиями смет всех стендов (ТЗ §15).
+    """Синхронизировать бронь проекта с АКТИВНЫМИ версиями смет всех площадок (ТЗ §15).
 
     Неактивные версии на бронь не влияют. Бронь влияет на доступность только когда
     проект «Забронирован», поэтому синхронизировать можно всегда.

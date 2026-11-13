@@ -1,4 +1,4 @@
-"""Веб-маршруты стендов и версий смет."""
+"""Веб-маршруты площадок и версий смет."""
 
 import re
 from decimal import Decimal
@@ -85,19 +85,19 @@ def _add_model(client, url, model, qty):
 
 
 def test_sections_on_project_page_and_legacy_redirect(auth_client, db_session, model, pid):
-    a_url = _create_section(auth_client, pid, "Стенд A")
+    a_url = _create_section(auth_client, pid, "Площадка A")
     assert a_url.endswith("/estimate/v/1")
-    # Один стенд — /estimate ведёт прямо в смету.
+    # Один площадка — /estimate ведёт прямо в смету.
     assert auth_client.get(f"/projects/{pid}/estimate").url.path == a_url
 
-    b_url = _create_section(auth_client, pid, "Стенд B")
+    b_url = _create_section(auth_client, pid, "Площадка B")
     _add_model(auth_client, a_url, model, 3)
     _add_model(auth_client, b_url, model, 2)
 
     page = auth_client.get(f"/projects/{pid}").text
-    assert "Стенд A" in page and "Стенд B" in page
+    assert "Площадка A" in page and "Площадка B" in page
     assert "Всего по проекту" in page
-    # Несколько стендов — /estimate ведёт на карточку проекта.
+    # Несколько площадок — /estimate ведёт на карточку проекта.
     resp = auth_client.get(f"/projects/{pid}/estimate", follow_redirects=False)
     assert resp.headers["location"] == f"/projects/{pid}#sections"
 
@@ -107,7 +107,7 @@ def test_sections_on_project_page_and_legacy_redirect(auth_client, db_session, m
 
 
 def test_version_create_activate_lock_flow(auth_client, db_session, model, pid):
-    v1_url = _create_section(auth_client, pid, "Стенд A")
+    v1_url = _create_section(auth_client, pid, "Площадка A")
     _add_model(auth_client, v1_url, model, 3)
     section_url = v1_url.rsplit("/estimate/", 1)[0]
 
@@ -196,7 +196,7 @@ def test_generate_pdf_of_version(auth_client, db_session, model, pid, tmp_path, 
     monkeypatch.setattr(builder, "_html_to_pdf", lambda html: b"%PDF-1.4 test")
     monkeypatch.setattr(builder, "_storage_dir", lambda project_id: tmp_path)
 
-    v1_url = _create_section(auth_client, pid, "Стенд A")
+    v1_url = _create_section(auth_client, pid, "Площадка A")
     _add_model(auth_client, v1_url, model, 1)
     estimate = db_session.query(Estimate).filter_by(project_id=pid).one()
 
@@ -216,7 +216,7 @@ def test_generate_pdf_of_version(auth_client, db_session, model, pid, tmp_path, 
     assert (tmp_path / f"estimate_{estimate.id}_en.pdf").exists()
 
     docs = auth_client.get(f"/projects/{pid}/documents").text
-    assert "Стенд A" in docs
+    assert "Площадка A" in docs
     assert f"/documents/estimate/{estimate.id}/en/view" in docs
 
     # «back» вне проекта игнорируется
