@@ -1,4 +1,9 @@
-"""Бизнес-логика сметы: строки, итоги, синхронизация брони (ТЗ §16, §15)."""
+"""Бизнес-логика версии сметы: строки, итоги, синхронизация брони (ТЗ §16, §15).
+
+Стенды и версии (создание, активация, заморозка) — в app.estimates.versions.
+Все мутации версии проходят через ensure_editable: замороженную версию изменить
+нельзя ни через какой маршрут.
+"""
 
 from __future__ import annotations
 
@@ -9,13 +14,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.accessory_kits.models import AccessoryKit, AccessoryKitLine
-from app.database import utcnow
-from app.estimates.models import Estimate, EstimateLine
+from app.estimates.models import Estimate, EstimateLine, ProjectSection
 from app.estimates.schemas import CustomLineInput, LineUpdate
 from app.estimates.totals import EstimateTotals, compute_totals
 from app.inventory.models import EquipmentModel, Kit
-from app.numbering.models import DocType
-from app.numbering.service import next_number
 from app.projects.models import Project, ProjectReservation
 
 
@@ -23,37 +25,67 @@ class EstimateError(Exception):
     """Ошибка домена сметы."""
 
 
-def _current_year() -> int:
-    from app.utils.timezone import to_local
+class EstimateLocked(EstimateError):
+    """Версия сметы заморожена — изменения запрещены."""
 
-    return to_local(utcnow()).year
+
+def ensure_editable(estimate: Estimate) -> None:
+    """Проверка перед любой мутацией версии сметы (строки, скидка, коэффициент…)."""
+    if estimate.is_locked:
+        raise EstimateLocked(
+            f"Версия {estimate.display_number} заморожена — изменения запрещены"
+        )
 
 
 def get_estimate(db: Session, project: Project) -> Estimate | None:
+    """Активная версия сметы первого стенда проекта (или None, если стендов нет).
+
+    Удобно для проектов с одним стендом (и обратной совместимости). Для работы с
+    конкретным стендом/версией — app.estimates.versions.
+    """
     stmt = (
         select(Estimate)
+        .join(ProjectSection, ProjectSection.id == Estimate.section_id)
         .options(selectinload(Estimate.lines))
-        .where(Estimate.project_id == project.id)
+        .where(Estimate.project_id == project.id, Estimate.is_active.is_(True))
+        .order_by(ProjectSection.sort_order, ProjectSection.id)
+        .limit(1)
     )
-    return db.execute(stmt).scalar_one_or_none()
+    return db.execute(stmt).scalars().first()
 
 
 def get_or_create_estimate(db: Session, project: Project) -> Estimate:
-    """Смета проекта (создаётся при первом обращении) с номером EST-YYYY-NNN (ТЗ §14)."""
+    """Активная версия первого стенда; пустой проект получает «Основной стенд»."""
     estimate = get_estimate(db, project)
     if estimate is not None:
         return estimate
-    estimate = Estimate(
-        project_id=project.id,
-        number=next_number(db, DocType.ESTIMATE, _current_year()),
-        discount_percent=Decimal("0"),
-        rental_coefficient=project.rental_coefficient,
-        hide_prices=False,
-    )
-    db.add(estimate)
-    db.commit()
-    db.refresh(estimate)
+    from app.estimates import versions
+
+    versions.ensure_default_section(db, project)
+    estimate = get_estimate(db, project)
+    assert estimate is not None
     return estimate
+
+
+def get_project_estimate(db: Session, project: Project, estimate_id: int) -> Estimate | None:
+    """Версия сметы по id с проверкой принадлежности проекту."""
+    return db.execute(
+        select(Estimate)
+        .options(selectinload(Estimate.lines))
+        .where(Estimate.id == estimate_id, Estimate.project_id == project.id)
+    ).scalar_one_or_none()
+
+
+def active_versions(db: Session, project: Project) -> list[Estimate]:
+    """Активные версии всех стендов проекта (в порядке стендов)."""
+    stmt = (
+        select(Estimate)
+        .join(ProjectSection, ProjectSection.id == Estimate.section_id)
+        .options(selectinload(Estimate.lines))
+        .where(Estimate.project_id == project.id, Estimate.is_active.is_(True))
+        .order_by(ProjectSection.sort_order, ProjectSection.id)
+    )
+    return list(db.execute(stmt).scalars().all())
 
 
 def _next_sort_order(estimate: Estimate) -> int:
@@ -74,18 +106,19 @@ def add_model(
     merge: bool = True,
     discount_percent: Decimal = Decimal("0"),
 ) -> EstimateLine:
-    """Добавить складскую модель в смету.
+    """Добавить складскую модель в версию сметы.
 
     При merge=True и наличии строки той же модели — увеличить количество,
     иначе создать отдельную строку (ТЗ §16.2). Цена и коэффициент берутся из
-    модели и проекта как снимок и далее редактируются в смете (ТЗ §16.3).
+    модели и сметы как снимок и далее редактируются в смете (ТЗ §16.3).
     """
+    ensure_editable(estimate)
     if merge:
         for line in estimate.lines:
             if not line.is_custom and line.model_id == model.id:
                 line.quantity += quantity
                 db.commit()
-                sync_reservations(db, project, estimate)
+                sync_reservations(db, project)
                 return line
 
     line = EstimateLine(
@@ -105,7 +138,7 @@ def add_model(
     estimate.lines.append(line)
     db.commit()
     db.refresh(estimate)
-    sync_reservations(db, project, estimate)
+    sync_reservations(db, project)
     return line
 
 
@@ -121,9 +154,17 @@ def add_accessory_kit_line(
     Содержимое в смете не показывается (см. app.accessory_kits). Комплект
     аксессуаров существует в одном экземпляре проекта, количество всегда 1;
     цена — редактируемый снимок (по умолчанию 0), как и у складского Комплекта.
+    Кейс физически едет на один стенд: в смету другого стенда его добавить нельзя
+    (в другие версии своего стенда — можно).
     """
+    ensure_editable(estimate)
     if any(ln.accessory_kit_id == kit.id for ln in estimate.lines):
         return None
+    owner = _owner_section_elsewhere(db, estimate, accessory_kit_id=kit.id)
+    if owner is not None:
+        raise EstimateError(
+            f"Комплект аксессуаров «{kit.name}» уже в смете стенда «{owner.name}»"
+        )
     line = EstimateLine(
         estimate_id=estimate.id,
         accessory_kit_id=kit.id,
@@ -147,9 +188,15 @@ def add_kit_line(
 
     Комплект существует в одном экземпляре, поэтому количество всегда 1 и повторно
     один и тот же комплект не добавляется. Цена — редактируемый снимок (по умолчанию 0).
+    Комплект принадлежит одному стенду: в смету другого стенда его добавить нельзя
+    (в другие версии своего стенда — можно).
     """
+    ensure_editable(estimate)
     if any(ln.kit_id == kit.id for ln in estimate.lines):
         return None
+    owner = _owner_section_elsewhere(db, estimate, kit_id=kit.id)
+    if owner is not None:
+        raise EstimateError(f"Комплект «{kit.name}» уже в смете стенда «{owner.name}»")
     line = EstimateLine(
         estimate_id=estimate.id,
         model_id=None,
@@ -168,7 +215,7 @@ def add_kit_line(
     estimate.lines.append(line)
     db.commit()
     db.refresh(estimate)
-    sync_reservations(db, project, estimate)
+    sync_reservations(db, project)
     return line
 
 
@@ -176,6 +223,7 @@ def add_custom_line(
     db: Session, estimate: Estimate, project: Project, data: CustomLineInput
 ) -> EstimateLine:
     """Добавить произвольную строку (ТЗ §16.5): только стоимость/PDF, без брони."""
+    ensure_editable(estimate)
     line = EstimateLine(
         estimate_id=estimate.id,
         model_id=None,
@@ -200,6 +248,7 @@ def add_custom_line(
 
 
 def update_line(db: Session, line: EstimateLine, data: LineUpdate) -> EstimateLine:
+    ensure_editable(line.estimate)
     # Комплект — одна бронируемая позиция: количество всегда 1 («Комплект»).
     line.quantity = 1 if line.is_kit else data.quantity
     line.unit_price = data.unit_price
@@ -215,12 +264,14 @@ def update_line(db: Session, line: EstimateLine, data: LineUpdate) -> EstimateLi
 
 
 def delete_line(db: Session, line: EstimateLine) -> None:
+    ensure_editable(line.estimate)
     db.delete(line)
     db.commit()
 
 
 def move_line(db: Session, estimate: Estimate, line: EstimateLine, direction: int) -> None:
     """Переместить строку вверх/вниз в пределах своей категории (ТЗ §16.6)."""
+    ensure_editable(estimate)
     same_group = [
         ln
         for ln in estimate.lines
@@ -236,6 +287,7 @@ def move_line(db: Session, estimate: Estimate, line: EstimateLine, direction: in
 
 
 def set_discount(db: Session, estimate: Estimate, percent: Decimal) -> None:
+    ensure_editable(estimate)
     estimate.discount_percent = max(Decimal("0"), min(Decimal("100"), percent))
     db.commit()
 
@@ -246,6 +298,7 @@ def set_coefficient(db: Session, estimate: Estimate, value: Decimal) -> int:
     Строки с coefficient_custom=True (коэффициент строки задан вручную) не
     трогаются. Возвращает число строк, у которых коэффициент изменился.
     """
+    ensure_editable(estimate)
     if value <= 0:
         raise EstimateError("Коэффициент сметы должен быть больше нуля")
     estimate.rental_coefficient = value
@@ -260,6 +313,7 @@ def set_coefficient(db: Session, estimate: Estimate, value: Decimal) -> int:
 
 def reset_line_coefficient(db: Session, line: EstimateLine) -> None:
     """Вернуть строке коэффициент сметы (снять ручную корректировку)."""
+    ensure_editable(line.estimate)
     line.coefficient = line.estimate.rental_coefficient
     line.coefficient_custom = False
     db.commit()
@@ -267,6 +321,7 @@ def reset_line_coefficient(db: Session, line: EstimateLine) -> None:
 
 def set_hide_prices(db: Session, estimate: Estimate, hide: bool) -> None:
     """«Скрыть стоимость оборудования» — влияет только на документы, не на редактор."""
+    ensure_editable(estimate)
     estimate.hide_prices = hide
     db.commit()
 
@@ -341,25 +396,51 @@ def grouped_lines(
     return [g for _, g in sorted(groups.items(), key=_order)]
 
 
-def sync_reservations(db: Session, project: Project, estimate: Estimate) -> None:
-    """Синхронизировать бронь проекта со складскими строками сметы (ТЗ §15).
+def _owner_section_elsewhere(
+    db: Session,
+    estimate: Estimate,
+    *,
+    kit_id: int | None = None,
+    accessory_kit_id: int | None = None,
+) -> ProjectSection | None:
+    """Стенд проекта (кроме стенда этой версии), в смете которого уже есть комплект."""
+    stmt = (
+        select(ProjectSection)
+        .join(Estimate, Estimate.section_id == ProjectSection.id)
+        .join(EstimateLine, EstimateLine.estimate_id == Estimate.id)
+        .where(
+            Estimate.project_id == estimate.project_id,
+            Estimate.section_id != estimate.section_id,
+        )
+        .limit(1)
+    )
+    if kit_id is not None:
+        stmt = stmt.where(EstimateLine.kit_id == kit_id)
+    else:
+        stmt = stmt.where(EstimateLine.accessory_kit_id == accessory_kit_id)
+    return db.execute(stmt).scalars().first()
 
-    Бронь модели = сумма количеств по модели среди складских строк сметы плюс
-    содержимое всех комплектов аксессуаров проекта, взятое со склада (кабели/
-    коннекторы физически уезжают с проектом, даже если в смете это одна строка
-    «Комплект аксессуаров» без раскрытия состава — см. app.accessory_kits).
-    Бронь комплекта («Комплект») = 1 за каждую строку-комплект. Влияет на доступность
-    только когда проект «Забронирован», поэтому синхронизировать можно всегда.
+
+def wanted_reservations(
+    db: Session, project: Project, versions: list[Estimate]
+) -> tuple[dict[int, int], set[int]]:
+    """Бронь, которую дают версии смет: {model_id: qty} и множество kit_id.
+
+    Модели — сумма количеств складских строк версий плюс содержимое всех
+    комплектов аксессуаров проекта, взятое со склада (кабели/коннекторы физически
+    уезжают с проектом, даже если в смете это одна строка «Комплект аксессуаров»
+    без раскрытия состава — см. app.accessory_kits). Комплекты — 1 за строку-комплект.
     """
     wanted_models: dict[int, int] = {}
     wanted_kits: set[int] = set()
-    for line in estimate.lines:
-        if line.is_custom:
-            continue
-        if line.kit_id is not None:
-            wanted_kits.add(line.kit_id)
-        elif line.model_id is not None:
-            wanted_models[line.model_id] = wanted_models.get(line.model_id, 0) + line.quantity
+    for estimate in versions:
+        for line in estimate.lines:
+            if line.is_custom:
+                continue
+            if line.kit_id is not None:
+                wanted_kits.add(line.kit_id)
+            elif line.model_id is not None:
+                wanted_models[line.model_id] = wanted_models.get(line.model_id, 0) + line.quantity
 
     accessory_lines = (
         db.execute(
@@ -372,6 +453,16 @@ def sync_reservations(db: Session, project: Project, estimate: Estimate) -> None
     )
     for aline in accessory_lines:
         wanted_models[aline.model_id] = wanted_models.get(aline.model_id, 0) + aline.quantity
+    return wanted_models, wanted_kits
+
+
+def sync_reservations(db: Session, project: Project) -> None:
+    """Синхронизировать бронь проекта с АКТИВНЫМИ версиями смет всех стендов (ТЗ §15).
+
+    Неактивные версии на бронь не влияют. Бронь влияет на доступность только когда
+    проект «Забронирован», поэтому синхронизировать можно всегда.
+    """
+    wanted_models, wanted_kits = wanted_reservations(db, project, active_versions(db, project))
 
     reservations = (
         db.execute(select(ProjectReservation).where(ProjectReservation.project_id == project.id))
@@ -399,39 +490,23 @@ def sync_reservations(db: Session, project: Project, estimate: Estimate) -> None
     db.commit()
 
 
-def copy_estimate(db: Session, source: Project, target: Project) -> Estimate:
-    """Скопировать смету при копировании проекта (ТЗ §13.8)."""
-    src = get_estimate(db, source)
-    dst = get_or_create_estimate(db, target)
-    if src is None:
-        return dst
-    dst.discount_percent = src.discount_percent
-    dst.rental_coefficient = src.rental_coefficient
-    dst.hide_prices = src.hide_prices
-    for line in sorted(src.lines, key=lambda ln: (ln.sort_order, ln.id)):
-        if line.is_accessory_kit:
-            # Комплект аксессуаров — проектный (app.accessory_kits), в копию проекта
-            # не переносится; без accessory_kit_id строка стала бы «пустышкой».
-            continue
-        dst.lines.append(
-            EstimateLine(
-                model_id=line.model_id,
-                kit_id=line.kit_id,
-                is_custom=line.is_custom,
-                add_to_packing=line.add_to_packing,
-                name=line.name,
-                category_id=line.category_id,
-                category_name=line.category_name,
-                manufacturer=line.manufacturer,
-                quantity=line.quantity,
-                unit_price=line.unit_price,
-                coefficient=line.coefficient,
-                coefficient_custom=line.coefficient_custom,
-                discount_percent=line.discount_percent,
-                comment=line.comment,
-                sort_order=line.sort_order,
-            )
-        )
-    db.commit()
-    sync_reservations(db, target, dst)
-    return dst
+def copy_line(line: EstimateLine) -> EstimateLine:
+    """Копия строки сметы (для новой версии/копии проекта) — без привязки к смете."""
+    return EstimateLine(
+        model_id=line.model_id,
+        kit_id=line.kit_id,
+        accessory_kit_id=line.accessory_kit_id,
+        is_custom=line.is_custom,
+        add_to_packing=line.add_to_packing,
+        name=line.name,
+        category_id=line.category_id,
+        category_name=line.category_name,
+        manufacturer=line.manufacturer,
+        quantity=line.quantity,
+        unit_price=line.unit_price,
+        coefficient=line.coefficient,
+        coefficient_custom=line.coefficient_custom,
+        discount_percent=line.discount_percent,
+        comment=line.comment,
+        sort_order=line.sort_order,
+    )

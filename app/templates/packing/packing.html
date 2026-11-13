@@ -47,6 +47,9 @@
 </div>
 {% endif %}
 
+{% if multi_section %}
+<div class="small text-secondary mb-3">В проекте несколько стендов: план packing-листа — сумма активных версий смет всех стендов. Обновление смет по факту packing-листа появится с packing-листами по стендам.</div>
+{% endif %}
 {% if estimate_sync_items %}
 <div class="alert alert-info d-flex flex-wrap justify-content-between align-items-center gap-2">
   <div>Факт packing-листа расходится со сметой ({{ estimate_sync_items|length }} поз.).

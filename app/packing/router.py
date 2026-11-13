@@ -15,7 +15,8 @@ from app.audit.service import log as audit_log
 from app.auth.models import User
 from app.database import get_db
 from app.dependencies import redirect, render, require_login, verify_csrf
-from app.estimates.service import get_estimate
+from app.estimates import versions as estimate_versions
+from app.estimates.service import EstimateLocked
 from app.inventory.enums import AccountingType, ItemStatus
 from app.inventory.models import EquipmentItem
 from app.inventory.services import categories as cat_service
@@ -145,6 +146,8 @@ def packing_page(
                 ln for ln in service.sync_removals(db, project, packing) if ln.fact_quantity > 0
             ],
             "estimate_sync_items": service.estimate_discrepancies(db, project, packing),
+            # Обратная синхронизация доступна только при одном стенде (см. сервис).
+            "multi_section": len(estimate_versions.list_sections(db, project)) > 1,
             "undercomplete": service.is_undercomplete(packing),
             "editable": editable,
             "PackingStatus": PackingStatus,
@@ -229,17 +232,21 @@ async def packing_estimate_sync(
     if not selected_keys:
         flash(request, "Не отмечено ни одной позиции для переноса в смету.", "warning")
         return redirect(f"/projects/{project_id}/packing")
-    items = service.apply_estimate_sync(db, project, packing, selected_keys)
-    if items:
-        estimate = get_estimate(db, project)
+    estimate = service.single_section_estimate(db, project)
+    try:
+        items = service.apply_estimate_sync(db, project, packing, selected_keys)
+    except EstimateLocked as exc:
+        flash(request, f"{exc}. Разморозьте её или сделайте активной другую версию.", "danger")
+        return redirect(f"/projects/{project_id}/packing")
+    if items and estimate is not None:
         audit_log(
             db,
             user,
             EventType.ESTIMATE_CHANGE,
-            f"Смета {estimate.number if estimate else project.number}: количества обновлены"
+            f"Смета {estimate.display_number}: количества обновлены"
             f" по факту packing-листа {packing.number} — позиций {len(items)}",
             object_type="estimate",
-            object_id=estimate.id if estimate else None,
+            object_id=estimate.id,
         )
         flash(request, f"Смета обновлена по факту packing-листа: позиций {len(items)}.", "success")
     else:

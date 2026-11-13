@@ -6,15 +6,16 @@ import enum
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.accessory_kits import service as accessory_kit_service
 from app.accessory_kits.models import AccessoryKit
-from app.estimates.models import EstimateLine
+from app.estimates.models import Estimate, EstimateLine, ProjectSection
+from app.estimates.service import active_versions
 from app.estimates.service import add_model as estimate_add_model
-from app.estimates.service import get_estimate
+from app.estimates.service import ensure_editable as estimate_ensure_editable
 from app.estimates.service import sync_reservations as estimate_sync_reservations
 from app.inventory.enums import AccountingType
 from app.inventory.models import EquipmentItem, EquipmentModel, Kit
@@ -74,44 +75,65 @@ KIT_GROUP_NAME = "Комплекты"
 ACCESSORY_KIT_GROUP_NAME = "Комплекты аксессуаров"
 
 
-def _estimate_warehouse_quantities(db: Session, project: Project) -> dict[int, int]:
-    """Складские модели сметы, агрегированные по модели (ТЗ §17.1)."""
-    estimate = get_estimate(db, project)
+# Packing-лист проекта (пока один на проект) строится по сумме АКТИВНЫХ версий
+# смет всех стендов. versions=None — текущие активные версии; явный список
+# передаётся для предпросмотра активации другой версии (estimates.versions).
+
+
+def _versions(db: Session, project: Project, versions: list[Estimate] | None) -> list[Estimate]:
+    return active_versions(db, project) if versions is None else versions
+
+
+def _estimate_warehouse_quantities(
+    db: Session, project: Project, versions: list[Estimate] | None = None
+) -> dict[int, int]:
+    """Складские модели активных смет, агрегированные по модели (ТЗ §17.1)."""
     result: dict[int, int] = {}
-    if estimate is None:
-        return result
-    for line in estimate.lines:
-        if not line.is_custom and line.model_id is not None:
-            result[line.model_id] = result.get(line.model_id, 0) + line.quantity
+    for estimate in _versions(db, project, versions):
+        for line in estimate.lines:
+            if not line.is_custom and line.model_id is not None:
+                result[line.model_id] = result.get(line.model_id, 0) + line.quantity
     return result
 
 
-def _estimate_kit_ids(db: Session, project: Project) -> list[int]:
-    """Комплекты, добавленные в смету (структура «Комплект»)."""
-    estimate = get_estimate(db, project)
-    if estimate is None:
-        return []
-    return [line.kit_id for line in estimate.lines if line.kit_id is not None]
+def _estimate_kit_ids(
+    db: Session, project: Project, versions: list[Estimate] | None = None
+) -> list[int]:
+    """Комплекты, добавленные в активные сметы (структура «Комплект»)."""
+    return [
+        line.kit_id
+        for estimate in _versions(db, project, versions)
+        for line in estimate.lines
+        if line.kit_id is not None
+    ]
 
 
-def _estimate_accessory_kit_ids(db: Session, project: Project) -> list[int]:
-    """Комплекты аксессуаров, добавленные в смету (см. app.accessory_kits)."""
-    estimate = get_estimate(db, project)
-    if estimate is None:
-        return []
-    return [line.accessory_kit_id for line in estimate.lines if line.accessory_kit_id is not None]
+def _estimate_accessory_kit_ids(
+    db: Session, project: Project, versions: list[Estimate] | None = None
+) -> list[int]:
+    """Комплекты аксессуаров, добавленные в активные сметы (см. app.accessory_kits)."""
+    return [
+        line.accessory_kit_id
+        for estimate in _versions(db, project, versions)
+        for line in estimate.lines
+        if line.accessory_kit_id is not None
+    ]
 
 
-def _estimate_custom_lines(db: Session, project: Project) -> list[EstimateLine]:
-    """Произвольные строки сметы, переносимые в packing-лист (ТЗ §16.5, §17.9).
+def _estimate_custom_lines(
+    db: Session, project: Project, versions: list[Estimate] | None = None
+) -> list[EstimateLine]:
+    """Произвольные строки активных смет, переносимые в packing-лист (ТЗ §16.5, §17.9).
 
     Строка с отключённым чекбоксом «Не добавлять в паккинг лист» (add_to_packing=False)
     в переносе не участвует.
     """
-    estimate = get_estimate(db, project)
-    if estimate is None:
-        return []
-    return [ln for ln in estimate.lines if ln.is_custom and ln.add_to_packing]
+    return [
+        ln
+        for estimate in _versions(db, project, versions)
+        for ln in estimate.lines
+        if ln.is_custom and ln.add_to_packing
+    ]
 
 
 def _new_line_from_kit(kit: Kit, sort_order: int) -> PackingLine:
@@ -284,6 +306,7 @@ def _new_line_from_estimate_custom(est_line: EstimateLine, sort_order: int) -> P
     return PackingLine(
         model_id=None,
         estimate_line_id=est_line.id,
+        from_estimate=True,
         is_custom=True,
         is_serial=False,
         is_manual=False,
@@ -361,9 +384,20 @@ class Discrepancy:
     is_custom: bool = False
 
 
-def discrepancies(db: Session, project: Project, packing: PackingList) -> list[Discrepancy]:
-    """Расхождения плана packing-листа с текущей сметой (ТЗ §17.2)."""
-    estimate_qty = _estimate_warehouse_quantities(db, project)
+def discrepancies(
+    db: Session,
+    project: Project,
+    packing: PackingList,
+    *,
+    versions: list[Estimate] | None = None,
+) -> list[Discrepancy]:
+    """Расхождения плана packing-листа с активными сметами (ТЗ §17.2).
+
+    ``versions`` — явный набор версий смет (предпросмотр активации другой версии).
+    """
+    if versions is None:
+        versions = active_versions(db, project)
+    estimate_qty = _estimate_warehouse_quantities(db, project, versions)
     by_model = {ln.model_id: ln for ln in packing.lines if not ln.is_custom and ln.model_id}
     result: list[Discrepancy] = []
     for model_id, est_qty in estimate_qty.items():
@@ -377,7 +411,7 @@ def discrepancies(db: Session, project: Project, packing: PackingList) -> list[D
             result.append(Discrepancy(model_id, line.name, 0, line.planned_quantity))
 
     # Комплекты: расхождение состава сметы и packing-листа («Комплект»).
-    est_kits = set(_estimate_kit_ids(db, project))
+    est_kits = set(_estimate_kit_ids(db, project, versions))
     packing_kits = {ln.kit_id: ln for ln in packing.lines if ln.kit_id is not None}
     for kit_id in est_kits:
         if kit_id not in packing_kits:
@@ -389,7 +423,7 @@ def discrepancies(db: Session, project: Project, packing: PackingList) -> list[D
             result.append(Discrepancy(None, line.name, 0, 1, is_kit=True))
 
     # Комплекты аксессуаров: расхождение состава сметы и packing-листа.
-    est_accessory_kits = set(_estimate_accessory_kit_ids(db, project))
+    est_accessory_kits = set(_estimate_accessory_kit_ids(db, project, versions))
     packing_accessory_kits = {
         ln.accessory_kit_id: ln for ln in packing.lines if ln.accessory_kit_id is not None
     }
@@ -403,7 +437,7 @@ def discrepancies(db: Session, project: Project, packing: PackingList) -> list[D
             result.append(Discrepancy(None, line.name, 0, 1, is_kit=True))
 
     # Произвольные строки сметы — перенос/обновление/удаление в packing (ТЗ §17.9).
-    custom_lines = _estimate_custom_lines(db, project)
+    custom_lines = _estimate_custom_lines(db, project, versions)
     custom_by_est_id = {
         ln.estimate_line_id: ln
         for ln in packing.lines
@@ -417,10 +451,22 @@ def discrepancies(db: Session, project: Project, packing: PackingList) -> list[D
             result.append(
                 Discrepancy(None, est_line.name, est_line.quantity, planned, is_custom=True)
             )
-    for est_id, line in custom_by_est_id.items():
-        if est_id not in current_est_ids:
+    for line in packing.lines:
+        if _is_orphan_custom(line, current_est_ids):
             result.append(Discrepancy(None, line.name, 0, line.planned_quantity, is_custom=True))
     return result
+
+
+def _is_orphan_custom(line: PackingLine, current_est_ids: set[int]) -> bool:
+    """Произвольная строка, перенесённая из сметы, чьей строки больше нет в активных сметах.
+
+    Признак from_estimate, а не только estimate_line_id: при удалении строки сметы
+    PostgreSQL обнуляет ссылку (ON DELETE SET NULL), и по одной ссылке такую строку
+    уже не отличить от ручной дополнительной позиции.
+    """
+    if not (line.is_custom and line.from_estimate):
+        return False
+    return line.estimate_line_id is None or line.estimate_line_id not in current_est_ids
 
 
 def sync_removals(db: Session, project: Project, packing: PackingList) -> list[PackingLine]:
@@ -434,11 +480,7 @@ def sync_removals(db: Session, project: Project, packing: PackingList) -> list[P
     ]
 
     current_est_ids = {ln.id for ln in _estimate_custom_lines(db, project)}
-    to_delete += [
-        ln
-        for ln in packing.lines
-        if ln.is_custom and ln.estimate_line_id is not None and ln.estimate_line_id not in current_est_ids
-    ]
+    to_delete += [ln for ln in packing.lines if _is_orphan_custom(ln, current_est_ids)]
     return to_delete
 
 
@@ -542,6 +584,22 @@ class EstimateSyncItem:
         return f"new:{self.model_id}" if self.is_new else f"line:{self.estimate_line_id}"
 
 
+def single_section_estimate(db: Session, project: Project) -> Estimate | None:
+    """Активная смета, если в проекте ровно один стенд, иначе None.
+
+    Обратная синхронизация packing → смета однозначна только при одном стенде:
+    пока packing-лист один на проект, при нескольких стендах непонятно, в смету
+    какого стенда записывать факт (появится с packing-листами по стендам).
+    """
+    sections = db.scalar(
+        select(func.count(ProjectSection.id)).where(ProjectSection.project_id == project.id)
+    )
+    if sections != 1:
+        return None
+    versions = active_versions(db, project)
+    return versions[0] if versions else None
+
+
 def estimate_discrepancies(
     db: Session, project: Project, packing: PackingList
 ) -> list[EstimateSyncItem]:
@@ -553,9 +611,9 @@ def estimate_discrepancies(
     что созданы из сметы (estimate_line_id). Комплекты не участвуют — их
     количество в смете всегда 1 («Комплект»). Позиции сметы без соответствующей
     строки в packing-листе не считаются расхождением — packing может быть ещё
-    не собран.
+    не собран. Только для проекта с одним стендом (см. single_section_estimate).
     """
-    estimate = get_estimate(db, project)
+    estimate = single_section_estimate(db, project)
     if estimate is None:
         return []
 
@@ -610,12 +668,13 @@ def apply_estimate_sync(
     EstimateSyncItem.key присутствует в selected_keys (отмечены пользователем
     в форме подтверждения).
     """
+    estimate = single_section_estimate(db, project)
+    if estimate is None:
+        return []
+    # Факт пишется в активную версию — замороженную менять нельзя.
+    estimate_ensure_editable(estimate)
     items = [it for it in estimate_discrepancies(db, project, packing) if it.key in selected_keys]
     if not items:
-        return items
-
-    estimate = get_estimate(db, project)
-    if estimate is None:
         return items
 
     by_id = {ln.id: ln for ln in estimate.lines}
@@ -630,7 +689,7 @@ def apply_estimate_sync(
                 line.quantity = item.fact_quantity
 
     db.commit()
-    estimate_sync_reservations(db, project, estimate)
+    estimate_sync_reservations(db, project)
     return items
 
 

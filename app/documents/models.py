@@ -1,7 +1,9 @@
 """Модель сгенерированного документа (ТЗ §26.6, §39).
 
 На сервере хранится только последняя версия каждого сочетания
-(проект, тип документа, язык). Повторная генерация заменяет файл.
+(проект, область, тип документа, язык). Повторная генерация заменяет файл.
+Область (scope): «project» — документ проекта целиком (packing, picking,
+transport), «estimate:{id}» — PDF конкретной версии сметы стенда.
 """
 
 from __future__ import annotations
@@ -17,13 +19,16 @@ from app.database import Base
 class GeneratedDocument(Base):
     __tablename__ = "generated_documents"
     __table_args__ = (
-        UniqueConstraint("project_id", "doc_type", "language", name="uq_document_combo"),
+        UniqueConstraint(
+            "project_id", "scope", "doc_type", "language", name="uq_document_scope_combo"
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    scope: Mapped[str] = mapped_column(String(32), default="project", nullable=False)
     doc_type: Mapped[str] = mapped_column(String(16), nullable=False)
     language: Mapped[str] = mapped_column(String(2), nullable=False)
     file_path: Mapped[str] = mapped_column(String(500), nullable=False)

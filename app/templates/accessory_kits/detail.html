@@ -9,11 +9,16 @@
     <a href="/projects/{{ project.id }}/accessory-kits" class="btn btn-outline-secondary">К списку</a>
     {% if editable %}
       {% if in_estimate %}
-      <span class="btn btn-outline-success disabled">В смете</span>
+      <span class="btn btn-outline-success disabled">В смете{% if sections|length > 1 %} стенда «{{ estimate_section.name }}»{% endif %}</span>
       {% else %}
-      <form method="post" action="/projects/{{ project.id }}/accessory-kits/{{ kit.id }}/add-to-estimate" class="m-0">
+      <form method="post" action="/projects/{{ project.id }}/accessory-kits/{{ kit.id }}/add-to-estimate" class="m-0 d-flex gap-1">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button class="btn btn-outline-primary">Добавить в смету</button>
+        {% if sections|length > 1 %}
+        <select class="form-select" name="section_id" aria-label="Стенд" title="Смета стенда (активная версия)">
+          {% for s in sections %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+        </select>
+        {% endif %}
+        <button class="btn btn-outline-primary text-nowrap">Добавить в смету</button>
       </form>
       {% endif %}
       {% if in_packing %}

@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.estimates import service
+from app.estimates import service, versions
 from app.estimates.schemas import CustomLineInput, LineUpdate
 from app.estimates.totals import compute_totals
 from app.inventory.enums import AccountingType
@@ -139,7 +139,7 @@ def test_reservation_synced_from_warehouse_lines(db_session, setup):
         estimate.lines[0],
         LineUpdate(quantity=6, unit_price=Decimal("100"), coefficient=Decimal("1")),
     )
-    service.sync_reservations(db_session, project, estimate)
+    service.sync_reservations(db_session, project)
     res = db_session.query(ProjectReservation).filter_by(project_id=project.id).all()
     assert res[0].quantity == 6
 
@@ -192,7 +192,8 @@ def test_copy_estimate(db_session, setup):
     service.set_discount(db_session, estimate, Decimal("5"))
 
     target = create_project(db_session, ProjectInput(name="Копия"))
-    copied = service.copy_estimate(db_session, project, target)
+    versions.copy_sections(db_session, project, target)
+    copied = service.get_estimate(db_session, target)
     assert copied.discount_percent == Decimal("5")
     assert len(copied.lines) == 1
     # бронь скопированной сметы тоже синхронизирована
@@ -302,7 +303,8 @@ def test_copy_estimate_keeps_coefficient_and_hide_prices(db_session, setup):
     service.set_hide_prices(db_session, estimate, True)
 
     target = create_project(db_session, ProjectInput(name="Копия"))
-    copied = service.copy_estimate(db_session, project, target)
+    versions.copy_sections(db_session, project, target)
+    copied = service.get_estimate(db_session, target)
     assert copied.rental_coefficient == Decimal("2")
     assert copied.hide_prices is True
     assert copied.lines[0].coefficient == Decimal("3")

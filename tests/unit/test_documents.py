@@ -142,10 +142,19 @@ class _FakeStorage:
         self.storage_path = str(path)
 
 
+def _estimate_pdf(directory, lang):
+    """PDF сметы хранится по версии: estimate_{estimate_id}_{lang}.pdf."""
+    (path,) = directory.glob(f"estimate_*_{lang}.pdf")
+    return path
+
+
 def test_estimate_available_packing_not(db_session, project):
+    estimate = est_service.get_estimate(db_session, project)
+    est = {s.language.value: s for s in builder.estimate_status(db_session, project, estimate)}
     statuses = {(s.doc_type, s.language.value): s for s in builder.status(db_session, project)}
-    est_ru = statuses[(DocumentType.ESTIMATE, "ru")]
+    est_ru = est["ru"]
     pack_ru = statuses[(DocumentType.PACKING, "ru")]
+    assert (DocumentType.ESTIMATE, "ru") not in statuses  # PDF смет — по версиям
     assert est_ru.available and not est_ru.generated
     assert not pack_ru.available  # packing-лист не создан
 
@@ -155,7 +164,16 @@ def test_download_filename_includes_project_number_and_name(
 ):
     """Имя скачиваемого PDF включает номер и название проекта (не просто estimate_ru.pdf)."""
     monkeypatch.setattr(builder, "_html_to_pdf", lambda html: b"%PDF-1.4 test")
-    monkeypatch.setattr(builder, "_storage_dir", lambda pid: tmp_path)
+
+    def storage_dir(pid):
+        path = tmp_path / "documents" / f"project_{pid}"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    # PDF отдаётся из storage_path / file_path — оба указывают во временный каталог
+    # (иначе тест зависел бы от файлов реального хранилища).
+    monkeypatch.setattr(builder, "_storage_dir", storage_dir)
+    monkeypatch.setattr("app.documents.router.get_settings", lambda: _FakeStorage(tmp_path))
 
     cat = cat_service.create_category(db_session, "Звук")
     model = eq_service.create_model(
@@ -194,21 +212,24 @@ def test_generate_and_staleness(db_session, project, tmp_path, monkeypatch):
     monkeypatch.setattr(builder, "_storage_dir", lambda pid: tmp_path)
 
     builder.generate(db_session, project, DocumentType.ESTIMATE, "ru")
-    assert (tmp_path / "estimate_ru.pdf").exists()
+    estimate = est_service.get_estimate(db_session, project)
+    assert (tmp_path / f"estimate_{estimate.id}_ru.pdf").exists()
 
-    statuses = {(s.doc_type, s.language.value): s for s in builder.status(db_session, project)}
-    s = statuses[(DocumentType.ESTIMATE, "ru")]
+    def est_status():
+        return {
+            s.language.value: s for s in builder.estimate_status(db_session, project, estimate)
+        }
+
+    s = est_status()["ru"]
     assert s.generated and not s.stale
 
     # Меняем смету → документ устаревает (ТЗ §26.6)
-    estimate = est_service.get_estimate(db_session, project)
     est_service.update_line(
         db_session,
         estimate.lines[0],
         LineUpdate(quantity=5, unit_price=Decimal("100"), coefficient=Decimal("1")),
     )
-    statuses = {(s.doc_type, s.language.value): s for s in builder.status(db_session, project)}
-    assert statuses[(DocumentType.ESTIMATE, "ru")].stale
+    assert est_status()["ru"].stale
 
     # Перегенерация заменяет ту же строку (одна на сочетание)
     builder.generate(db_session, project, DocumentType.ESTIMATE, "ru")
@@ -226,7 +247,7 @@ def test_generate_real_pdf_xhtml2pdf(db_session, project, tmp_path, monkeypatch)
     monkeypatch.setattr(builder, "_storage_dir", lambda pid: tmp_path)
 
     builder.generate(db_session, project, DocumentType.ESTIMATE, "ru")
-    data = (tmp_path / "estimate_ru.pdf").read_bytes()
+    data = _estimate_pdf(tmp_path, "ru").read_bytes()
     assert data[:5] == b"%PDF-"
     assert len(data) > 5000  # кириллический шрифт встроен в документ
 
@@ -467,7 +488,7 @@ def test_generate_real_pdf_de_xhtml2pdf(db_session, project, tmp_path, monkeypat
     monkeypatch.setattr(builder, "_storage_dir", lambda pid: tmp_path)
 
     builder.generate(db_session, project, DocumentType.ESTIMATE, "de")
-    data = (tmp_path / "estimate_de.pdf").read_bytes()
+    data = _estimate_pdf(tmp_path, "de").read_bytes()
     assert data[:5] == b"%PDF-"
     assert len(data) > 5000
 
@@ -499,7 +520,7 @@ def test_generate_pdf_embeds_logo_xhtml2pdf(db_session, project, tmp_path, monke
     db_session.commit()
 
     builder.generate(db_session, project, DocumentType.ESTIMATE, "ru")
-    data = (tmp_path / "estimate_ru.pdf").read_bytes()
+    data = _estimate_pdf(tmp_path, "ru").read_bytes()
     assert data[:5] == b"%PDF-"
     # Растровое изображение в PDF хранится как XObject.
     assert b"/XObject" in data

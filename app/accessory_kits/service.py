@@ -333,15 +333,13 @@ def _push_to_packing_line(db: Session, project: Project, kit: AccessoryKit) -> N
 def _resync_reservations(db: Session, project: Project) -> None:
     """Пересчитать резерв склада проекта — содержимое кабелярок учитывается наравне со сметой.
 
-    Смета создаётся при первом обращении (get_or_create_estimate), даже если
-    пользователь ещё не открывал вкладку «Смета» — резерв под содержимое
-    кабелярки должен работать независимо от того, когда именно это произойдёт,
-    иначе кабели рискуют быть задвоенными между проектами до первого визита в смету.
+    Резерв под содержимое кабелярки считается независимо от смет (даже если в
+    проекте ещё нет ни одного стенда) — иначе кабели рискуют быть задвоенными
+    между проектами до первого визита в смету.
     """
-    from app.estimates.service import get_or_create_estimate, sync_reservations
+    from app.estimates.service import sync_reservations
 
-    estimate = get_or_create_estimate(db, project)
-    sync_reservations(db, project, estimate)
+    sync_reservations(db, project)
 
 
 # --- Шаблоны -----------------------------------------------------------------

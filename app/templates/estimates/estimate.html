@@ -1,22 +1,87 @@
 {% extends "base.html" %}
 {% block content %}
-{% set editable = not project.is_archived %}
-<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+{# editable — проект не в архиве и версия не заморожена (см. router.version_page). #}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
   <div>
-    <h1 class="h3 m-0">Смета {{ estimate.number }}</h1>
+    <h1 class="h3 m-0">
+      {{ section.name }}
+      <span class="text-secondary fw-normal fs-5">— смета {{ section.number }} · v{{ estimate.version_no }}</span>
+      {% if estimate.is_active %}<span class="badge text-bg-success align-middle fs-6">Активная</span>
+      {% else %}<span class="badge text-bg-secondary align-middle fs-6">Неактивная</span>{% endif %}
+      {% if estimate.is_locked %}<span class="badge text-bg-dark align-middle fs-6">🔒 Заморожена</span>{% endif %}
+    </h1>
     <div class="text-secondary">
       <a href="/projects/{{ project.id }}">{{ project.number }} · {{ project.name }}</a>
       <span class="badge text-bg-{{ project.status.badge }}">{{ project.status.label }}</span>
+      {% if not project.is_archived %}
+      · <a href="#" class="small" data-bs-toggle="collapse" data-bs-target="#rename-section">переименовать стенд</a>
+      {% endif %}
     </div>
   </div>
   <div class="d-flex gap-2">
-    <a href="/projects/{{ project.id }}" class="btn btn-outline-secondary">К проекту</a>
-    {% if editable %}<a href="/projects/{{ project.id }}/estimate/add" class="btn btn-primary">Добавить оборудование</a>{% endif %}
+    <a href="/projects/{{ project.id }}#sections" class="btn btn-outline-secondary">К проекту</a>
+    {% if editable %}<a href="{{ base }}/add" class="btn btn-primary">Добавить оборудование</a>{% endif %}
   </div>
 </div>
 
-{% if not editable %}
+{% if not project.is_archived %}
+<div class="collapse mb-2" id="rename-section">
+  <form method="post" action="/projects/{{ project.id }}/sections/{{ section.id }}/rename" class="d-flex flex-wrap gap-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="back" value="{{ base }}">
+    <input class="form-control" style="max-width:22rem" name="name" value="{{ section.name }}" required aria-label="Название стенда">
+    <button class="btn btn-outline-primary">Сохранить</button>
+  </form>
+</div>
+{% endif %}
+
+{# --- Версии: выбор для просмотра + окно управления --- #}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+  <label class="small text-secondary" for="version-select">Версия</label>
+  <select class="form-select form-select-sm w-auto" id="version-select" aria-label="Версия сметы"
+          onchange="window.location = this.value">
+    {% for v in versions %}
+    <option value="/projects/{{ project.id }}/sections/{{ section.id }}/estimate/v/{{ v.version_no }}" {% if v.id == estimate.id %}selected{% endif %}>
+      v{{ v.version_no }} · {{ format_datetime(v.created_at) }}{% if v.label %} · {{ v.label }}{% endif %}{% if v.is_active %} ★ активная{% endif %}{% if v.is_locked %} 🔒{% endif %}
+    </option>
+    {% endfor %}
+  </select>
+  <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#versions-modal">Версии…</button>
+  {% if editable %}
+  <form method="post" action="{{ base }}/label" class="d-flex gap-1 m-0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input class="form-control form-control-sm" style="width:16rem" name="label" value="{{ estimate.label or '' }}"
+           placeholder="Комментарий версии" aria-label="Комментарий версии">
+    <button class="btn btn-sm btn-outline-secondary">OK</button>
+  </form>
+  {% elif estimate.label %}
+  <span class="small text-secondary">{{ estimate.label }}</span>
+  {% endif %}
+</div>
+
+{% if project.is_archived %}
 <div class="alert alert-info">Проект в архиве — смета доступна только для просмотра.</div>
+{% endif %}
+{% if estimate.is_locked %}
+<div class="alert alert-dark d-flex flex-wrap justify-content-between align-items-center gap-2">
+  <div>🔒 Версия заморожена {{ format_datetime(estimate.locked_at) if estimate.locked_at else '' }}{% if estimate.locked_by %}, {{ estimate.locked_by.username }}{% endif %} — изменения запрещены.
+    Её можно сделать активной или скопировать в новую версию.</div>
+  {% if not project.is_archived %}
+  <form method="post" action="{{ base }}/unlock" class="m-0"
+        onsubmit="return confirm('Разморозить версию v{{ estimate.version_no }}? Она могла быть отправлена клиенту.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn btn-sm btn-outline-light">Разморозить</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+{% if not estimate.is_active %}
+<div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-2">
+  <div>Эта версия не активна — она не влияет на бронь и packing-лист.</div>
+  {% if not project.is_archived %}
+  <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#versions-modal">Сделать активной…</button>
+  {% endif %}
+</div>
 {% endif %}
 
 {% if groups %}
@@ -47,7 +112,7 @@
             {% else %}<a href="/inventory/models/{{ line.model_id }}">{{ line.name }}</a>{% endif %}
             {% if line.manufacturer %}<div class="small text-secondary">{{ line.manufacturer }}</div>{% endif %}
           </div>
-          <form method="post" action="/projects/{{ project.id }}/estimate/lines/{{ line.id }}"
+          <form method="post" action="{{ base }}/lines/{{ line.id }}"
                 class="col-12 col-md-7 row g-1 align-items-center m-0">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="col-3"><label class="d-md-none form-label small mb-0">Кол-во</label><input class="form-control form-control-sm text-end" name="quantity" inputmode="numeric" value="{{ line.quantity }}" aria-label="Количество" {% if line.is_kit %}readonly title="Комплект — 1 позиция"{% elif line.is_accessory_kit %}readonly title="Комплект аксессуаров — 1 позиция"{% endif %}></div>
@@ -68,19 +133,19 @@
             <div class="col-3 d-grid"><button class="btn btn-sm btn-outline-primary" type="submit">Сохранить</button></div>
           </form>
           <div class="col-12 col-md-2 d-flex gap-1 justify-content-md-end">
-            <form method="post" action="/projects/{{ project.id }}/estimate/lines/{{ line.id }}/move" class="m-0">
+            <form method="post" action="{{ base }}/lines/{{ line.id }}/move" class="m-0">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="direction" value="-1">
               <button class="btn btn-sm btn-outline-secondary" title="Выше">↑</button></form>
-            <form method="post" action="/projects/{{ project.id }}/estimate/lines/{{ line.id }}/move" class="m-0">
+            <form method="post" action="{{ base }}/lines/{{ line.id }}/move" class="m-0">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="direction" value="1">
               <button class="btn btn-sm btn-outline-secondary" title="Ниже">↓</button></form>
-            <form method="post" action="/projects/{{ project.id }}/estimate/lines/{{ line.id }}/delete" class="m-0"
+            <form method="post" action="{{ base }}/lines/{{ line.id }}/delete" class="m-0"
                   onsubmit="return confirm('Удалить строку?')">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="btn btn-sm btn-outline-danger" title="Удалить">✕</button></form>
           </div>
           {% if line.coefficient_custom %}
-          <form method="post" action="/projects/{{ project.id }}/estimate/lines/{{ line.id }}/reset-coefficient" id="reset-coef-{{ line.id }}" class="d-none">
+          <form method="post" action="{{ base }}/lines/{{ line.id }}/reset-coefficient" id="reset-coef-{{ line.id }}" class="d-none">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}"></form>
           {% endif %}
         </div>
@@ -108,7 +173,7 @@
   </div>
   {% endfor %}
 {% else %}
-  <p class="text-secondary">Смета пуста. {% if editable %}<a href="/projects/{{ project.id }}/estimate/add">Добавьте оборудование</a>.{% endif %}</p>
+  <p class="text-secondary">Смета пуста. {% if editable %}<a href="{{ base }}/add">Добавьте оборудование</a>.{% endif %}</p>
 {% endif %}
 
 <div class="row g-3">
@@ -116,7 +181,7 @@
     {% if editable %}
     <div class="card mb-3"><div class="card-header">Произвольная строка</div>
       <div class="card-body">
-        <form method="post" action="/projects/{{ project.id }}/estimate/custom" class="row g-2">
+        <form method="post" action="{{ base }}/custom" class="row g-2">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <div class="col-12"><label class="form-label small mb-0">Наименование</label>
             <input class="form-control" name="name" placeholder="например, Доставка" required></div>
@@ -139,6 +204,38 @@
       </div>
     </div>
     {% endif %}
+
+    {# --- PDF этой версии --- #}
+    <div class="card mb-3">
+      <div class="card-header">PDF версии v{{ estimate.version_no }}</div>
+      <ul class="list-group list-group-flush">
+        {% for s in doc_statuses %}
+        <li class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <div>{{ s.language.label }}
+            {% if not s.generated %}<span class="badge text-bg-secondary">не сформирован</span>
+            {% elif s.stale %}<span class="badge text-bg-warning">устарел</span>
+            {% else %}<span class="badge text-bg-success">актуален</span>{% endif %}
+          </div>
+          <div class="d-inline-flex gap-1">
+            {% if s.generated %}
+            <a class="btn btn-sm btn-outline-secondary" target="_blank"
+               href="/projects/{{ project.id }}/documents/estimate/{{ estimate.id }}/{{ s.language.value }}/view">Открыть</a>
+            <a class="btn btn-sm btn-outline-secondary"
+               href="/projects/{{ project.id }}/documents/estimate/{{ estimate.id }}/{{ s.language.value }}/download">Скачать</a>
+            {% endif %}
+            <form method="post" action="/projects/{{ project.id }}/documents/generate" class="m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="doc_type" value="estimate">
+              <input type="hidden" name="estimate_id" value="{{ estimate.id }}">
+              <input type="hidden" name="language" value="{{ s.language.value }}">
+              <input type="hidden" name="back" value="{{ base }}">
+              <button class="btn btn-sm btn-primary">{{ "Перегенерировать" if s.generated else "Сформировать" }}</button>
+            </form>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
   </div>
 
   <div class="col-12 col-lg-6">
@@ -146,7 +243,7 @@
       <div class="card-header">Итоги</div>
       <div class="card-body">
         {% if editable %}
-        <form method="post" action="/projects/{{ project.id }}/estimate/coefficient" class="row g-2 mb-2">
+        <form method="post" action="{{ base }}/coefficient" class="row g-2 mb-2">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <div class="col-auto"><label class="col-form-label" for="estimate-coef">Коэффициент сметы</label></div>
           <div class="col-auto"><input class="form-control" id="estimate-coef" name="rental_coefficient" inputmode="decimal"
@@ -154,7 +251,7 @@
           <div class="col-auto"><button class="btn btn-outline-secondary">Применить</button></div>
           <div class="col-12 form-text mt-0">Применяется ко всем строкам, кроме строк с коэффициентом, изменённым вручную.</div>
         </form>
-        <form method="post" action="/projects/{{ project.id }}/estimate/hide-prices" class="mb-3">
+        <form method="post" action="{{ base }}/hide-prices" class="mb-3">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <div class="form-check">
             <input class="form-check-input" type="checkbox" name="hide_prices" value="1" id="hide-prices"
@@ -164,15 +261,14 @@
           <div class="form-text mt-0">Только для документов: в PDF останутся наименования, количества, итоги по разделам, коэффициент и общие суммы. В редакторе цены видны всегда.</div>
           <noscript><button class="btn btn-sm btn-outline-secondary mt-1">Сохранить</button></noscript>
         </form>
-        <form method="post" action="/projects/{{ project.id }}/estimate/discount" class="row g-2 mb-3">
+        <form method="post" action="{{ base }}/discount" class="row g-2 mb-3">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <div class="col-auto"><label class="col-form-label">Скидка, %</label></div>
           <div class="col-auto"><input class="form-control" name="discount_percent" inputmode="decimal"
                  value="{{ estimate.discount_percent }}" style="width:7rem"></div>
           <div class="col-auto"><button class="btn btn-outline-secondary">Применить</button></div>
         </form>
-        {% endif %}
-        {% if not editable %}
+        {% else %}
         <p class="mb-2">Коэффициент сметы: <b>{{ estimate.rental_coefficient }}</b></p>
         {% endif %}
         {% if estimate.hide_prices %}
@@ -189,4 +285,140 @@
     </div>
   </div>
 </div>
+
+{# --- Окно «Версии»: список, активация (с предпросмотром), заморозка, новая версия --- #}
+<div class="modal fade" id="versions-modal" tabindex="-1" aria-labelledby="versions-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="versions-modal-title">Версии сметы — {{ section.name }} ({{ section.number }})</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+      </div>
+      <div class="modal-body">
+        <form method="post" action="/projects/{{ project.id }}/sections/{{ section.id }}/estimate/versions/activate" id="activate-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="back_version_no" value="{{ estimate.version_no }}">
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead><tr><th></th><th>Версия</th><th>Создана</th><th>Комментарий</th>
+                <th class="text-end">Итого, €</th><th>Состояние</th><th></th></tr></thead>
+              <tbody>
+                {% for v in versions %}
+                <tr {% if v.id == estimate.id %}class="table-primary"{% endif %}>
+                  <td><input class="form-check-input version-radio" type="radio" name="version_no" value="{{ v.version_no }}"
+                             id="ver-{{ v.id }}" {% if v.is_active %}checked{% endif %} {% if project.is_archived %}disabled{% endif %}
+                             aria-label="Выбрать v{{ v.version_no }}"></td>
+                  <td><label for="ver-{{ v.id }}" class="fw-semibold">v{{ v.version_no }}</label></td>
+                  <td class="small">{{ format_datetime(v.created_at) }}{% if v.created_by %}<div class="text-secondary">{{ v.created_by.username }}</div>{% endif %}</td>
+                  <td class="small">{{ v.label or '—' }}</td>
+                  <td class="text-end">{{ '%.2f'|format(totals_by_version[v.id].total) }}</td>
+                  <td>
+                    {% if v.is_active %}<span class="badge text-bg-success">активная</span>{% endif %}
+                    {% if v.is_locked %}<span class="badge text-bg-dark">🔒 заморожена</span>{% endif %}
+                  </td>
+                  <td class="text-end text-nowrap">
+                    <a class="btn btn-sm btn-outline-secondary" href="/projects/{{ project.id }}/sections/{{ section.id }}/estimate/v/{{ v.version_no }}">Открыть</a>
+                    {% if not project.is_archived %}
+                      {% if v.is_locked %}
+                      <button class="btn btn-sm btn-outline-dark" type="submit" form="unlock-{{ v.id }}">Разморозить</button>
+                      {% else %}
+                      <button class="btn btn-sm btn-outline-dark" type="submit" form="lock-{{ v.id }}">Заморозить</button>
+                      {% endif %}
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          {% for v in versions %}{% if v.id in previews %}{% set p = previews[v.id] %}
+          <div class="version-preview alert alert-light border d-none" data-version="{{ v.version_no }}">
+            <div class="fw-semibold mb-1">Если сделать активной v{{ v.version_no }}:</div>
+            {% if p.reservation_unchanged %}
+              <div class="small">Бронь проекта не изменится.</div>
+            {% else %}
+              <div class="small">Бронь проекта изменится:</div>
+              <ul class="small mb-1">
+                {% for name, qty in p.added %}<li>+ {{ name }}: {{ qty }}</li>{% endfor %}
+                {% for name, before, after in p.changed %}<li>{{ name }}: {{ before }} → {{ after }}</li>{% endfor %}
+                {% for name, qty in p.removed %}<li>− {{ name }}: {{ qty }}</li>{% endfor %}
+                {% for name in p.kits_added %}<li>+ комплект {{ name }}</li>{% endfor %}
+                {% for name in p.kits_removed %}<li>− комплект {{ name }}</li>{% endfor %}
+              </ul>
+            {% endif %}
+            {% if p.packing_exists %}
+              <div class="small">Packing-лист: расхождений со сметой после активации — <b>{{ p.packing_discrepancies }}</b>
+                (синхронизация — вручную на странице packing-листа).</div>
+            {% endif %}
+          </div>
+          {% endif %}{% endfor %}
+
+          {% if not project.is_archived %}
+          <div class="d-flex justify-content-end">
+            <button type="submit" class="btn btn-success" id="activate-btn" disabled>Сделать активной</button>
+          </div>
+          {% endif %}
+        </form>
+
+        {% for v in versions %}
+        <form method="post" action="/projects/{{ project.id }}/sections/{{ section.id }}/estimate/v/{{ v.version_no }}/lock" id="lock-{{ v.id }}" class="d-none">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}"></form>
+        <form method="post" action="/projects/{{ project.id }}/sections/{{ section.id }}/estimate/v/{{ v.version_no }}/unlock" id="unlock-{{ v.id }}" class="d-none"
+              onsubmit="return confirm('Разморозить версию v{{ v.version_no }}? Она могла быть отправлена клиенту.')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}"></form>
+        {% endfor %}
+
+        {% if not project.is_archived %}
+        <hr>
+        <form method="post" action="/projects/{{ project.id }}/sections/{{ section.id }}/estimate/versions/create" class="row g-2 align-items-end">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="col-12 fw-semibold">Новая версия</div>
+          <div class="col-12 col-md-3">
+            <label class="form-label small mb-0" for="new-version-source">Основа</label>
+            <select class="form-select" id="new-version-source" name="source_version_no">
+              {% for v in versions %}<option value="{{ v.version_no }}" {% if v.id == estimate.id %}selected{% endif %}>копия v{{ v.version_no }}</option>{% endfor %}
+              <option value="">пустая</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-5">
+            <label class="form-label small mb-0" for="new-version-label">Комментарий</label>
+            <input class="form-control" id="new-version-label" name="label" placeholder="например, после созвона 12.11">
+          </div>
+          <div class="col-12 col-md-2 form-check ms-2">
+            <input class="form-check-input" type="checkbox" name="activate" value="1" id="new-version-activate">
+            <label class="form-check-label small" for="new-version-activate">Сразу сделать активной</label>
+          </div>
+          <div class="col-12 col-md-auto"><button class="btn btn-primary">Создать</button></div>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const radios = document.querySelectorAll(".version-radio");
+  const btn = document.getElementById("activate-btn");
+  const activeNo = "{{ (versions|selectattr('is_active')|first).version_no if versions|selectattr('is_active')|list else '' }}";
+  function refresh() {
+    const sel = document.querySelector(".version-radio:checked");
+    const no = sel ? sel.value : "";
+    document.querySelectorAll(".version-preview").forEach(el => {
+      el.classList.toggle("d-none", el.dataset.version !== no);
+    });
+    if (btn) btn.disabled = !no || no === activeNo;
+  }
+  radios.forEach(r => r.addEventListener("change", refresh));
+  refresh();
+  {% if not estimate.is_active %}
+  // Со страницы неактивной версии окно открывается с ней же выбранной.
+  const own = document.getElementById("ver-{{ estimate.id }}");
+  if (own && !own.disabled) { own.checked = true; refresh(); }
+  {% endif %}
+})();
+</script>
 {% endblock %}

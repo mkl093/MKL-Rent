@@ -74,6 +74,10 @@ class PackingLine(Base):
     estimate_line_id: Mapped[int | None] = mapped_column(
         ForeignKey("estimate_lines.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Перенесена из произвольной строки сметы. Нужна вместе с estimate_line_id:
+    # при удалении строки сметы ссылка обнуляется (SET NULL), а строку packing-листа
+    # синхронизация должна убрать, не путая её с ручной дополнительной позицией.
+    from_estimate: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Добавлена в packing вручную, минуя смету — синхронизация её не трогает.
     is_manual: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 

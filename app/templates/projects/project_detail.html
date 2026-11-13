@@ -111,6 +111,71 @@
   </div>
 </div>
 
+{# --- Стенды и сметы --- #}
+<div class="card mb-3" id="sections">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>Стенды и сметы</span>
+    <span class="small text-secondary">бронь и packing-лист — по активным версиям</span>
+  </div>
+  {% if sections %}
+  <div class="table-responsive">
+    <table class="table table-sm align-middle m-0">
+      <thead><tr><th>Стенд</th><th>Смета</th><th>Активная версия</th>
+        <th class="text-end">Без VAT, €</th><th class="text-end">Итого, €</th><th></th></tr></thead>
+      <tbody>
+        {% for s in sections %}
+        <tr>
+          <td><a href="/projects/{{ project.id }}/sections/{{ s.section.id }}/estimate" class="fw-semibold">{{ s.section.name }}</a></td>
+          <td>{{ s.section.number }}</td>
+          <td>
+            {% if s.active %}v{{ s.active.version_no }}{% if s.active.is_locked %} 🔒{% endif %}
+              {% if s.versions_count > 1 %}<span class="small text-secondary">из {{ s.versions_count }}</span>{% endif %}
+              {% if s.active.label %}<div class="small text-secondary">{{ s.active.label }}</div>{% endif %}
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-end">{{ '%.2f'|format(s.totals.after_discount) if s.totals else '—' }}</td>
+          <td class="text-end fw-semibold">{{ '%.2f'|format(s.totals.total) if s.totals else '—' }}</td>
+          <td class="text-end">
+            {% if not project.is_archived and sections|length > 1 %}
+            <div class="d-inline-flex gap-1">
+              <form method="post" action="/projects/{{ project.id }}/sections/{{ s.section.id }}/move" class="m-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="direction" value="-1">
+                <button class="btn btn-sm btn-outline-secondary" title="Выше" {% if loop.first %}disabled{% endif %}>↑</button></form>
+              <form method="post" action="/projects/{{ project.id }}/sections/{{ s.section.id }}/move" class="m-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="direction" value="1">
+                <button class="btn btn-sm btn-outline-secondary" title="Ниже" {% if loop.last %}disabled{% endif %}>↓</button></form>
+            </div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if sections|length > 1 %}
+      <tfoot><tr class="fw-semibold">
+        <td colspan="3">Всего по проекту</td>
+        <td class="text-end">{{ '%.2f'|format(sections|selectattr('totals')|map(attribute='totals.after_discount')|sum) }}</td>
+        <td class="text-end">{{ '%.2f'|format(sections|selectattr('totals')|map(attribute='totals.total')|sum) }}</td>
+        <td></td>
+      </tr></tfoot>
+      {% endif %}
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body pb-0">
+    <p class="text-secondary">Смет ещё нет. <a href="/projects/{{ project.id }}/estimate">Открыть смету</a> — будет создан «Основной стенд».</p>
+  </div>
+  {% endif %}
+  {% if not project.is_archived %}
+  <div class="card-body border-top">
+    <form method="post" action="/projects/{{ project.id }}/sections/create" class="d-flex flex-wrap gap-2 m-0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input class="form-control" style="max-width:22rem" name="name" placeholder="Название стенда / площадки" required aria-label="Название стенда">
+      <button class="btn btn-outline-primary">Новый стенд</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
 {# --- Оборудование и доступность (ТЗ §15) --- #}
 <div class="card">
   <div class="card-header">Оборудование и доступность</div>

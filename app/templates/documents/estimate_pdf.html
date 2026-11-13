@@ -43,8 +43,9 @@
     <td class="num" width="30%">{% if logo_uri %}<img class="logo" src="{{ logo_uri }}" alt="">{% endif %}</td>
   </tr></table>
 
-  <h1>{{ L.estimate }} {{ estimate.number }}</h1>
+  <h1>{{ L.estimate }} {{ title_number }}</h1>
   <div class="meta">
+    {% if section_name %}<b>{{ L.stand }}: {{ section_name }}</b><br>{% endif %}
     {{ L.date }}: {{ fmt_date(generated_at.date()) }} ·
     {{ L.project }}: {{ project.name }} ({{ project.number }}) ·
     {{ L.rental_dates }}: {{ fmt_date(project.start_date) }} – {{ fmt_date(project.end_date) }}

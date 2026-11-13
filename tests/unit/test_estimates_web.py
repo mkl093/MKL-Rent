@@ -24,6 +24,13 @@ def auth_client(client, db_session):
     return client
 
 
+def _version_url(client, pid) -> str:
+    """Адрес активной версии сметы единственного стенда (через редирект /estimate)."""
+    resp = client.get(f"/projects/{pid}/estimate")
+    assert resp.status_code == 200
+    return resp.url.path
+
+
 def _csrf(client, url) -> str:
     return re.search(r'name="csrf_token" value="([^"]+)"', client.get(url).text).group(1)
 
@@ -59,7 +66,7 @@ def test_estimate_flow(auth_client, model):
         follow_redirects=False,
     )
     pid = resp.headers["location"].rsplit("/", 1)[-1]
-    est_url = f"/projects/{pid}/estimate"
+    est_url = _version_url(auth_client, pid)
 
     # Страница сметы
     page = auth_client.get(est_url)
@@ -103,7 +110,7 @@ def test_custom_line_via_web(auth_client):
         "/projects", data={"name": "X", "csrf_token": token}, follow_redirects=False
     )
     pid = resp.headers["location"].rsplit("/", 1)[-1]
-    est_url = f"/projects/{pid}/estimate"
+    est_url = _version_url(auth_client, pid)
     token = _csrf(auth_client, est_url)
     auth_client.post(
         f"{est_url}/custom",
@@ -131,7 +138,7 @@ def test_estimate_coefficient_and_hide_prices_via_web(auth_client, db_session, m
         follow_redirects=False,
     )
     pid = resp.headers["location"].rsplit("/", 1)[-1]
-    est_url = f"/projects/{pid}/estimate"
+    est_url = _version_url(auth_client, pid)
 
     token = _csrf(auth_client, f"{est_url}/add")
     auth_client.post(

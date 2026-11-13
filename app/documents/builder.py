@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -21,6 +21,7 @@ from app.database import utcnow
 from app.documents import l10n
 from app.documents.enums import DocumentType, Language
 from app.documents.models import GeneratedDocument
+from app.estimates.models import Estimate, ProjectSection
 from app.estimates.service import get_or_create_estimate, grouped_lines
 from app.estimates.service import totals as estimate_totals
 from app.packing.calc import compute_category_breakdown, compute_line, compute_totals
@@ -73,6 +74,7 @@ LABELS = {
         "vat_id": "VAT ID",
         "tax_number": "Налоговый номер",
         "grand_total": "Итого",
+        "stand": "Стенд",
         "group_subtotal": "Итого по разделу",
         "quote_open": "«",
         "quote_close": "»",
@@ -142,6 +144,7 @@ LABELS = {
         "vat_id": "VAT ID",
         "tax_number": "Tax number",
         "grand_total": "Grand total",
+        "stand": "Stand",
         "group_subtotal": "Subtotal",
         "quote_open": "“",
         "quote_close": "”",
@@ -211,6 +214,7 @@ LABELS = {
         "vat_id": "USt-IdNr.",
         "tax_number": "Steuernummer",
         "grand_total": "Gesamt",
+        "stand": "Stand",
         "group_subtotal": "Zwischensumme",
         "quote_open": "„",
         "quote_close": "“",
@@ -284,11 +288,32 @@ def _l10n_helpers(lang: str) -> dict:
 # --- Контекст и отпечаток данных (для устаревания, ТЗ §26.6) -------------
 
 
+def default_estimate(db: Session, project: Project) -> Estimate:
+    """Смета «по умолчанию» для документов: активная версия первого стенда."""
+    return get_or_create_estimate(db, project)
+
+
 def _estimate_render(
-    db: Session, project: Project, lang: str, fontface: bool = True
+    db: Session,
+    project: Project,
+    lang: str,
+    fontface: bool = True,
+    estimate: Estimate | None = None,
 ) -> tuple[str, str]:
+    from app.estimates.versions import DEFAULT_SECTION_NAME
+
     company = get_company_settings(db)
-    estimate = get_or_create_estimate(db, project)
+    if estimate is None:
+        estimate = default_estimate(db, project)
+    section = estimate.section
+    sections_count = db.scalar(
+        select(func.count(ProjectSection.id)).where(ProjectSection.project_id == project.id)
+    )
+    # Название стенда — если стендов несколько или стенд переименован; номер
+    # версии — если у стенда больше одной версии.
+    show_section = sections_count > 1 or section.name != DEFAULT_SECTION_NAME
+    show_version = len(section.versions) > 1
+    title_number = estimate.display_number if show_version else section.number
     groups = grouped_lines(
         estimate,
         kit_label=LABELS[lang]["kits"],
@@ -318,7 +343,8 @@ def _estimate_render(
                 str(project.vat),
             ],
             "estimate": [
-                estimate.number,
+                title_number,
+                section.name if show_section else None,
                 str(estimate.discount_percent),
                 str(estimate.rental_coefficient),
                 estimate.hide_prices,
@@ -344,6 +370,8 @@ def _estimate_render(
         company=company,
         project=project,
         estimate=estimate,
+        title_number=title_number,
+        section_name=section.name if show_section else None,
         groups=groups,
         totals=totals,
         generated_at=utcnow(),
@@ -623,9 +651,26 @@ _RENDERERS = {
 
 
 def render_html(
-    db: Session, project: Project, doc_type: DocumentType, lang: str, *, fontface: bool = True
+    db: Session,
+    project: Project,
+    doc_type: DocumentType,
+    lang: str,
+    *,
+    fontface: bool = True,
+    estimate: Estimate | None = None,
 ) -> tuple[str, str]:
+    """HTML документа и отпечаток данных. ``estimate`` — версия сметы для PDF сметы
+    (по умолчанию — активная версия первого стенда)."""
+    if doc_type == DocumentType.ESTIMATE:
+        return _estimate_render(db, project, lang, fontface, estimate)
     return _RENDERERS[doc_type](db, project, lang, fontface)
+
+
+def doc_scope(doc_type: DocumentType, estimate: Estimate | None) -> str:
+    """Область хранения документа: PDF сметы — по версии, остальное — по проекту."""
+    if doc_type == DocumentType.ESTIMATE and estimate is not None:
+        return f"estimate:{estimate.id}"
+    return "project"
 
 
 def _weasyprint_available() -> bool:
@@ -724,34 +769,65 @@ def _storage_dir(project_id: int) -> Path:
 
 
 def get_document(
-    db: Session, project_id: int, doc_type: DocumentType, lang: str
+    db: Session,
+    project_id: int,
+    doc_type: DocumentType,
+    lang: str,
+    scope: str = "project",
 ) -> GeneratedDocument | None:
     return db.execute(
         select(GeneratedDocument).where(
             GeneratedDocument.project_id == project_id,
+            GeneratedDocument.scope == scope,
             GeneratedDocument.doc_type == doc_type.value,
             GeneratedDocument.language == lang,
         )
     ).scalar_one_or_none()
 
 
-def generate(db: Session, project: Project, doc_type: DocumentType, lang: str) -> GeneratedDocument:
-    """Сгенерировать PDF и заменить предыдущую версию того же типа+языка (ТЗ §26.6)."""
+def generate(
+    db: Session,
+    project: Project,
+    doc_type: DocumentType,
+    lang: str,
+    *,
+    estimate: Estimate | None = None,
+) -> GeneratedDocument:
+    """Сгенерировать PDF и заменить предыдущую версию того же сочетания (ТЗ §26.6).
+
+    PDF сметы хранится по версии сметы (``estimate``, по умолчанию — активная
+    версия первого стенда), остальные документы — по проекту.
+    """
+    if doc_type == DocumentType.ESTIMATE and estimate is None:
+        estimate = default_estimate(db, project)
     # @font-face нужен WeasyPrint; xhtml2pdf использует шрифт из своего реестра.
     html, fingerprint = render_html(
-        db, project, doc_type, lang, fontface=resolve_engine() == "weasyprint"
+        db,
+        project,
+        doc_type,
+        lang,
+        fontface=resolve_engine() == "weasyprint",
+        estimate=estimate,
     )
     pdf = _html_to_pdf(html)
 
-    filename = f"{doc_type.value}_{lang}.pdf"
+    scope = doc_scope(doc_type, estimate)
+    if scope == "project":
+        filename = f"{doc_type.value}_{lang}.pdf"
+    else:
+        filename = f"{doc_type.value}_{estimate.id}_{lang}.pdf"
     target = _storage_dir(project.id) / filename
     target.write_bytes(pdf)
     rel = f"documents/project_{project.id}/{filename}"
 
-    doc = get_document(db, project.id, doc_type, lang)
+    doc = get_document(db, project.id, doc_type, lang, scope)
     if doc is None:
         doc = GeneratedDocument(
-            project_id=project.id, doc_type=doc_type.value, language=lang, file_path=rel
+            project_id=project.id,
+            scope=scope,
+            doc_type=doc_type.value,
+            language=lang,
+            file_path=rel,
         )
         db.add(doc)
     doc.file_path = rel
@@ -770,14 +846,20 @@ class DocStatus:
     generated: bool
     stale: bool
     document: GeneratedDocument | None
+    estimate: Estimate | None = None  # версия сметы (для PDF сметы)
 
 
 def status(db: Session, project: Project) -> list[DocStatus]:
-    """Статусы всех 4 сочетаний: сгенерирован ли и не устарел ли (ТЗ §26.6)."""
+    """Статусы документов проекта (packing, picking, transport — без смет; ТЗ §26.6).
+
+    Статусы PDF смет — по версиям, см. estimate_status().
+    """
     packing_exists = get_packing(db, project) is not None
     result: list[DocStatus] = []
     for doc_type in DocumentType:
-        available = doc_type == DocumentType.ESTIMATE or packing_exists
+        if doc_type == DocumentType.ESTIMATE:
+            continue
+        available = packing_exists
         current_hash = None
         if available:
             try:
@@ -788,4 +870,18 @@ def status(db: Session, project: Project) -> list[DocStatus]:
             doc = get_document(db, project.id, doc_type, lang)
             stale = bool(doc and current_hash and doc.content_hash != current_hash)
             result.append(DocStatus(doc_type, lang, available, doc is not None, stale, doc))
+    return result
+
+
+def estimate_status(db: Session, project: Project, estimate: Estimate) -> list[DocStatus]:
+    """Статусы PDF версии сметы на всех языках: сформирован ли, не устарел ли."""
+    _, current_hash = render_html(db, project, DocumentType.ESTIMATE, "ru", estimate=estimate)
+    scope = doc_scope(DocumentType.ESTIMATE, estimate)
+    result: list[DocStatus] = []
+    for lang in Language:
+        doc = get_document(db, project.id, DocumentType.ESTIMATE, lang, scope)
+        stale = bool(doc and doc.content_hash != current_hash)
+        result.append(
+            DocStatus(DocumentType.ESTIMATE, lang, True, doc is not None, stale, doc, estimate)
+        )
     return result

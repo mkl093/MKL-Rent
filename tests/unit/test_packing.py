@@ -769,3 +769,53 @@ def test_carnet_prefers_confirmed_barcodes_falls_back_to_unconfirmed(env):
     qty_row2 = next(r for r in rows2 if r.description.startswith("Колонка"))
     assert "Q1" in qty_row2.description
     assert "Q2" not in qty_row2.description  # есть подтверждённый — только он
+
+
+def test_deleted_estimate_custom_line_removed_when_fk_nulls_link(env):
+    """Как на PostgreSQL: удаление строки сметы обнуляет ссылку (ON DELETE SET NULL),
+    но синхронизация всё равно убирает перенесённую из сметы строку packing-листа."""
+    from sqlalchemy import text
+
+    from app.estimates.schemas import CustomLineInput
+
+    db, project, _, _ = env
+    # SQLite по умолчанию не проверяет внешние ключи — включаем, как в PostgreSQL.
+    if db.bind.dialect.name == "sqlite":
+        db.execute(text("PRAGMA foreign_keys=ON"))
+    estimate = est_service.get_estimate(db, project)
+    est_line = est_service.add_custom_line(
+        db, estimate, project, CustomLineInput(name="Суб-аренда пульта", quantity=1)
+    )
+    packing = service.create_from_estimate(db, project)
+    line = next(ln for ln in packing.lines if ln.name == "Суб-аренда пульта")
+    assert line.from_estimate and line.estimate_line_id == est_line.id
+
+    est_service.delete_line(db, est_line)
+    db.expire_all()
+    db.refresh(line)
+    assert line.estimate_line_id is None  # ссылка обнулена внешним ключом
+
+    disc = service.discrepancies(db, project, packing)
+    assert any(d.is_custom and d.name == "Суб-аренда пульта" for d in disc)
+    assert line in service.sync_removals(db, project, packing)
+    service.apply_sync(db, project, packing, confirm_delete=True)
+    db.refresh(packing)
+    assert not any(ln.name == "Суб-аренда пульта" for ln in packing.lines)
+
+
+def test_legacy_manual_custom_line_not_removed_by_sync(env):
+    """Дополнительная позиция без признака from_estimate (в т.ч. созданная до появления
+    is_manual) синхронизацией со сметой не удаляется."""
+    from app.packing.models import PackingLine
+
+    db, project, _, _ = env
+    packing = service.create_from_estimate(db, project)
+    packing.lines.append(
+        PackingLine(name="Старая доп. позиция", is_custom=True, planned_quantity=1, quantity=1)
+    )
+    db.commit()
+    service.apply_sync(db, project, packing, confirm_delete=True)
+    db.refresh(packing)
+    assert any(ln.name == "Старая доп. позиция" for ln in packing.lines)
+    disc = service.discrepancies(db, project, packing)
+    assert not any(d.name == "Старая доп. позиция" for d in disc)

@@ -165,6 +165,20 @@ def detail(
     packing = packing_service.get_packing(db, project)
     in_packing = packing is not None and any(ln.accessory_kit_id == kit.id for ln in packing.lines)
 
+    from app.estimates import versions as estimate_versions
+
+    sections = estimate_versions.list_sections(db, project)
+    # Стенд, в АКТИВНОЙ смете которого уже есть этот комплект аксессуаров.
+    estimate_section = next(
+        (
+            s
+            for s in sections
+            if s.active_version
+            and any(ln.accessory_kit_id == kit.id for ln in s.active_version.lines)
+        ),
+        None,
+    )
+
     return render(
         request,
         "accessory_kits/detail.html",
@@ -175,7 +189,9 @@ def detail(
             "editable": editable,
             "content_weight": service.content_weight(kit),
             "total_weight": service.total_weight(kit),
-            "in_estimate": service.is_in_estimate(db, kit.id),
+            "in_estimate": estimate_section is not None,
+            "estimate_section": estimate_section,
+            "sections": sections,
             "packing_exists": packing is not None,
             "in_packing": in_packing,
             "models": models,
@@ -272,10 +288,13 @@ def add_to_estimate(
     request: Request,
     project_id: int,
     kit_id: int,
+    section_id: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_login),
 ):
-    from app.estimates.service import add_accessory_kit_line, get_or_create_estimate
+    """Добавить комплект аксессуаров в АКТИВНУЮ версию сметы выбранного стенда."""
+    from app.estimates import versions as estimate_versions
+    from app.estimates.service import EstimateError, add_accessory_kit_line
 
     project, editable = _load(db, project_id)
     if project is None or not editable:
@@ -283,18 +302,31 @@ def add_to_estimate(
     kit = service.get_kit(db, project, kit_id)
     if kit is None:
         return redirect(f"/projects/{project_id}/accessory-kits")
-    estimate = get_or_create_estimate(db, project)
-    line = add_accessory_kit_line(db, estimate, project, kit)
+    back = f"/projects/{project_id}/accessory-kits/{kit_id}"
+    if section_id and section_id.strip().isdigit():
+        section = estimate_versions.get_section(db, project, int(section_id))
+    else:
+        section = estimate_versions.ensure_default_section(db, project)
+    estimate = section.active_version if section else None
+    if estimate is None:
+        flash(request, "Стенд не найден.", "warning")
+        return redirect(back)
+    try:
+        line = add_accessory_kit_line(db, estimate, project, kit)
+    except EstimateError as exc:
+        flash(request, str(exc), "danger")
+        return redirect(back)
     if line is not None:
         audit_log(
             db, user, EventType.ESTIMATE_CHANGE,
-            f"Смета {estimate.number}: добавлен комплект аксессуаров «{kit.name}»",
+            f"Смета {estimate.display_number} (стенд «{section.name}»): "
+            f"добавлен комплект аксессуаров «{kit.name}»",
             object_type="estimate", object_id=estimate.id,
         )
-        flash(request, f"«{kit.name}» добавлен в смету.", "success")
+        flash(request, f"«{kit.name}» добавлен в смету стенда «{section.name}».", "success")
     else:
-        flash(request, f"«{kit.name}» уже в смете.", "info")
-    return redirect(f"/projects/{project_id}/accessory-kits/{kit_id}")
+        flash(request, f"«{kit.name}» уже в смете стенда «{section.name}».", "info")
+    return redirect(back)
 
 
 @router.post("/{kit_id}/add-to-packing", dependencies=[Depends(verify_csrf)])

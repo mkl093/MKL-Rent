@@ -14,6 +14,8 @@ class EventType(enum.StrEnum):
     PROJECT_COPY = "project_copy"
     PROJECT_DELETE = "project_delete"
     ESTIMATE_CHANGE = "estimate_change"
+    ESTIMATE_VERSION = "estimate_version"
+    SECTION_MANAGE = "section_manage"
     PACKING_CREATE = "packing_create"
     PACKING_ADD = "packing_add"
     PACKING_SYNC = "packing_sync"
@@ -56,6 +58,8 @@ class EventType(enum.StrEnum):
             "project_copy": "Копирование проекта",
             "project_delete": "Удалён проект",
             "estimate_change": "Изменение сметы",
+            "estimate_version": "Версия сметы",
+            "section_manage": "Стенд проекта",
             "packing_create": "Создан packing-лист",
             "packing_add": "Добавление оборудования в packing-лист",
             "packing_sync": "Синхронизация packing-листа",

@@ -369,6 +369,8 @@ def project_detail(
                     ),
                 }
             )
+    from app.estimates import versions as estimate_versions
+
     return render(
         request,
         "projects/project_detail.html",
@@ -376,6 +378,7 @@ def project_detail(
             "page_title": project.number,
             "project": project,
             "rows": rows,
+            "sections": estimate_versions.section_summaries(db, project),
             "ProjectStatus": ProjectStatus,
             "staff_assignments": staff_service.list_project_assignments(db, project.id),
         },
@@ -583,10 +586,10 @@ def project_copy(
     if project is None:
         return redirect("/projects")
     copy = service.copy_project(db, project)
-    # Копируется и смета (ТЗ §13.8).
-    from app.estimates.service import copy_estimate
+    # Копируются стенды с активными версиями смет (ТЗ §13.8).
+    from app.estimates.versions import copy_sections
 
-    copy_estimate(db, project, copy)
+    copy_sections(db, project, copy)
     audit_log(
         db,
         user,
