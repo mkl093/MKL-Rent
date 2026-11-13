@@ -189,19 +189,19 @@
     {% if rows %}
     <div class="table-responsive">
       <table class="table table-sm align-middle">
-        <thead><tr><th>Модель</th><th class="text-end">Всего</th><th class="text-end">Недоступно</th>
-          <th class="text-end">В других</th><th class="text-end">Доступно</th>
-          <th class="text-end">Требуется</th><th class="text-end">Дефицит</th></tr></thead>
+        <thead><tr><th>Модель</th><th class="text-end">Требуется</th><th class="text-end">Доступно</th>
+          <th class="text-end">Дефицит</th><th class="text-end">Недоступно</th>
+          <th class="text-end">В других</th><th class="text-end">Всего (на учёте)</th></tr></thead>
         <tbody>
           {% for r in rows %}
           <tr class="{{ 'table-danger' if r.availability.deficit > 0 }}">
             <td><a href="/inventory/models/{{ r.model.id }}">{{ r.model.name }}</a></td>
-            <td class="text-end">{{ r.availability.total }}</td>
+            <td class="text-end">{{ r.quantity }}</td>
+            <td class="text-end">{{ r.availability.available }}</td>
+            <td class="text-end">{{ r.availability.deficit or "—" }}</td>
             <td class="text-end">{{ r.availability.unavailable_by_status }}</td>
             <td class="text-end">{{ r.availability.reserved_other }}</td>
-            <td class="text-end">{{ r.availability.available }}</td>
-            <td class="text-end">{{ r.quantity }}</td>
-            <td class="text-end">{{ r.availability.deficit or "—" }}</td>
+            <td class="text-end">{{ r.availability.total }}</td>
           </tr>
           {% endfor %}
         </tbody>
