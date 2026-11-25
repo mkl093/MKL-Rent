@@ -383,8 +383,8 @@ def project_deficits(db: Session, project: Project) -> list[DeficitLine]:
         avail = compute_availability(
             db,
             model,
-            project.start_date,
-            project.end_date,
+            project.occupancy_start,
+            project.occupancy_end,
             required=res.quantity,
             exclude_project_id=project.id,
         )

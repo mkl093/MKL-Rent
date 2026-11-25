@@ -354,8 +354,8 @@ def project_detail(
             avail = compute_availability(
                 db,
                 model,
-                project.start_date,
-                project.end_date,
+                project.occupancy_start,
+                project.occupancy_end,
                 required=res.quantity,
                 exclude_project_id=project.id,
             )
@@ -365,7 +365,7 @@ def project_detail(
                     "quantity": res.quantity,
                     "availability": avail,
                     "occupancy": occupancy_detail(
-                        db, model.id, project.start_date, project.end_date, project.id
+                        db, model.id, project.occupancy_start, project.occupancy_end, project.id
                     ),
                 }
             )

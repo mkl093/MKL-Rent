@@ -10,6 +10,7 @@
     <span class="badge text-bg-{{ e.status.badge }}">{{ e.status.label }}</span>
     <a href="/projects/{{ e.project_id }}" class="text-decoration-none">{{ e.number }} · {{ e.name }}</a>
     <span class="text-secondary small">{{ e.start_date.strftime('%d.%m.%Y') if e.start_date else '?' }} – {{ e.end_date.strftime('%d.%m.%Y') if e.end_date else '?' }}</span>
+    {% if e.window_differs and e.occupancy_start and e.occupancy_end %}<span class="text-secondary small" title="С учётом отгрузки и возврата">· склад: {{ e.occupancy_start.strftime('%d.%m.%Y') }} – {{ e.occupancy_end.strftime('%d.%m.%Y') }}</span>{% endif %}
     <span class="ms-auto fw-semibold">× {{ e.quantity }}</span>
   </div>
   {% endfor %}

@@ -335,11 +335,15 @@ def add_picker(
     if project.start_date and project.end_date:
         for m in models:
             availability[m.id] = compute_availability(
-                db, m, project.start_date, project.end_date, exclude_project_id=project.id
+                db, m, project.occupancy_start, project.occupancy_end, exclude_project_id=project.id
             )
         for k in kits:
             kit_availability[k.id] = compute_kit_availability(
-                db, k.id, project.start_date, project.end_date, exclude_project_id=project.id
+                db,
+                k.id,
+                project.occupancy_start,
+                project.occupancy_end,
+                exclude_project_id=project.id,
             )
 
     return render(

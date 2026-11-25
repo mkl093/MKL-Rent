@@ -268,3 +268,45 @@ def test_invalid_color_is_silently_dropped(auth_client, db_session):
 
     project = project_service.get_project(db_session, project_id)
     assert project.color is None
+
+
+def test_project_detail_shows_occupancy_window(auth_client):
+    """Плановые отгрузка/возврат шире аренды — карточка показывает окно занятости."""
+    token = _csrf(auth_client, "/projects/new")
+    form = auth_client.get("/projects/new").text
+    assert "плановые даты" in form
+
+    resp = auth_client.post(
+        "/projects",
+        data={
+            "name": "Окно",
+            "start_date": "2026-07-10",
+            "end_date": "2026-07-12",
+            "shipped_date": "2026-07-09",
+            "returned_date": "2026-07-13",
+            "rental_coefficient": "1",
+            "vat": "19",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+    body = auth_client.get(resp.headers["location"]).text
+    assert "Оборудование занято" in body
+    assert "09.07.2026 – 13.07.2026" in body
+
+
+def test_project_detail_hides_window_when_same_as_rental(auth_client):
+    token = _csrf(auth_client, "/projects/new")
+    resp = auth_client.post(
+        "/projects",
+        data={
+            "name": "Без окна",
+            "start_date": "2026-07-10",
+            "end_date": "2026-07-12",
+            "rental_coefficient": "1",
+            "vat": "19",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+    assert "Оборудование занято" not in auth_client.get(resp.headers["location"]).text

@@ -118,14 +118,47 @@ def test_overdue_shipped_kit_stays_busy_after_rental_end(db_session):
     db_session.add(ProjectReservation(project_id=proj.id, kit_id=kit.id, quantity=1))
     db_session.commit()
 
-    # Аренда закончилась 5-го, возврат не отмечен — комплект занят и 10-го.
-    ka = compute_kit_availability(db_session, kit.id, date(2026, 7, 10), date(2026, 7, 12))
+    period = (date(2026, 7, 10), date(2026, 7, 12))
+    # Аренда закончилась 5-го, сегодня 8-е, проект не завершён — комплект занят и 10-го.
+    ka = compute_kit_availability(db_session, kit.id, *period, today=date(2026, 7, 8))
     assert ka.available is False
 
-    # После возврата 6-го — на период с 10-го снова свободен.
+    # Плановый возврат 6-го, сегодня 3-е (просрочки ещё нет) — с 10-го свободен.
     proj.returned_date = date(2026, 7, 6)
     db_session.commit()
-    ka2 = compute_kit_availability(db_session, kit.id, date(2026, 7, 10), date(2026, 7, 12))
+    ka2 = compute_kit_availability(db_session, kit.id, *period, today=date(2026, 7, 3))
+    assert ka2.available is True
+
+    # Плановый возврат 6-го прошёл, а проект всё ещё «Отгружено» — занят.
+    ka3 = compute_kit_availability(db_session, kit.id, *period, today=date(2026, 7, 7))
+    assert ka3.available is False
+
+    # Проект завершён — комплект свободен.
+    proj.status = ProjectStatus.COMPLETED
+    db_session.commit()
+    ka4 = compute_kit_availability(db_session, kit.id, *period, today=date(2026, 7, 7))
+    assert ka4.available is True
+
+
+def test_kit_busy_on_planned_shipping_day(db_session):
+    """Плановая отгрузка раньше начала аренды занимает комплект и в этот день."""
+    kit = kit_service.create_kit(db_session, KitInput(name="Кейс"))
+    proj = create_project(
+        db_session,
+        ProjectInput(
+            name="Бронь",
+            start_date=date(2026, 7, 10),
+            end_date=date(2026, 7, 12),
+            shipped_date=date(2026, 7, 8),
+        ),
+    )
+    proj.status = ProjectStatus.BOOKED
+    db_session.add(ProjectReservation(project_id=proj.id, kit_id=kit.id, quantity=1))
+    db_session.commit()
+
+    ka = compute_kit_availability(db_session, kit.id, date(2026, 7, 8), date(2026, 7, 8))
+    assert ka.available is False
+    ka2 = compute_kit_availability(db_session, kit.id, date(2026, 7, 7), date(2026, 7, 7))
     assert ka2.available is True
 
 

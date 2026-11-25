@@ -68,13 +68,35 @@ class Project(Base, TimestampMixin):
         return self.status.is_archived
 
     @property
-    def is_overdue_booked(self) -> bool:
-        """Резервирует, но дата окончания уже прошла (ТЗ §5, §13.4)."""
-        from app.database import utcnow
+    def occupancy_start(self) -> date | None:
+        """Начало окна занятости: более ранняя из дат начала аренды и отгрузки (ТЗ §15.1)."""
+        if self.start_date is None:
+            return None
+        if self.shipped_date is not None and self.shipped_date < self.start_date:
+            return self.shipped_date
+        return self.start_date
 
-        return (
-            self.status.reserves and self.end_date is not None and self.end_date < utcnow().date()
-        )
+    @property
+    def occupancy_end(self) -> date | None:
+        """Конец окна занятости: более поздняя из дат окончания аренды и возврата (ТЗ §15.1)."""
+        if self.end_date is None:
+            return None
+        if self.returned_date is not None and self.returned_date > self.end_date:
+            return self.returned_date
+        return self.end_date
+
+    @property
+    def occupancy_differs(self) -> bool:
+        """Окно занятости шире дат аренды (заданы отгрузка раньше/возврат позже)."""
+        return (self.occupancy_start, self.occupancy_end) != (self.start_date, self.end_date)
+
+    @property
+    def is_overdue_booked(self) -> bool:
+        """Резервирует, но конец окна занятости уже прошёл (ТЗ §5, §13.4)."""
+        from app.projects.availability import local_today
+
+        occ_end = self.occupancy_end
+        return self.status.reserves and occ_end is not None and occ_end < local_today()
 
 
 class ProjectReservation(Base):

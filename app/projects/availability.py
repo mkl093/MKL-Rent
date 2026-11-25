@@ -2,6 +2,12 @@
 
 Обе даты включаются в период. Пересечение: проекты, чьи интервалы [start,end]
 пересекаются по правилу a_start <= b_end AND b_start <= a_end (ТЗ §13.3).
+
+Окно занятости проекта (ТЗ §15.1) шире дат аренды, если заданы плановые даты
+отгрузки/возврата: начало — более ранняя из «начало аренды»/«дата отгрузки»,
+конец — более поздняя из «окончание аренды»/«дата возврата». Отгружённый проект
+держит оборудование до конца окна, а если конец прошёл, а проект не завершён
+(просрочка), — бессрочно.
 """
 
 from __future__ import annotations
@@ -9,9 +15,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.database import utcnow
 from app.inventory.enums import ItemStatus
 from app.inventory.models import EquipmentItem, EquipmentModel
 from app.projects.enums import ProjectStatus
@@ -21,6 +28,38 @@ from app.projects.models import Project, ProjectReservation
 def ranges_overlap(a_start: date, a_end: date, b_start: date, b_end: date) -> bool:
     """Пересекаются ли два включительных интервала дат (ТЗ §13.3)."""
     return a_start <= b_end and b_start <= a_end
+
+
+def local_today() -> date:
+    """Сегодня в часовом поясе приложения — граница просрочки отгрузки."""
+    from app.utils.timezone import to_local
+
+    return to_local(utcnow()).date()
+
+
+def occupancy_start_expr():
+    """SQL: начало окна занятости — min(start_date, shipped_date).
+
+    Через CASE, а не LEAST(): в SQLite (dev/тесты) LEAST/GREATEST нет.
+    """
+    return case(
+        (
+            and_(Project.shipped_date.is_not(None), Project.shipped_date < Project.start_date),
+            Project.shipped_date,
+        ),
+        else_=Project.start_date,
+    )
+
+
+def occupancy_end_expr():
+    """SQL: конец окна занятости — max(end_date, returned_date)."""
+    return case(
+        (
+            and_(Project.returned_date.is_not(None), Project.returned_date > Project.end_date),
+            Project.returned_date,
+        ),
+        else_=Project.end_date,
+    )
 
 
 @dataclass
@@ -65,6 +104,14 @@ class OccupancyEntry:
     end_date: date | None
     status: ProjectStatus
     quantity: int
+    # Окно занятости (аренда, расширенная плановыми отгрузкой/возвратом).
+    occupancy_start: date | None = None
+    occupancy_end: date | None = None
+
+    @property
+    def window_differs(self) -> bool:
+        """Окно занятости шире дат аренды — показываем его отдельно."""
+        return (self.occupancy_start, self.occupancy_end) != (self.start_date, self.end_date)
 
 
 def _total_stock(db: Session, model: EquipmentModel) -> int:
@@ -108,28 +155,37 @@ def _unavailable_by_status(db: Session, model: EquipmentModel) -> int:
 
 
 def _booked_overlap(start: date, end: date):
-    """Пересечение по датам аренды для проектов в статусе «Забронирован» (ТЗ §13.3)."""
+    """Пересечение окна занятости «Забронирован»-проектов с периодом (ТЗ §13.3)."""
     return and_(
         Project.status == ProjectStatus.BOOKED,
         Project.start_date.is_not(None),
         Project.end_date.is_not(None),
-        Project.start_date <= end,
-        Project.end_date >= start,
+        occupancy_start_expr() <= end,
+        occupancy_end_expr() >= start,
     )
 
 
-def _in_work_overlap(start: date, end: date):
+def _in_work_overlap(start: date, end: date, today: date):
     """Пересечение для отгружённых проектов.
 
-    Окно занятости — от даты начала аренды и до returned_date; пока проект не
-    возвращён (returned_date пуст), он держит сток бессрочно, в т.ч. после конца
-    аренды (просрочка). Возвращённый до начала периода — уже свободен.
+    Окно занятости — от начала окна до его конца (плановый возврат или окончание
+    аренды). Если конец окна прошёл (< today), а проект всё ещё «Отгружено» —
+    просрочка: сток занят бессрочно, пока проект не завершат.
     """
+    occ_end = occupancy_end_expr()
     return and_(
         Project.status == ProjectStatus.SHIPPED,
         Project.start_date.is_not(None),
-        Project.start_date <= end,
-        or_(Project.returned_date.is_(None), Project.returned_date >= start),
+        occupancy_start_expr() <= end,
+        or_(occ_end.is_(None), occ_end < today, occ_end >= start),
+    )
+
+
+def _reserving_overlap(start: date, end: date, today: date | None):
+    """Бронь или «в работе», пересекающие период."""
+    return or_(
+        _booked_overlap(start, end),
+        _in_work_overlap(start, end, today or local_today()),
     )
 
 
@@ -155,14 +211,12 @@ def reserved_in_other_projects(
     start: date,
     end: date,
     exclude_project_id: int | None = None,
+    *,
+    today: date | None = None,
 ) -> int:
     """Суммарная занятость модели (бронь + в работе) в других проектах (ТЗ §15)."""
-    return _sum_reservations(
-        db,
-        model_id,
-        or_(_booked_overlap(start, end), _in_work_overlap(start, end)),
-        exclude_project_id,
-    )
+    overlap = _reserving_overlap(start, end, today)
+    return _sum_reservations(db, model_id, overlap, exclude_project_id)
 
 
 def compute_availability(
@@ -173,13 +227,17 @@ def compute_availability(
     *,
     required: int = 0,
     exclude_project_id: int | None = None,
+    today: date | None = None,
 ) -> ModelAvailability:
     """Полная сводка доступности модели на период (ТЗ §15)."""
+    today = today or local_today()
     return ModelAvailability(
         total=_total_stock(db, model),
         unavailable_by_status=_unavailable_by_status(db, model),
         reserved=_sum_reservations(db, model.id, _booked_overlap(start, end), exclude_project_id),
-        in_work=_sum_reservations(db, model.id, _in_work_overlap(start, end), exclude_project_id),
+        in_work=_sum_reservations(
+            db, model.id, _in_work_overlap(start, end, today), exclude_project_id
+        ),
         required=required,
     )
 
@@ -201,19 +259,21 @@ def reserved_kit_in_other_projects(
     start: date,
     end: date,
     exclude_project_id: int | None = None,
+    *,
+    today: date | None = None,
 ) -> int:
     """Сколько раз комплект занят в других пересекающихся проектах (ТЗ §15).
 
     Комплект — сформированная единица (его содержимое уходит с общего склада),
-    поэтому занятость считается как у модели: бронь — по датам аренды, отгрузка —
-    до возврата (просрочка держит комплект и после конца аренды).
+    поэтому занятость считается как у модели: по окну занятости проекта, а
+    просроченная отгрузка держит комплект бессрочно.
     """
     stmt = (
         select(func.coalesce(func.sum(ProjectReservation.quantity), 0))
         .join(Project, Project.id == ProjectReservation.project_id)
         .where(
             ProjectReservation.kit_id == kit_id,
-            or_(_booked_overlap(start, end), _in_work_overlap(start, end)),
+            _reserving_overlap(start, end, today),
         )
     )
     if exclude_project_id is not None:
@@ -228,10 +288,13 @@ def compute_kit_availability(
     end: date,
     *,
     exclude_project_id: int | None = None,
+    today: date | None = None,
 ) -> KitAvailability:
     """Доступность комплекта на период (свободен, если не забронирован другим проектом)."""
     return KitAvailability(
-        reserved_other=reserved_kit_in_other_projects(db, kit_id, start, end, exclude_project_id)
+        reserved_other=reserved_kit_in_other_projects(
+            db, kit_id, start, end, exclude_project_id, today=today
+        )
     )
 
 
@@ -241,6 +304,8 @@ def occupancy_detail(
     start: date,
     end: date,
     exclude_project_id: int | None = None,
+    *,
+    today: date | None = None,
 ) -> list[OccupancyEntry]:
     """Детализация занятости модели по пересекающимся забронированным проектам (ТЗ §15)."""
     stmt = (
@@ -248,7 +313,7 @@ def occupancy_detail(
         .join(ProjectReservation, Project.id == ProjectReservation.project_id)
         .where(
             ProjectReservation.model_id == model_id,
-            or_(_booked_overlap(start, end), _in_work_overlap(start, end)),
+            _reserving_overlap(start, end, today),
         )
         .order_by(Project.start_date)
     )
@@ -266,6 +331,8 @@ def occupancy_detail(
                 end_date=project.end_date,
                 status=project.status,
                 quantity=quantity,
+                occupancy_start=project.occupancy_start,
+                occupancy_end=project.occupancy_end,
             )
         )
     return entries
@@ -318,18 +385,24 @@ def _count_by_model(db: Session, model_ids: list[int], *, only_unavailable: bool
 
 
 def compute_planboard(
-    db: Session, model_ids: list[int], start: date, end: date
+    db: Session,
+    model_ids: list[int],
+    start: date,
+    end: date,
+    *,
+    today: date | None = None,
 ) -> tuple[list[date], dict[int, list[DayCell]]]:
     """Доступность каждой модели по дням диапазона [start; end] включительно.
 
     Один оконный запрос по броням (не N×дней): пересекающие диапазон брони
-    раскладываются по дням в Python. Бронь занимает даты аренды, отгрузка —
-    от начала аренды до даты возврата (пока не возвращено — до конца окна:
-    просрочка держит сток и после конца аренды, §15.1).
+    раскладываются по дням в Python. Бронь и отгрузка занимают окно занятости
+    проекта (аренда, расширенная плановыми отгрузкой/возвратом); просроченная
+    отгрузка — до конца видимого диапазона и дальше (§15.1).
     """
     days = _daterange(start, end)
     if not model_ids:
         return days, {}
+    today = today or local_today()
 
     total = _count_by_model(db, model_ids, only_unavailable=False)
     unavail = _count_by_model(db, model_ids, only_unavailable=True)
@@ -344,32 +417,32 @@ def compute_planboard(
             ProjectReservation.model_id,
             ProjectReservation.quantity,
             Project.status,
-            Project.start_date,
-            Project.end_date,
-            Project.returned_date,
+            occupancy_start_expr(),
+            occupancy_end_expr(),
         )
         .join(Project, Project.id == ProjectReservation.project_id)
         .where(
             ProjectReservation.model_id.in_(model_ids),
-            or_(_booked_overlap(start, end), _in_work_overlap(start, end)),
+            _reserving_overlap(start, end, today),
         )
     )
-    for model_id, qty, status, s_date, e_date, r_date in db.execute(stmt).all():
+    for model_id, qty, status, w_start, w_end in db.execute(stmt).all():
         shipped = status == ProjectStatus.SHIPPED
-        occ_start = max(s_date, start)
-        occ_end = (r_date if r_date is not None else end) if shipped else e_date
-        occ_end = min(occ_end, end)
+        # Просроченная отгрузка (конец окна прошёл, проект не завершён) — бессрочно.
+        open_ended = shipped and (w_end is None or w_end < today)
+        occ_start = max(w_start, start)
+        occ_end = end if open_ended else min(w_end, end)
         day = occ_start
         while day <= occ_end:
             bucket = busy.setdefault((model_id, day), [0, 0])
             bucket[1 if shipped else 0] += qty
             day += timedelta(days=1)
         # Занятость начинается раньше окна (крайняя левая ячейка модели занята).
-        if s_date < start:
+        if w_start < start:
             cont_before.add(model_id)
-        # Продолжается за правым краем: отгружено и не возвращено — бессрочно;
-        # иначе дата возврата/окончания аренды позже конца окна.
-        if (r_date is None or r_date > end) if shipped else e_date > end:
+        # Продолжается за правым краем: просрочка — бессрочно; иначе конец окна
+        # занятости позже конца видимого диапазона.
+        if open_ended or w_end > end:
             cont_after.add(model_id)
 
     rows: dict[int, list[DayCell]] = {}

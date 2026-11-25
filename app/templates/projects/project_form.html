@@ -33,6 +33,10 @@
       <input class="form-control" id="returned_date" name="returned_date" type="date"
              value="{{ project.returned_date.isoformat() if editing and project.returned_date else '' }}">
     </div>
+    <div class="col-12 form-text mt-1">
+      Отгрузка и возврат — плановые даты: если они выходят за даты аренды, оборудование
+      считается занятым с даты отгрузки по дату возврата.
+    </div>
     <div class="col-6 col-md-3">
       <label class="form-label" for="rental_coefficient">Коэффициент аренды</label>
       <input class="form-control" id="rental_coefficient" name="rental_coefficient" inputmode="decimal"

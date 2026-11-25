@@ -72,15 +72,27 @@ def test_shipped_counts_as_in_work(db_session, model):
 
 
 def test_overdue_shipped_blocks_after_rental_end(db_session, model):
-    # Аренда закончилась 5 июля, возврат не отмечен — держит сток и 10-го.
+    # Аренда закончилась 5 июля, сегодня 8-е, проект не завершён — держит сток и 10-го.
     _reserving(db_session, model.id, 6, date(2026, 7, 1), date(2026, 7, 5), ProjectStatus.SHIPPED)
-    a = compute_availability(db_session, model, date(2026, 7, 10), date(2026, 7, 12))
+    a = compute_availability(
+        db_session, model, date(2026, 7, 10), date(2026, 7, 12), today=date(2026, 7, 8)
+    )
     assert a.in_work == 6
     assert a.available == 4
 
 
-def test_returned_before_period_frees_stock(db_session, model):
-    # Возвращено 6 июля — на период с 10-го уже свободно.
+def test_shipped_not_overdue_frees_after_rental_end(db_session, model):
+    # Отгружено 1–5, сегодня 3-е (просрочки нет) — на период с 10-го свободно.
+    _reserving(db_session, model.id, 6, date(2026, 7, 1), date(2026, 7, 5), ProjectStatus.SHIPPED)
+    a = compute_availability(
+        db_session, model, date(2026, 7, 10), date(2026, 7, 12), today=date(2026, 7, 3)
+    )
+    assert a.in_work == 0
+    assert a.available == 10
+
+
+def test_planned_return_before_period_frees_stock(db_session, model):
+    # Плановый возврат 6 июля, сегодня 3-е — на период с 10-го свободно.
     _reserving(
         db_session,
         model.id,
@@ -90,9 +102,123 @@ def test_returned_before_period_frees_stock(db_session, model):
         ProjectStatus.SHIPPED,
         returned=date(2026, 7, 6),
     )
-    a = compute_availability(db_session, model, date(2026, 7, 10), date(2026, 7, 12))
+    a = compute_availability(
+        db_session, model, date(2026, 7, 10), date(2026, 7, 12), today=date(2026, 7, 3)
+    )
     assert a.in_work == 0
     assert a.available == 10
+
+
+def test_planned_return_extends_shipped_occupancy(db_session, model):
+    # Плановый возврат 11 июля позже конца аренды — занято и на 10–12.
+    _reserving(
+        db_session,
+        model.id,
+        6,
+        date(2026, 7, 1),
+        date(2026, 7, 5),
+        ProjectStatus.SHIPPED,
+        returned=date(2026, 7, 11),
+    )
+    a = compute_availability(
+        db_session, model, date(2026, 7, 10), date(2026, 7, 12), today=date(2026, 7, 3)
+    )
+    assert a.in_work == 6
+
+
+def test_overdue_planned_return_still_blocks(db_session, model):
+    # Плановый возврат 6-го прошёл (сегодня 8-е), проект не завершён — занято.
+    project = _reserving(
+        db_session,
+        model.id,
+        6,
+        date(2026, 7, 1),
+        date(2026, 7, 5),
+        ProjectStatus.SHIPPED,
+        returned=date(2026, 7, 6),
+    )
+    period = (date(2026, 7, 10), date(2026, 7, 12))
+    a = compute_availability(db_session, model, *period, today=date(2026, 7, 8))
+    assert a.in_work == 6
+    # Завершение освобождает сток.
+    project.status = ProjectStatus.COMPLETED
+    db_session.commit()
+    a2 = compute_availability(db_session, model, *period, today=date(2026, 7, 8))
+    assert a2.in_work == 0
+
+
+# --- Окно занятости: плановые отгрузка/возврат расширяют даты аренды ------
+
+
+def _booked_with_window(db_session, model_id, qty, shipped, returned):
+    project = create_project(
+        db_session,
+        ProjectInput(
+            name="Окно",
+            start_date=date(2026, 7, 10),
+            end_date=date(2026, 7, 12),
+            shipped_date=shipped,
+            returned_date=returned,
+        ),
+    )
+    project.status = ProjectStatus.BOOKED
+    db_session.add(ProjectReservation(project_id=project.id, model_id=model_id, quantity=qty))
+    db_session.commit()
+    return project
+
+
+def test_occupancy_window_properties(db_session):
+    p = create_project(
+        db_session,
+        ProjectInput(name="P", start_date=date(2026, 7, 10), end_date=date(2026, 7, 12)),
+    )
+    assert (p.occupancy_start, p.occupancy_end) == (date(2026, 7, 10), date(2026, 7, 12))
+    assert p.occupancy_differs is False
+    p.shipped_date, p.returned_date = date(2026, 7, 9), date(2026, 7, 13)
+    assert (p.occupancy_start, p.occupancy_end) == (date(2026, 7, 9), date(2026, 7, 13))
+    assert p.occupancy_differs is True
+    # Отгрузка позже начала / возврат раньше конца окно не сужают.
+    p.shipped_date, p.returned_date = date(2026, 7, 11), date(2026, 7, 11)
+    assert (p.occupancy_start, p.occupancy_end) == (date(2026, 7, 10), date(2026, 7, 12))
+
+
+def test_booked_blocks_planned_shipping_and_return_days(db_session, model):
+    _booked_with_window(db_session, model.id, 4, date(2026, 7, 9), date(2026, 7, 13))
+    on_ship = compute_availability(db_session, model, date(2026, 7, 9), date(2026, 7, 9))
+    on_return = compute_availability(db_session, model, date(2026, 7, 13), date(2026, 7, 13))
+    before = compute_availability(db_session, model, date(2026, 7, 8), date(2026, 7, 8))
+    after = compute_availability(db_session, model, date(2026, 7, 14), date(2026, 7, 14))
+    assert on_ship.reserved == 4
+    assert on_return.reserved == 4
+    assert before.reserved == 0
+    assert after.reserved == 0
+
+
+def test_deficit_uses_occupancy_window(db_session, model):
+    from app.projects.service import project_deficits
+
+    # A: аренда 10–12 (8 шт.). B: аренда 13–15 (5 шт.). Дефицита нет.
+    a = _booked_with_window(db_session, model.id, 8, None, None)
+    b = create_project(
+        db_session,
+        ProjectInput(name="B", start_date=date(2026, 7, 13), end_date=date(2026, 7, 15)),
+    )
+    b.status = ProjectStatus.BOOKED
+    db_session.add(ProjectReservation(project_id=b.id, model_id=model.id, quantity=5))
+    db_session.commit()
+    assert project_deficits(db_session, b) == []
+
+    # Плановый возврат A 13-го — пересекается с B: 8 + 5 > 10.
+    a.returned_date = date(2026, 7, 13)
+    db_session.commit()
+    lines = project_deficits(db_session, b)
+    assert len(lines) == 1 and lines[0].deficit == 3
+
+    # Плановая отгрузка B 12-го — дефицит видит и сам A.
+    a.returned_date = None
+    b.shipped_date = date(2026, 7, 12)
+    db_session.commit()
+    assert project_deficits(db_session, a)[0].deficit == 3
 
 
 def test_booked_does_not_block_after_rental_end(db_session, model):

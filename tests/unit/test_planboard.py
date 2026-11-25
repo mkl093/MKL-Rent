@@ -31,9 +31,10 @@ def model(db_session):
     )
 
 
-def _reserve(db_session, model_id, qty, start, end, status, returned=None):
+def _reserve(db_session, model_id, qty, start, end, status, returned=None, shipped=None):
     project = create_project(db_session, ProjectInput(name="P", start_date=start, end_date=end))
     project.status = status
+    project.shipped_date = shipped
     project.returned_date = returned
     db_session.add(ProjectReservation(project_id=project.id, model_id=model_id, quantity=qty))
     db_session.commit()
@@ -63,9 +64,11 @@ def test_booked_days_only_within_rental(db_session, model):
 
 
 def test_shipped_is_busy_and_overdue_holds(db_session, model):
-    # Отгружено 1–5, возврат не отмечен: держит сток и после конца аренды.
+    # Отгружено 1–5, сегодня 7-е, проект не завершён: держит сток и после конца аренды.
     _reserve(db_session, model.id, 3, date(2026, 7, 1), date(2026, 7, 5), ProjectStatus.SHIPPED)
-    days, rows = compute_planboard(db_session, [model.id], date(2026, 7, 1), date(2026, 7, 10))
+    days, rows = compute_planboard(
+        db_session, [model.id], date(2026, 7, 1), date(2026, 7, 10), today=date(2026, 7, 7)
+    )
     cells = rows[model.id]
     assert _cell(cells, date(2026, 7, 4)).in_work == 3
     assert _cell(cells, date(2026, 7, 4)).state == "busy"
@@ -73,7 +76,28 @@ def test_shipped_is_busy_and_overdue_holds(db_session, model):
     assert _cell(cells, date(2026, 7, 8)).in_work == 3
 
 
-def test_returned_frees_from_return_date(db_session, model):
+def test_planned_return_extends_shipped_until_return_date(db_session, model):
+    _reserve(
+        db_session,
+        model.id,
+        3,
+        date(2026, 7, 1),
+        date(2026, 7, 5),
+        ProjectStatus.SHIPPED,
+        returned=date(2026, 7, 7),
+    )
+    # Сегодня 2-е: просрочки нет, занято до планового возврата включительно.
+    days, rows = compute_planboard(
+        db_session, [model.id], date(2026, 7, 1), date(2026, 7, 10), today=date(2026, 7, 2)
+    )
+    cells = rows[model.id]
+    assert _cell(cells, date(2026, 7, 7)).in_work == 3  # день возврата ещё занят
+    assert _cell(cells, date(2026, 7, 8)).in_work == 0  # со следующего дня свободно
+    assert cells[-1].cont_after is False
+
+
+def test_return_before_rental_end_does_not_shorten_window(db_session, model):
+    # Возврат раньше окончания аренды окно не сокращает: занято до конца аренды.
     _reserve(
         db_session,
         model.id,
@@ -83,10 +107,69 @@ def test_returned_frees_from_return_date(db_session, model):
         ProjectStatus.SHIPPED,
         returned=date(2026, 7, 4),
     )
-    days, rows = compute_planboard(db_session, [model.id], date(2026, 7, 1), date(2026, 7, 10))
+    days, rows = compute_planboard(
+        db_session, [model.id], date(2026, 7, 1), date(2026, 7, 10), today=date(2026, 7, 2)
+    )
     cells = rows[model.id]
-    assert _cell(cells, date(2026, 7, 4)).in_work == 3  # день возврата ещё занят
-    assert _cell(cells, date(2026, 7, 5)).in_work == 0  # со следующего дня свободно
+    assert _cell(cells, date(2026, 7, 5)).in_work == 3
+    assert _cell(cells, date(2026, 7, 6)).in_work == 0
+
+
+def test_overdue_planned_return_holds_until_completed(db_session, model):
+    # Плановый возврат 7-го прошёл (сегодня 9-е), проект не завершён — занято дальше.
+    _reserve(
+        db_session,
+        model.id,
+        3,
+        date(2026, 7, 1),
+        date(2026, 7, 5),
+        ProjectStatus.SHIPPED,
+        returned=date(2026, 7, 7),
+    )
+    days, rows = compute_planboard(
+        db_session, [model.id], date(2026, 7, 1), date(2026, 7, 10), today=date(2026, 7, 9)
+    )
+    cells = rows[model.id]
+    assert _cell(cells, date(2026, 7, 10)).in_work == 3
+    assert cells[-1].cont_after is True
+
+
+def test_booked_window_includes_shipping_and_return_days(db_session, model):
+    # Аренда 10–12, отгрузка 9-го, возврат 13-го — бронь занимает 9–13.
+    _reserve(
+        db_session,
+        model.id,
+        4,
+        date(2026, 7, 10),
+        date(2026, 7, 12),
+        ProjectStatus.BOOKED,
+        shipped=date(2026, 7, 9),
+        returned=date(2026, 7, 13),
+    )
+    days, rows = compute_planboard(db_session, [model.id], date(2026, 7, 8), date(2026, 7, 14))
+    cells = rows[model.id]
+    assert _cell(cells, date(2026, 7, 8)).state == "free"
+    assert _cell(cells, date(2026, 7, 9)).reserved == 4
+    assert _cell(cells, date(2026, 7, 13)).reserved == 4
+    assert _cell(cells, date(2026, 7, 14)).state == "free"
+
+
+def test_window_arrows_use_shipping_and_return_dates(db_session, model):
+    # Аренда целиком внутри окна, но отгрузка/возврат выходят за его края.
+    _reserve(
+        db_session,
+        model.id,
+        2,
+        date(2026, 7, 10),
+        date(2026, 7, 12),
+        ProjectStatus.BOOKED,
+        shipped=date(2026, 7, 7),
+        returned=date(2026, 7, 16),
+    )
+    days, rows = compute_planboard(db_session, [model.id], date(2026, 7, 8), date(2026, 7, 14))
+    cells = rows[model.id]
+    assert cells[0].cont_before is True
+    assert cells[-1].cont_after is True
 
 
 def test_deficit_day_is_busy(db_session, model):
@@ -147,7 +230,9 @@ def test_no_continuation_when_inside_window(db_session, model):
 def test_shipped_unreturned_continues_after_window(db_session, model):
     """Отгружено и не возвращено — тянется за правый край окна (просрочка)."""
     _reserve(db_session, model.id, 2, date(2026, 7, 28), date(2026, 7, 30), ProjectStatus.SHIPPED)
-    days, rows = compute_planboard(db_session, [model.id], date(2026, 7, 25), date(2026, 8, 5))
+    days, rows = compute_planboard(
+        db_session, [model.id], date(2026, 7, 25), date(2026, 8, 5), today=date(2026, 8, 1)
+    )
     cells = rows[model.id]
     assert cells[-1].cont_after is True
     assert cells[0].cont_before is False
