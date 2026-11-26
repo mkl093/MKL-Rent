@@ -1,0 +1,54 @@
+{#- Выпадающее меню подсказок поиска по складу (htmx-фрагмент, ТЗ §25).
+    Подсветка: hl() возвращает (до, совпадение, после) — строки экранируются Jinja. -#}
+{% macro mark(text) -%}
+  {%- set h = hl(text, s.query) -%}
+  {{ h[0] }}{% if h[1] %}<mark class="p-0">{{ h[1] }}</mark>{% endif %}{{ h[2] }}
+{%- endmacro %}
+<div class="list-group shadow mkl-suggest-list" id="q-suggest-list" role="listbox" aria-label="Подсказки поиска">
+  {% if s.is_empty %}
+    <div class="list-group-item text-secondary small">Ничего не найдено</div>
+  {% endif %}
+
+  {% if s.models %}
+    <div class="list-group-item bg-body-tertiary small text-secondary py-1" role="presentation">Модели</div>
+    {% for row in s.models %}
+    <a href="/inventory/models/{{ row.model.id }}" class="list-group-item list-group-item-action d-flex align-items-center gap-2"
+       role="option" id="q-opt-m{{ row.model.id }}">
+      <span class="flex-grow-1 text-truncate">
+        <span class="fw-semibold">{{ mark(row.model.name) }}</span>
+        {% if row.model.manufacturer %}<span class="text-secondary"> · {{ mark(row.model.manufacturer) }}</span>{% endif %}
+        <span class="d-block small text-secondary text-truncate">{{ row.model.category.name if row.model.category }}</span>
+      </span>
+      <span class="badge text-bg-light border" title="Общее кол-во">{{ row.stock }}</span>
+    </a>
+    {% endfor %}
+  {% endif %}
+
+  {% if s.kits %}
+    <div class="list-group-item bg-body-tertiary small text-secondary py-1" role="presentation">Комплекты</div>
+    {% for kit in s.kits %}
+    <a href="/inventory/kits/{{ kit.id }}" class="list-group-item list-group-item-action"
+       role="option" id="q-opt-k{{ kit.id }}">
+      <span class="fw-semibold">{{ mark(kit.name) }}</span>
+    </a>
+    {% endfor %}
+  {% endif %}
+
+  {% if s.items %}
+    <div class="list-group-item bg-body-tertiary small text-secondary py-1" role="presentation">Экземпляры</div>
+    {% for item in s.items %}
+    <a href="/inventory/items/{{ item.id }}" class="list-group-item list-group-item-action d-flex align-items-center gap-2"
+       role="option" id="q-opt-i{{ item.id }}">
+      <span class="flex-grow-1 text-truncate">
+        <span class="font-monospace">{{ mark(item.barcode) if item.barcode else '—' }}</span>
+        {% if item.serial_number %}<span class="text-secondary small"> · S/N {{ mark(item.serial_number) }}</span>{% endif %}
+        <span class="d-block small text-secondary text-truncate">{{ item.model.name }}</span>
+      </span>
+      <span class="badge text-bg-{{ item.status.badge }}">{{ item.status.label }}</span>
+    </a>
+    {% endfor %}
+  {% endif %}
+
+  <button type="submit" class="list-group-item list-group-item-action text-primary small"
+          role="option" id="q-opt-all">Показать все результаты</button>
+</div>

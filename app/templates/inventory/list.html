@@ -36,8 +36,15 @@
 <form method="get" class="card card-body mb-3">
   <div class="row g-2 align-items-end">
     <div class="col-12 col-md-4">
-      <label class="form-label" for="q">Поиск (название, производитель)</label>
-      <input class="form-control" id="q" name="q" value="{{ q }}">
+      <label class="form-label" for="q">Поиск (название, производитель, штрих-код)</label>
+      <div class="position-relative">
+        <input class="form-control" id="q" name="q" value="{{ q }}" type="search"
+               autocomplete="off" spellcheck="false"
+               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="q-suggest"
+               hx-get="/inventory/search/suggest" hx-trigger="input changed delay:250ms, focus"
+               hx-target="#q-suggest" hx-swap="innerHTML" hx-sync="this:replace">
+        <div id="q-suggest" class="mkl-suggest"></div>
+      </div>
     </div>
     <div class="col-6 col-md-2">
       <label class="form-label" for="category_id">Категория</label>
@@ -247,6 +254,7 @@
 <p class="text-secondary">Моделей не найдено. <a href="/inventory/models/new">Добавьте первую</a>.</p>
 {% endif %}
 
+<script src="{{ static_url('js/inventory-search.js') }}"></script>
 <script>
 // Подкатегория зависит от выбранной категории: показываем только её подкатегории.
 function filterSubcats() {

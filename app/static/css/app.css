@@ -359,3 +359,24 @@ input.sc-color-custom {
   outline: 2px dashed var(--bs-primary);
   outline-offset: -2px;
 }
+
+/* Подсказки поиска по складу (app/static/js/inventory-search.js). */
+.mkl-suggest {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 1050;
+  margin-top: 2px;
+}
+.mkl-suggest:empty {
+  display: none;
+}
+.mkl-suggest-list {
+  max-height: min(60vh, 28rem);
+  overflow-y: auto;
+}
+.mkl-suggest-list .list-group-item {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}

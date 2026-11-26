@@ -9,7 +9,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.audit.events import EventType
@@ -18,7 +18,7 @@ from app.auth.models import User
 from app.backup import service as backup_service
 from app.config import get_settings
 from app.database import get_db
-from app.dependencies import redirect, render, require_login, verify_csrf
+from app.dependencies import get_current_user, redirect, render, require_login, verify_csrf
 from app.inventory.enums import AccountingType, ItemStatus, KitWeightMode, PackingType
 from app.inventory.models import Accessory
 from app.inventory.schemas import (
@@ -36,6 +36,7 @@ from app.inventory.services import equipment as eq_service
 from app.inventory.services import excel_io
 from app.inventory.services import items as item_service
 from app.inventory.services import kits as kit_service
+from app.inventory.services import search as search_service
 from app.projects.availability import compute_availability, compute_planboard, occupancy_detail
 from app.templating import flash
 from app.utils.documents import (
@@ -259,6 +260,35 @@ def index(
             "view": view,
             "tree": tree,
         },
+        db=db,
+        user=user,
+    )
+
+
+# --- Подсказки поиска по складу при вводе (ТЗ §25) -----------------------
+
+
+@router.get("/search/suggest")
+def search_suggest(
+    request: Request,
+    q: str | None = None,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_current_user),
+):
+    """Фрагмент выпадающего меню подсказок (htmx). Пустой ответ — закрыть меню."""
+    if user is None:
+        # Обычный редирект htmx вставил бы страницу входа в меню — просим
+        # браузер перейти на неё целиком.
+        if request.headers.get("HX-Request"):
+            return Response(status_code=200, headers={"HX-Redirect": "/login"})
+        return redirect("/login")
+    suggestions = search_service.suggest(db, q)
+    if suggestions is None:
+        return Response(status_code=200)
+    return render(
+        request,
+        "inventory/_search_suggest.html",
+        {"s": suggestions, "hl": search_service.highlight},
         db=db,
         user=user,
     )

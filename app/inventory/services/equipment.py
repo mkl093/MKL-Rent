@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import utcnow
@@ -313,9 +313,26 @@ def list_models(db: Session, filters: ModelFilters) -> list[EquipmentModel]:
         .where(EquipmentModel.is_archived.is_(filters.archived))
     )
 
-    if filters.query:
-        like = f"%{filters.query.strip()}%"
-        stmt = stmt.where(EquipmentModel.name.ilike(like) | EquipmentModel.manufacturer.ilike(like))
+    if filters.query and filters.query.strip():
+        # Ленивый импорт: search импортирует этот модуль (stock_quantity).
+        from app.inventory.services.search import LIKE_ESCAPE, escape_like, item_code_match
+
+        text = filters.query.strip()
+        like = f"%{escape_like(text)}%"
+        conditions = [
+            EquipmentModel.name.ilike(like, escape=LIKE_ESCAPE),
+            EquipmentModel.manufacturer.ilike(like, escape=LIKE_ESCAPE),
+        ]
+        # Модель находится и по штрих-коду/серийному номеру своих экземпляров
+        # (начало кода, без учёта регистра и пробелов) — как в подсказках поиска.
+        code_match = item_code_match(text)
+        if code_match is not None:
+            conditions.append(
+                select(EquipmentItem.id)
+                .where(EquipmentItem.model_id == EquipmentModel.id, code_match)
+                .exists()
+            )
+        stmt = stmt.where(or_(*conditions))
     if filters.category_id:
         stmt = stmt.where(EquipmentModel.category_id == filters.category_id)
     if filters.subcategory_id:
