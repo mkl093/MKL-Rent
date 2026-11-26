@@ -66,7 +66,7 @@ app/
   templates/ static/ # static/vendor — вендоренные Bootstrap 5 + htmx
 migrations/          # Alembic (env.py берёт URL и metadata из app); versions/000N_*.py
 tests/{unit,integration}/   # unit на SQLite, integration на PostgreSQL (маркер integration)
-scripts/create_user.py
+scripts/                     # create_user, backup, restore, make_cert, make_thumbnails, бэкфиллы
 ```
 
 При добавлении модуля с таблицами — импортировать его `models` в `app/main.py`,
@@ -81,6 +81,13 @@ scripts/create_user.py
 - Формы защищены CSRF (`Depends(verify_csrf)`), страницы — `Depends(require_login)`; рендер через `render(...)`.
 - Номера документов — только `numbering.service.next_number` (ручное изменение запрещено, ТЗ §14).
 - Доступность/дефицит — единый движок `projects/availability.py`; формулы не дублировать.
+- Для списков не вызывать `compute_availability`/`occupancy_detail`/`stock_quantity` в
+  цикле по моделям — использовать пакетные `*_bulk` (иначе N×5 запросов на страницу).
+  Новое правило доступности добавлять в обе версии; `tests/unit/test_availability_bulk.py`
+  сверяет пакетный расчёт с поштучным.
+- Фото модели в списках — только `thumb_url(m.photo_path)` с `loading="lazy"`; полный
+  `/media/<photo_path>` — в карточке и форме. Файлы в `storage/models` и `storage/logo`
+  не перезаписывать под тем же именем: они кешируются браузером как immutable.
 - Применённые миграции задним числом не править — добавлять новые (по возрастанию номера `00NN_*`).
 - Этапы и бизнес-правила — в TECHNICAL_SPECIFICATION.md (§40 правила, §44 этапы).
 
@@ -89,5 +96,6 @@ scripts/create_user.py
 - Запуск:        `uvicorn app.main:app --reload`  (или `python main.py`)
 - Миграции:      `alembic upgrade head` / `alembic revision --autogenerate -m "..."`
 - Пользователь:  `python -m scripts.create_user --username admin`
+- Миниатюры:     `python -m scripts.make_thumbnails` (`--force` — пересоздать все)
 - Тесты:         `pytest` (unit) / `pytest -m integration` (нужен DATABASE_URL_TEST)
 - Линт/формат:   `ruff check .` / `ruff format .`

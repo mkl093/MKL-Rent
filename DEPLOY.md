@@ -18,7 +18,7 @@
 | `db`        | PostgreSQL 16, том `pgdata`. Порты наружу не публикуются.                |
 | `web`       | FastAPI/Uvicorn, несколько воркеров, `--proxy-headers`. Миграции — в entrypoint. |
 | `scheduler` | Тот же образ; единственный экземпляр авто-backup (ТЗ §36).              |
-| `nginx`     | Reverse proxy + TLS-терминация (80/443), ACME-challenge для certbot.     |
+| `nginx`     | Reverse proxy + TLS-терминация (80/443), gzip, ACME-challenge для certbot. |
 | `certbot`   | Выпуск и автопродление сертификатов Let's Encrypt.                       |
 
 Почему backup вынесен в отдельный `scheduler`: при нескольких воркерах `web`
@@ -26,8 +26,19 @@
 `BACKUP_AUTO=false`, авто-backup выполняет один `scheduler`. Ручной backup из UI
 (`web`) продолжает работать — оба сервиса пишут в общий каталог `/backups`.
 
-Данные переживают пересборку контейнеров: БД в томе `pgdata`, файлы (фото, логотип,
-PDF) в томе `storage`, резервные копии — в каталоге хоста (`BACKUP_PATH`).
+Данные переживают пересборку контейнеров: БД в томе `pgdata`, файлы (фото и их
+миниатюры, логотип, PDF) в томе `storage`, резервные копии — в каталоге хоста (`BACKUP_PATH`).
+
+Кеширование и сжатие (ускорение страниц со списками):
+
+- nginx сжимает gzip HTML, CSS, JS, JSON и SVG (шаблоны `nginx/*.conf.template`);
+- статика из `static_url()` (ссылка с `?v=<mtime>`) отдаётся с
+  `Cache-Control: public, max-age=31536000, immutable` — после деплоя изменённый файл
+  получает новый URL, сбрасывать кеш браузера не нужно;
+- фото моделей и логотип (`/media/models/…`, `/media/logo/…`, миниатюры
+  `/media/thumb/…`) — `private, max-age=31536000, immutable`: имена уникальны (uuid) и
+  не переиспользуются; `private` — общие прокси/CDN их не кешируют;
+- остальные файлы `/media` (документы и т. п.) — `private, no-cache`.
 
 ---
 
@@ -318,7 +329,9 @@ docker compose up -d web scheduler nginx
 ```
 
 После восстановления при необходимости выполните `docker compose exec web alembic upgrade head`
-(если архив старее текущей схемы).
+(если архив старее текущей схемы). Если архив снят до появления миниатюр фото —
+`docker compose exec web python -m scripts.make_thumbnails` (иначе первое открытие склада
+будет медленным, пока миниатюры создаются по запросу).
 
 > ⚠️ Если `pg_restore` падает с `unrecognized configuration parameter
 > "transaction_timeout"` — версия `pg_restore` в образе `web` новее сервера `db`
@@ -356,6 +369,11 @@ docker compose up -d
 - [x] БД и `web` не публикуют порты наружу — доступ только через nginx.
 - [x] `server_tokens off`, security-заголовки (в приложении), HSTS (в nginx на 443).
 - [x] Сессионная cookie `Secure`+`HttpOnly`+`SameSite=Lax` в production.
+- [x] gzip для HTML (условие BREACH: CSRF-токен + отражённый поиск) допустим благодаря
+      `SameSite=Lax`: сторонний сайт не может массово слать запросы с сессией. Если нужен
+      максимально осторожный вариант — уберите HTML из сжатия (`gzip off` в
+      `location /` и сжатие только в `location /static/`).
+- [x] Приватные файлы `/media` кешируются только в браузере (`Cache-Control: private`).
 - [x] `APP_ALLOWED_HOSTS` защищает от подмены Host за прокси.
 - [x] Rate-limit входа (ТЗ §41, реализован в приложении).
 - [x] Секреты только в `.env` на сервере, вне Git.
@@ -392,3 +410,14 @@ docker compose up -d
   `docker compose down && docker volume rm <проект>_pgdata && docker compose up -d`.
 - **certbot пишет «No renewals were attempted» вместо выпуска** — забыт `--entrypoint
   certbot` в разовой команде выпуска (см. §5.2); без него запускается цикл продления.
+- **Склад медленно открывается первый раз после деплоя/restore** — не созданы миниатюры
+  фото: `docker compose exec web python -m scripts.make_thumbnails`. Скрипт печатает
+  фото, для которых миниатюру сделать не удалось (файл отсутствует или повреждён) — в
+  списке для них показывается исходное фото, если оно есть.
+- **Ответы не сжаты (`Content-Encoding` нет)** — nginx запущен со старым конфигом:
+  `docker compose up -d --force-recreate nginx`. Проверка:
+  `curl -sI -H "Accept-Encoding: gzip" https://домен/static/vendor/bootstrap.min.css`
+  должен вернуть `Content-Encoding: gzip`.
+- **nginx не стартует после обновления шаблонов** — `docker compose logs nginx` покажет
+  строку конфига с ошибкой; проверить конфиг без перезапуска:
+  `docker compose exec nginx nginx -t`.
