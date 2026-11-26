@@ -363,7 +363,89 @@ docker compose up -d
 
 ---
 
-## 10. Чек-лист хардненинга (ТЗ §41)
+## 10. Переезд на другой VPS
+
+Переносится через штатный backup: архив содержит дамп PostgreSQL и все файлы `storage`
+(фото, мануалы, сертификаты). Отдельно переносятся `.env` и, при желании, старые
+бэкапы; сертификат проще выпустить заново. Данные не теряются, если финальный backup
+снят **после остановки** `web` и `scheduler` на старом сервере. Простой — от остановки
+старого сервера до переключения DNS, обычно 10–30 минут.
+
+### 10.1. Заранее
+
+- Понизьте TTL A-записи домена до 300 с (за сутки), чтобы DNS переключился быстро.
+- Запомните версию кода на старом сервере — на новом нужна та же (схема БД = дамп):
+
+```bash
+cd /opt/mkl-rent && git rev-parse HEAD
+```
+
+### 10.2. Подготовить новый VPS
+
+Выполните §2–§3.1 и §3.3, затем переключитесь на тот же коммит и скопируйте `.env`
+со старого сервера (обязательно с тем же `APP_SECRET_KEY` — иначе сбросятся все сессии):
+
+```bash
+git checkout <коммит-со-старого-сервера>
+scp deploy@OLD_IP:/opt/mkl-rent/.env /opt/mkl-rent/.env
+```
+
+На время проверки по IP переведите `.env` в HTTP-режим, как в §3.2:
+`APP_BASE_URL=http://NEW_IP`, пустой `APP_ALLOWED_HOSTS=`, `SESSION_COOKIE_SECURE=false`,
+`NGINX_TEMPLATE=./nginx/http.conf.template`.
+
+> 💡 Сначала сделайте **пробный прогон**: свежий backup со старого сервера (он
+> продолжает работать) → перенос → восстановление (§10.3–§10.4) → проверка. Проблемы
+> всплывут до настоящего переезда; финальный прогон затем перезапишет данные.
+
+### 10.3. Финальный backup на старом VPS
+
+Остановить запись и снять backup — после этого изменений не будет:
+
+```bash
+docker compose stop web scheduler
+docker compose run --rm -e RUN_MIGRATIONS=false web python -m scripts.backup
+ls -lh backups/ | tail -3
+```
+
+Перенести архив на новый сервер (или весь каталог `backups/`, если нужна история)
+и сверить контрольную сумму на обоих серверах:
+
+```bash
+rsync -avz --progress deploy@OLD_IP:/opt/mkl-rent/backups/backup_YYYYMMDD_HHMMSS.tar.gz /opt/mkl-rent/backups/
+sha256sum backups/backup_YYYYMMDD_HHMMSS.tar.gz
+```
+
+### 10.4. Восстановление на новом VPS
+
+```bash
+docker compose build
+docker compose up -d db
+docker compose run --rm -e RUN_MIGRATIONS=false web \
+  python -m scripts.restore /backups/backup_YYYYMMDD_HHMMSS.tar.gz --yes
+docker compose up -d web scheduler nginx
+docker compose exec web python -m scripts.make_thumbnails
+```
+
+Проверьте `http://NEW_IP/`: вход, проекты и сметы, фото и мануалы, генерация PDF,
+ручной backup. Ошибка `pg_restore` про `transaction_timeout` — см. §8.3.
+
+### 10.5. Переключить домен
+
+1. Смените A-запись домена на новый IP и дождитесь: `dig +short your.domain.com`.
+2. Выпустите сертификат и включите TLS на новом сервере — §5.2–§5.4 (верните в `.env`
+   домен, `APP_ALLOWED_HOSTS`, `SESSION_COOKIE_SECURE`, `SERVER_NAME`, TLS-шаблон).
+
+### 10.6. После переезда
+
+- Старый VPS не удаляйте хотя бы неделю — держите остановленным (`docker compose stop`)
+  как готовый откат.
+- Перенастройте offsite-копирование (§8.2) на новый IP.
+- На следующий день проверьте авто-backup: `docker compose logs scheduler`.
+
+---
+
+## 11. Чек-лист хардненинга (ТЗ §41)
 
 - [x] Контейнеры работают под непривилегированным пользователем (не root).
 - [x] БД и `web` не публикуют порты наружу — доступ только через nginx.
@@ -383,7 +465,7 @@ docker compose up -d
 
 ---
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 - **`web` рестартует, в логах «БД не готова»** — проверьте `docker compose logs db`
   и что `POSTGRES_PASSWORD` в `.env` задан (compose требует его явно).
