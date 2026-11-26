@@ -31,7 +31,10 @@ from app.packing import combined, service
 from app.packing.calc import compute_line
 from app.packing.enums import PackingStatus
 from app.packing.schemas import CustomPackingLine
-from app.projects.availability import compute_availability, compute_kit_availability
+from app.projects.availability import (
+    compute_availability_bulk,
+    compute_kit_availability_bulk,
+)
 from app.projects.service import get_project
 from app.templating import flash
 
@@ -333,18 +336,21 @@ def add_picker(
     availability = {}
     kit_availability = {}
     if project.start_date and project.end_date:
-        for m in models:
-            availability[m.id] = compute_availability(
-                db, m, project.occupancy_start, project.occupancy_end, exclude_project_id=project.id
-            )
-        for k in kits:
-            kit_availability[k.id] = compute_kit_availability(
-                db,
-                k.id,
-                project.occupancy_start,
-                project.occupancy_end,
-                exclude_project_id=project.id,
-            )
+        # Пакетно на весь список — без запросов на каждую позицию.
+        availability = compute_availability_bulk(
+            db,
+            [m.id for m in models],
+            project.occupancy_start,
+            project.occupancy_end,
+            exclude_project_id=project.id,
+        )
+        kit_availability = compute_kit_availability_bulk(
+            db,
+            [k.id for k in kits],
+            project.occupancy_start,
+            project.occupancy_end,
+            exclude_project_id=project.id,
+        )
 
     return render(
         request,

@@ -192,7 +192,7 @@
       {% for m in models %}
       <tr role="button" onclick="location.href='/inventory/models/{{ m.id }}'">
         <td style="width:48px">
-          {% if m.photo_path %}<img src="/media/{{ m.photo_path }}" alt="" width="40" height="40" class="rounded object-fit-cover">{% endif %}
+          {% if m.photo_path %}<img src="{{ thumb_url(m.photo_path) }}" alt="" width="40" height="40" loading="lazy" decoding="async" class="rounded object-fit-cover">{% endif %}
         </td>
         <td>{{ m.name }}{% if m.is_archived %} <span class="badge text-bg-secondary">архив</span>{% endif %}</td>
         <td>{{ m.category.name }}{% if m.subcategory %} / {{ m.subcategory.name }}{% endif %}</td>
@@ -229,7 +229,7 @@
   {% for m in models %}
   <a href="/inventory/models/{{ m.id }}" class="card mb-2 text-decoration-none text-body">
     <div class="card-body d-flex gap-3">
-      {% if m.photo_path %}<img src="/media/{{ m.photo_path }}" alt="" width="56" height="56" class="rounded object-fit-cover">{% endif %}
+      {% if m.photo_path %}<img src="{{ thumb_url(m.photo_path) }}" alt="" width="56" height="56" loading="lazy" decoding="async" class="rounded object-fit-cover">{% endif %}
       <div class="flex-grow-1">
         <div class="fw-semibold">{{ m.name }}{% if m.is_archived %} <span class="badge text-bg-secondary">архив</span>{% endif %}</div>
         <div class="small text-secondary">{{ m.category.name }}{% if m.subcategory %} / {{ m.subcategory.name }}{% endif %}</div>

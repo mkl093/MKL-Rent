@@ -36,6 +36,14 @@ def static_url(path: str) -> str:
 templates.env.globals["static_url"] = static_url
 
 
+def thumb_url(photo_path: str | None) -> str:
+    """URL миниатюры фото модели для списков (полное фото — /media/<path>)."""
+    return f"/media/thumb/{photo_path}" if photo_path else ""
+
+
+templates.env.globals["thumb_url"] = thumb_url
+
+
 # --- CSRF ---------------------------------------------------------------
 
 CSRF_SESSION_KEY = "csrf_token"

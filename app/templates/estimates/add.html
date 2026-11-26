@@ -106,7 +106,7 @@
         {% set is_scanned = scanned_model_id == m.id %}
         <tr {% if is_scanned %}class="table-info"{% elif in_est_qty %}class="table-warning"{% endif %}>
           <td><input class="form-check-input" type="checkbox" name="select_{{ m.id }}" value="1" {% if is_scanned %}checked{% endif %}></td>
-          <td style="width:44px">{% if m.photo_path %}<img src="/media/{{ m.photo_path }}" width="36" height="36" class="rounded object-fit-cover" alt="">{% endif %}</td>
+          <td style="width:44px">{% if m.photo_path %}<img src="{{ thumb_url(m.photo_path) }}" width="36" height="36" loading="lazy" decoding="async" class="rounded object-fit-cover" alt="">{% endif %}</td>
           <td><a href="/inventory/models/{{ m.id }}" target="_blank">{{ m.name }}</a>{% if is_scanned %} <span class="badge text-bg-info text-dark">по штрих-коду</span>{% endif %}{% if in_est_qty %} <span class="badge text-bg-warning text-dark">в смете: {{ in_est_qty }}</span>{% endif %}{% if multi_section and model_in_project.get(m.id) %} <span class="badge text-bg-light border" title="Сумма по активным сметам всех площадок">в проекте: {{ model_in_project.get(m.id) }}</span>{% endif %}</td>
           <td>{{ m.manufacturer or "—" }}</td>
           <td>{{ m.accounting_type.label }}</td>

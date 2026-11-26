@@ -33,6 +33,17 @@ server {
     server_tokens off;
     client_max_body_size 12m;
 
+    # Сжатие текста: HTML, CSS, JS, JSON, SVG. Картинки/PDF/архивы уже сжаты.
+    # HTML содержит CSRF-токен и отражает ввод (поиск) — условия BREACH; риск
+    # практически снимает cookie сессии SameSite=Lax (app/main.py): сторонний
+    # сайт не может массово слать запросы с сессией пользователя.
+    gzip on;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_vary on;
+    gzip_types text/css application/javascript text/javascript application/json
+               image/svg+xml text/plain;
+
     # Docker DNS: динамический резолвинг апстрима web (см. http.conf.template) —
     # чтобы после пересоздания web nginx не отдавал 502 из-за устаревшего IP.
     resolver 127.0.0.11 valid=10s ipv6=off;

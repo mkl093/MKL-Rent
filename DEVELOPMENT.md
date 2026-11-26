@@ -35,7 +35,11 @@ PDF, backup/hardening). Плюс доработки: единый поедини
 хранилище мануалов модели и сертификатов испытаний единицы (ТЗ §55), подсказки поиска по
 складу при вводе (ТЗ §25.1): сервис `app/inventory/services/search.py`, htmx-фрагмент
 `inventory/_search_suggest.html`, клавиатура в `static/js/inventory-search.js`; для
-htmx-запросов без входа — `HX-Redirect: /login` вместо 303.
+htmx-запросов без входа — `HX-Redirect: /login` вместо 303. Списки склада и подбора в
+смету/packing считают доступность пакетно (`compute_availability_bulk`,
+`occupancy_detail_bulk`, `compute_kit_availability_bulk` в `app/projects/availability.py`)
+— несколько GROUP BY-запросов на весь список; в списках фото — миниатюры
+(`thumb_url()`, маршрут `/media/thumb/...`, `app/utils/images.py`, ТЗ §11).
 
 Модули добавленные после базовой раскладки: estimates/, packing/, documents/ (PDF),
 audit/ (журнал §29), users/ (управление §4), backup/ (резервные копии §36), staff/

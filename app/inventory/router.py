@@ -37,7 +37,12 @@ from app.inventory.services import excel_io
 from app.inventory.services import items as item_service
 from app.inventory.services import kits as kit_service
 from app.inventory.services import search as search_service
-from app.projects.availability import compute_availability, compute_planboard, occupancy_detail
+from app.projects.availability import (
+    compute_availability_bulk,
+    compute_planboard,
+    occupancy_detail,
+    occupancy_detail_bulk,
+)
 from app.templating import flash
 from app.utils.documents import (
     CERTIFICATES_SUBDIR,
@@ -221,22 +226,25 @@ def index(
         sort=sort,
     )
     models = eq_service.list_models(db, filters)
-    stock = {m.id: eq_service.stock_quantity(db, m) for m in models}
 
     # Три состояния исправного оборудования (ТЗ §15): доступно (зелёный),
     # зарезервировано (жёлтый), в работе (красный). Считаем на выбранный период,
     # а без него — на сегодня (текущее состояние склада).
     avail_is_period = bool(start and end)
     ref_start, ref_end = (start, end) if avail_is_period else (_today(), _today())
-    availability = {m.id: compute_availability(db, m, ref_start, ref_end) for m in models}
+    # Пакетно, одним набором запросов на весь список (не по запросу на модель).
+    availability = compute_availability_bulk(db, [m.id for m in models], ref_start, ref_end)
+    # Общее кол-во = свободный сток вне комплектов (то же, что stock_quantity).
+    stock = {mid: av.total for mid, av in availability.items()}
 
     # Перечень занимающих проектов (бронь + в работе) — только там, где занятость
     # есть; раскрывается по клику на цифру в списке.
-    occupancy = {
-        m.id: occupancy_detail(db, m.id, ref_start, ref_end)
-        for m in models
-        if availability[m.id].reserved_other > 0
-    }
+    occupancy = occupancy_detail_bulk(
+        db,
+        [mid for mid, av in availability.items() if av.reserved_other > 0],
+        ref_start,
+        ref_end,
+    )
 
     categories = cat_service.list_categories(db)
     tree = _build_tree(categories, models) if view == "tree" else None

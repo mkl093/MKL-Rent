@@ -315,7 +315,7 @@ def occupancy_detail(
             ProjectReservation.model_id == model_id,
             _reserving_overlap(start, end, today),
         )
-        .order_by(Project.start_date)
+        .order_by(Project.start_date, Project.id)
     )
     if exclude_project_id is not None:
         stmt = stmt.where(Project.id != exclude_project_id)
@@ -336,6 +336,163 @@ def occupancy_detail(
             )
         )
     return entries
+
+
+# --- Пакетный расчёт для списков (склад, подбор в смету/packing) -----------
+#
+# Те же правила, что у compute_availability/occupancy_detail, но одним набором
+# GROUP BY-запросов на весь список вместо нескольких запросов на каждую модель.
+# Результат обязан совпадать с поштучным расчётом (см. tests/unit/test_availability_bulk.py).
+
+_IN_CHUNK = 500  # запас до лимита параметров в одном IN (SQLite/PostgreSQL)
+
+
+def _chunks(ids: list[int]) -> list[list[int]]:
+    return [ids[i : i + _IN_CHUNK] for i in range(0, len(ids), _IN_CHUNK)]
+
+
+def _unique_ids(ids) -> list[int]:
+    return list(dict.fromkeys(ids))
+
+
+def _sum_reservations_by_model(
+    db: Session, ids: list[int], overlap, exclude_project_id: int | None
+) -> dict[int, int]:
+    result: dict[int, int] = {}
+    for chunk in _chunks(ids):
+        stmt = (
+            select(ProjectReservation.model_id, func.sum(ProjectReservation.quantity))
+            .join(Project, Project.id == ProjectReservation.project_id)
+            .where(ProjectReservation.model_id.in_(chunk), overlap)
+            .group_by(ProjectReservation.model_id)
+        )
+        if exclude_project_id is not None:
+            stmt = stmt.where(Project.id != exclude_project_id)
+        result.update({mid: int(qty or 0) for mid, qty in db.execute(stmt).all()})
+    return result
+
+
+def compute_availability_bulk(
+    db: Session,
+    model_ids,
+    start: date,
+    end: date,
+    *,
+    exclude_project_id: int | None = None,
+    today: date | None = None,
+) -> dict[int, ModelAvailability]:
+    """Доступность списка моделей на период: {model_id: ModelAvailability}.
+
+    Эквивалент {id: compute_availability(...)} без запросов на каждую модель.
+    """
+    ids = _unique_ids(model_ids)
+    if not ids:
+        return {}
+    today = today or local_today()
+
+    stock: dict[int, tuple[int, int]] = {}
+    for chunk in _chunks(ids):
+        stmt = (
+            select(
+                EquipmentItem.model_id,
+                func.count(),
+                func.sum(case((_unavailable_clause(), 1), else_=0)),
+            )
+            .where(EquipmentItem.model_id.in_(chunk), EquipmentItem.kit_id.is_(None))
+            .group_by(EquipmentItem.model_id)
+        )
+        stock.update(
+            {mid: (int(total), int(bad or 0)) for mid, total, bad in db.execute(stmt).all()}
+        )
+
+    reserved = _sum_reservations_by_model(db, ids, _booked_overlap(start, end), exclude_project_id)
+    in_work = _sum_reservations_by_model(
+        db, ids, _in_work_overlap(start, end, today), exclude_project_id
+    )
+    return {
+        mid: ModelAvailability(
+            total=stock.get(mid, (0, 0))[0],
+            unavailable_by_status=stock.get(mid, (0, 0))[1],
+            reserved=reserved.get(mid, 0),
+            in_work=in_work.get(mid, 0),
+            required=0,
+        )
+        for mid in ids
+    }
+
+
+def occupancy_detail_bulk(
+    db: Session,
+    model_ids,
+    start: date,
+    end: date,
+    exclude_project_id: int | None = None,
+    *,
+    today: date | None = None,
+) -> dict[int, list[OccupancyEntry]]:
+    """Детализация занятости для списка моделей: {model_id: [OccupancyEntry]}.
+
+    Модели без занятости в результат не попадают.
+    """
+    ids = _unique_ids(model_ids)
+    result: dict[int, list[OccupancyEntry]] = {}
+    for chunk in _chunks(ids):
+        stmt = (
+            select(Project, ProjectReservation.model_id, ProjectReservation.quantity)
+            .join(ProjectReservation, Project.id == ProjectReservation.project_id)
+            .where(
+                ProjectReservation.model_id.in_(chunk),
+                _reserving_overlap(start, end, today),
+            )
+            .order_by(Project.start_date, Project.id)
+        )
+        if exclude_project_id is not None:
+            stmt = stmt.where(Project.id != exclude_project_id)
+        for project, model_id, quantity in db.execute(stmt).all():
+            result.setdefault(model_id, []).append(
+                OccupancyEntry(
+                    project_id=project.id,
+                    number=project.number,
+                    name=project.name,
+                    start_date=project.start_date,
+                    end_date=project.end_date,
+                    status=project.status,
+                    quantity=quantity,
+                    occupancy_start=project.occupancy_start,
+                    occupancy_end=project.occupancy_end,
+                )
+            )
+    return result
+
+
+def compute_kit_availability_bulk(
+    db: Session,
+    kit_ids,
+    start: date,
+    end: date,
+    *,
+    exclude_project_id: int | None = None,
+    today: date | None = None,
+) -> dict[int, KitAvailability]:
+    """Доступность списка комплектов на период: {kit_id: KitAvailability}."""
+    ids = _unique_ids(kit_ids)
+    if not ids:
+        return {}
+    booked: dict[int, int] = {}
+    for chunk in _chunks(ids):
+        stmt = (
+            select(ProjectReservation.kit_id, func.sum(ProjectReservation.quantity))
+            .join(Project, Project.id == ProjectReservation.project_id)
+            .where(
+                ProjectReservation.kit_id.in_(chunk),
+                _reserving_overlap(start, end, today),
+            )
+            .group_by(ProjectReservation.kit_id)
+        )
+        if exclude_project_id is not None:
+            stmt = stmt.where(Project.id != exclude_project_id)
+        booked.update({kid: int(qty or 0) for kid, qty in db.execute(stmt).all()})
+    return {kid: KitAvailability(reserved_other=booked.get(kid, 0)) for kid in ids}
 
 
 # --- Planboard: доступность по дням на диапазон (календарь склада, §15.2) ----

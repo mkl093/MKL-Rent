@@ -33,8 +33,13 @@ from app.returns import models as _returns_models  # noqa: F401
 from app.settings import models as _settings_models  # noqa: F401
 from app.staff import models as _staff_models  # noqa: F401
 from app.transport import models as _transport_models  # noqa: F401
+from app.utils.images import is_model_photo_path, make_thumbnail
 
 STATIC_DIR = Path(__file__).parent / "static"
+# Каталоги /media с uuid-именами файлов: содержимое по URL никогда не меняется.
+IMMUTABLE_MEDIA_PREFIXES = ("models/", "logo/")
+# Статика со ссылкой через static_url(): ?v=<mtime> меняется вместе с файлом.
+STATIC_IMMUTABLE = "public, max-age=31536000, immutable"
 
 
 logger = logging.getLogger("app")
@@ -82,6 +87,14 @@ def create_app() -> FastAPI:
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "same-origin")
+        # Версионированная статика (?v=) кешируется надолго: новая версия файла —
+        # новый URL. Без ?v= браузер, как и раньше, перепроверяет файл.
+        if (
+            request.url.path.startswith("/static/")
+            and "v" in request.query_params
+            and response.status_code == 200
+        ):
+            response.headers["Cache-Control"] = STATIC_IMMUTABLE
         return response
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -92,16 +105,47 @@ def create_app() -> FastAPI:
     media_dir.mkdir(parents=True, exist_ok=True)
     media_root = media_dir.resolve()
 
+    # Фото и логотип сохраняются под новым uuid-именем и не перезаписываются —
+    # их можно кешировать «навсегда». private: файлы доступны только после входа.
+    # Остальное (документы, мануалы) может пересоздаваться под тем же именем.
+    def _media_headers(file_path: str) -> dict[str, str]:
+        if file_path.startswith(IMMUTABLE_MEDIA_PREFIXES):
+            return {"Cache-Control": "private, max-age=31536000, immutable"}
+        return {"Cache-Control": "private, no-cache"}
+
+    # Миниатюра фото модели для списков; создаётся при первом запросе, если её
+    # ещё нет. Маршрут объявлен выше /media/{file_path:path}, иначе тот его перехватит.
+    @app.get("/media/thumb/{file_path:path}", include_in_schema=False)
+    def media_thumb(
+        file_path: str,
+        db: Session = Depends(get_db),
+        user: User = Depends(require_login),
+    ) -> FileResponse:
+        # Соединение с БД нужно только для проверки входа — не держим его,
+        # пока отдаётся файл (иначе сотни картинок списка выбирают пул).
+        db.close()
+        source = (media_root / file_path).resolve()
+        if not source.is_relative_to(media_root) or not is_model_photo_path(file_path):
+            raise HTTPException(status_code=404)
+        target = make_thumbnail(file_path)
+        if target is None:
+            # Миниатюру сделать не удалось — отдаём исходник, если он есть.
+            if not source.is_file():
+                raise HTTPException(status_code=404)
+            target = source
+        return FileResponse(str(target), media_type="image/jpeg", headers=_media_headers(file_path))
+
     @app.get("/media/{file_path:path}", include_in_schema=False)
     def media(
         file_path: str,
         db: Session = Depends(get_db),
         user: User = Depends(require_login),
     ) -> FileResponse:
+        db.close()  # см. media_thumb: соединение не держим на время отдачи файла
         target = (media_root / file_path).resolve()
         if not target.is_relative_to(media_root) or not target.is_file():
             raise HTTPException(status_code=404)
-        return FileResponse(str(target))
+        return FileResponse(str(target), headers=_media_headers(file_path))
 
     # Перехват «требуется вход» → редирект на /login.
     @app.exception_handler(LoginRequired)
