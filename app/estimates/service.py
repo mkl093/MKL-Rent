@@ -265,6 +265,10 @@ def update_line(db: Session, line: EstimateLine, data: LineUpdate) -> EstimateLi
 
 def delete_line(db: Session, line: EstimateLine) -> None:
     ensure_editable(line.estimate)
+    # Убрать строку и из загруженной коллекции: при expire_on_commit=False
+    # estimate.lines иначе продолжает её содержать, и sync_reservations
+    # (active_versions не перезагружает уже загруженные коллекции) оставляет бронь.
+    line.estimate.lines.remove(line)
     db.delete(line)
     db.commit()
 

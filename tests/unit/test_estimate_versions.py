@@ -424,3 +424,19 @@ def test_default_section_name_hidden_in_pdf(db_session, env):
     service.add_model(db_session, estimate, project, spot, 2)
     html, _ = builder.render_html(db_session, project, DocumentType.ESTIMATE, "ru")
     assert "Площадка:" not in html
+
+
+def test_delete_line_releases_reservation(db_session, env):
+    """Удалённая из сметы строка снимает бронь (коллекция estimate.lines не устаревает)."""
+    project, spot, wash = env
+    section = versions.create_section(db_session, project, "A")
+    estimate = section.versions[0]
+    service.add_model(db_session, estimate, project, spot, 3)
+    service.add_model(db_session, estimate, project, wash, 2)
+    assert _reservations(db_session, project) == {spot.id: 3, wash.id: 2}
+
+    line = next(ln for ln in estimate.lines if ln.model_id == spot.id)
+    service.delete_line(db_session, line)
+    service.sync_reservations(db_session, project)
+    assert _reservations(db_session, project) == {wash.id: 2}
+    assert [ln.model_id for ln in estimate.lines] == [wash.id]
