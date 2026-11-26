@@ -467,6 +467,17 @@ docker compose exec web python -m scripts.make_thumbnails
 
 ## 12. Troubleshooting
 
+- **restore падает с `FileExistsError: ... '/data/storage'`** — образ собран из версии
+  до исправления восстановления файлов в Docker-томе. База к этому моменту уже
+  восстановлена, не скопированы только файлы. Обновите код и пересоберите образ
+  (`git pull && docker compose build web scheduler`), затем повторите restore целиком —
+  или докопируйте файлы из архива вручную:
+  ```bash
+  docker compose run --rm --no-deps --entrypoint sh web -c "mkdir -p /tmp/r && \
+    tar -xzf /backups/backup_YYYYMMDD_HHMMSS.tar.gz -C /tmp/r storage && \
+    cp -a /tmp/r/storage/. /data/storage/"
+  ```
+
 - **`web` рестартует, в логах «БД не готова»** — проверьте `docker compose logs db`
   и что `POSTGRES_PASSWORD` в `.env` задан (compose требует его явно).
 - **nginx не стартует после переключения на TLS** — сертификат ещё не выпущен либо

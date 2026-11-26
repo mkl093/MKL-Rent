@@ -2,6 +2,7 @@
 
 import re
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -59,6 +60,41 @@ def test_backup_restore_roundtrip(tmp_path, monkeypatch):
     con.close()
     assert rows == [(42,)]
     assert (storage / "logo.txt").read_text(encoding="utf-8") == "LOGO"
+
+
+def test_restore_keeps_storage_mount_point(tmp_path, monkeypatch):
+    """STORAGE_PATH — точка монтирования тома в Docker: сам каталог не удаляется,
+    заменяется только содержимое (старые файлы уходят, файлы архива появляются)."""
+    db_path = tmp_path / "data.db"
+    storage = tmp_path / "storage"
+    (storage / "photos").mkdir(parents=True)
+    (storage / "photos" / "a.jpg").write_bytes(b"A")
+    backups = tmp_path / "backups"
+
+    fake = _FakeSettings(db_path, storage, backups)
+    monkeypatch.setattr("app.backup.service.get_settings", lambda: fake)
+    sqlite3.connect(db_path).close()
+    archive = service.create_backup()
+
+    (storage / "photos" / "a.jpg").unlink()
+    (storage / "stale.txt").write_text("old", encoding="utf-8")
+    (storage / "old_dir").mkdir()
+    (storage / "old_dir" / "x.pdf").write_bytes(b"X")
+
+    real_rmtree = service.shutil.rmtree
+
+    def rmtree_except_mount(path, *args, **kwargs):
+        if Path(path) == storage:
+            raise OSError(16, "Device or resource busy", str(path))
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(service.shutil, "rmtree", rmtree_except_mount)
+
+    service.restore_backup(archive)
+
+    assert (storage / "photos" / "a.jpg").read_bytes() == b"A"
+    assert not (storage / "stale.txt").exists()
+    assert not (storage / "old_dir").exists()
 
 
 def test_retention_removes_old(tmp_path, monkeypatch):

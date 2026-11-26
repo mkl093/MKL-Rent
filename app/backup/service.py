@@ -218,7 +218,20 @@ def restore_backup(archive: Path) -> dict:
             _restore_database(tmp / db_member, engine)
             storage_src = tmp / "storage"
             if storage_src.exists():
-                dst = Path(s.storage_path)
-                shutil.rmtree(dst, ignore_errors=True)
-                shutil.copytree(storage_src, dst)
+                _replace_dir_contents(storage_src, Path(s.storage_path))
     return manifest
+
+
+def _replace_dir_contents(src: Path, dst: Path) -> None:
+    """Заменить содержимое dst содержимым src, не удаляя сам каталог dst.
+
+    В Docker STORAGE_PATH — точка монтирования тома: удалить её нельзя, поэтому
+    очищаем только содержимое и копируем поверх существующего каталога.
+    """
+    dst.mkdir(parents=True, exist_ok=True)
+    for child in dst.iterdir():
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+    shutil.copytree(src, dst, dirs_exist_ok=True)
