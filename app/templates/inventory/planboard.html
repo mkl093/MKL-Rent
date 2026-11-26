@@ -6,72 +6,107 @@
 {% set qs = 'span=' ~ span %}
 {% if q %}{% set qs = qs ~ '&q=' ~ (q|urlencode) %}{% endif %}
 {% if filters.category_id %}{% set qs = qs ~ '&category_id=' ~ filters.category_id %}{% endif %}
+{% set active_filters = (1 if q else 0) + (1 if filters.category_id else 0) %}
 
 <style>
+  /* Таблица прокручивается в своей области: шапка с датами закреплена сверху,
+     колонка моделей — слева. Высоту области подгоняет скрипт ниже. */
+  .pb-scroll { overflow: auto; max-height: 75vh; }
   .pb-grid th, .pb-grid td { text-align: center; white-space: nowrap; font-size: .85rem; }
-  .pb-grid th.pb-model, .pb-grid td.pb-model { text-align: left; position: sticky; left: 0; background: var(--bs-body-bg); z-index: 1; min-width: 220px; }
+  .pb-grid thead th {
+    position: sticky; top: 0; z-index: 2;
+    background: var(--bs-body-bg); box-shadow: inset 0 -1px 0 var(--bs-border-color);
+  }
+  /* Колонка модели закреплена слева; длинные названия переносятся, а не растягивают её. */
+  .pb-grid th.pb-model, .pb-grid td.pb-model {
+    text-align: left; position: sticky; left: 0; z-index: 1;
+    background: var(--bs-body-bg); box-shadow: inset -1px 0 0 var(--bs-border-color);
+    white-space: normal; overflow-wrap: anywhere; min-width: 220px; width: 280px;
+  }
+  .pb-grid thead th.pb-model { z-index: 3; box-shadow: inset -1px -1px 0 var(--bs-border-color); }
+  /* Заголовок группы растянут на всю строку, поэтому закрепляем сам текст. */
+  .pb-grid td.pb-group { text-align: left; }
+  .pb-grid .pb-group-label { position: sticky; left: .5rem; display: inline-block; white-space: normal; max-width: calc(100vw - 3rem); }
   .pb-grid td.pb-cell { cursor: pointer; font-weight: 600; }
+  .pb-grid td.pb-cell:focus-visible { outline: 2px solid var(--bs-primary); outline-offset: -3px; }
   .pb-grid .pb-cont { opacity: .65; font-weight: 700; cursor: help; }
   .pb-grid .pb-weekend { color: var(--bs-secondary-color); }
   .pb-grid .pb-today { box-shadow: inset 0 0 0 2px var(--bs-primary); }
+  @media (max-width: 575.98px) {
+    .pb-grid th, .pb-grid td { font-size: .8rem; padding: .35rem .3rem; }
+    .pb-grid th.pb-model, .pb-grid td.pb-model { min-width: 8.5rem; width: 8.5rem; padding-left: .5rem; }
+    .pb-compact .btn { --bs-btn-padding-y: .25rem; --bs-btn-padding-x: .55rem; --bs-btn-font-size: .875rem; }
+    .pb-compact h1 { font-size: 1.35rem; }
+    .pb-legend { font-size: .75rem; }
+  }
 </style>
 
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-  <h1 class="h3 m-0">Календарь склада</h1>
-  <div class="d-flex flex-wrap gap-2">
+<div class="pb-compact">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2 mb-md-3">
+    <h1 class="h3 m-0">Календарь склада</h1>
     <a href="/inventory" class="btn btn-outline-secondary">Список склада</a>
   </div>
-</div>
 
-<form method="get" action="/inventory/planboard" class="card card-body mb-3">
-  <input type="hidden" name="start" value="{{ start_date.isoformat() }}">
-  <input type="hidden" name="span" value="{{ span }}">
-  <div class="row g-2 align-items-end">
-    <div class="col-12 col-md-5">
-      <label class="form-label" for="q">Поиск (название, производитель)</label>
-      <input class="form-control" id="q" name="q" value="{{ q }}">
-    </div>
-    <div class="col-8 col-md-4">
-      <label class="form-label" for="category_id">Категория</label>
-      <select class="form-select" id="category_id" name="category_id" onchange="this.form.submit()">
-        <option value="">Все</option>
-        {% for c in categories %}
-          <option value="{{ c.id }}" {% if filters.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-4 col-md-3">
-      <button class="btn btn-primary w-100" type="submit">Применить</button>
-    </div>
+  {# На телефоне фильтр свёрнут за кнопкой «Фильтр», на планшете и десктопе виден всегда. #}
+  <div class="collapse d-md-block" id="pb-filters">
+    <form method="get" action="/inventory/planboard" class="card card-body mb-2 mb-md-3">
+      <input type="hidden" name="start" value="{{ start_date.isoformat() }}">
+      <input type="hidden" name="span" value="{{ span }}">
+      <div class="row g-2 align-items-end">
+        <div class="col-12 col-md-5">
+          <label class="form-label" for="q">Поиск (название, производитель)</label>
+          <input class="form-control" id="q" name="q" value="{{ q }}">
+        </div>
+        <div class="col-7 col-md-4">
+          <label class="form-label" for="category_id">Категория</label>
+          <select class="form-select" id="category_id" name="category_id" onchange="this.form.submit()">
+            <option value="">Все</option>
+            {% for c in categories %}
+              <option value="{{ c.id }}" {% if filters.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-5 col-md-3">
+          <button class="btn btn-primary w-100 text-nowrap" type="submit">Применить</button>
+        </div>
+      </div>
+    </form>
   </div>
-</form>
 
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-  <div class="btn-group">
-    <a class="btn btn-outline-secondary" href="/inventory/planboard?start={{ prev_start.isoformat() }}&{{ qs }}" title="Назад">&laquo;</a>
-    <a class="btn btn-outline-secondary" href="/inventory/planboard?start={{ today.isoformat() }}&{{ qs }}">Сегодня</a>
-    <a class="btn btn-outline-secondary" href="/inventory/planboard?start={{ next_start.isoformat() }}&{{ qs }}" title="Вперёд">&raquo;</a>
+  {# Порядок на телефоне: навигация и период в одну строку, ниже даты и «Фильтр». #}
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+    <div class="btn-group order-1">
+      <a class="btn btn-outline-secondary" href="/inventory/planboard?start={{ prev_start.isoformat() }}&{{ qs }}" title="Назад">&laquo;</a>
+      <a class="btn btn-outline-secondary" href="/inventory/planboard?start={{ today.isoformat() }}&{{ qs }}">Сегодня</a>
+      <a class="btn btn-outline-secondary" href="/inventory/planboard?start={{ next_start.isoformat() }}&{{ qs }}" title="Вперёд">&raquo;</a>
+    </div>
+    <div class="fw-semibold order-3 order-md-2 me-auto me-md-0">{{ start_date.strftime('%d.%m.%Y') }} – {{ end_date.strftime('%d.%m.%Y') }}</div>
+    <div class="btn-group order-2 order-md-3">
+      {% for s in spans %}
+      <a class="btn btn-outline-secondary {% if span == s %}active{% endif %}"
+         href="/inventory/planboard?start={{ start_date.isoformat() }}&span={{ s }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if filters.category_id %}&category_id={{ filters.category_id }}{% endif %}">
+        {{ span_label[s] }}
+      </a>
+      {% endfor %}
+    </div>
+    <button class="btn {{ 'btn-outline-primary' if active_filters else 'btn-outline-secondary' }} d-md-none order-4"
+            type="button" data-bs-toggle="collapse" data-bs-target="#pb-filters"
+            aria-expanded="false" aria-controls="pb-filters">
+      Фильтр{% if active_filters %} <span class="badge text-bg-primary">{{ active_filters }}</span>{% endif %}
+    </button>
   </div>
-  <div class="fw-semibold">{{ start_date.strftime('%d.%m.%Y') }} – {{ end_date.strftime('%d.%m.%Y') }}</div>
-  <div class="btn-group">
-    {% for s in spans %}
-    <a class="btn btn-outline-secondary {% if span == s %}active{% endif %}"
-       href="/inventory/planboard?start={{ start_date.isoformat() }}&span={{ s }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if filters.category_id %}&category_id={{ filters.category_id }}{% endif %}">
-      {{ span_label[s] }}
-    </a>
-    {% endfor %}
-  </div>
-</div>
 
-<div class="d-flex flex-wrap gap-3 mb-2 small text-secondary">
-  <span><span class="badge text-bg-success">&nbsp;</span> свободно (число = остаток)</span>
-  <span><span class="badge text-bg-warning">&nbsp;</span> бронь</span>
-  <span><span class="badge text-bg-danger">&nbsp;</span> в работе / дефицит</span>
+  <div class="d-flex flex-wrap column-gap-3 row-gap-1 mb-2 small text-secondary pb-legend">
+    <span><span class="badge text-bg-success">&nbsp;</span> свободно<span class="d-none d-sm-inline"> (число = остаток)</span></span>
+    <span><span class="badge text-bg-warning">&nbsp;</span> бронь</span>
+    <span><span class="badge text-bg-danger">&nbsp;</span> в работе / дефицит</span>
+  </div>
 </div>
 
 {% if models %}
-<div class="table-responsive">
-  <table class="table table-bordered align-middle pb-grid mb-0">
+<div class="pb-scroll border-bottom" id="pb-scroll">
+  {# hx-target/hx-swap наследуются ячейками — не повторяем их в каждой. #}
+  <table class="table table-bordered align-middle pb-grid mb-0" hx-target="#pb-detail" hx-swap="innerHTML">
     <thead>
       <tr>
         <th class="pb-model">Модель</th>
@@ -87,7 +122,7 @@
       {% for m in models %}
         {% set gname = m.category.name ~ (' / ' ~ m.subcategory.name if m.subcategory else '') %}
         {% if gname != ns.group %}{% set ns.group = gname %}
-        <tr><td class="pb-model bg-body-tertiary fw-semibold" colspan="{{ days|length + 1 }}">{{ gname }}</td></tr>
+        <tr><td class="pb-group bg-body-tertiary fw-semibold" colspan="{{ days|length + 1 }}"><span class="pb-group-label">{{ gname }}</span></td></tr>
         {% endif %}
         <tr>
           <td class="pb-model"><a href="/inventory/models/{{ m.id }}" class="text-decoration-none">{{ m.name }}</a></td>
@@ -95,10 +130,8 @@
           {% if cell.state == 'free' %}
           <td class="{{ state_cls[cell.state] }} {{ 'pb-today' if cell.day == today }}">{{ cell.available }}</td>
           {% else %}
-          <td class="pb-cell {{ state_cls[cell.state] }} {{ 'pb-today' if cell.day == today }}"
-              hx-get="/inventory/planboard/cell?model_id={{ m.id }}&d={{ cell.day.isoformat() }}"
-              hx-target="#pb-detail" hx-swap="innerHTML"
-              title="Показать проекты">{% if cell.cont_before %}<span class="pb-cont" title="Занято и до начала периода — откройте, чтобы увидеть даты">&lsaquo;</span>{% endif %}{{ cell.available }}{% if cell.cont_after %}<span class="pb-cont" title="Занято и после конца периода — откройте, чтобы увидеть даты">&rsaquo;</span>{% endif %}</td>
+          <td class="pb-cell {{ state_cls[cell.state] }} {{ 'pb-today' if cell.day == today }}" role="button" tabindex="0"
+              hx-get="/inventory/planboard/cell?model_id={{ m.id }}&d={{ cell.day.isoformat() }}">{% if cell.cont_before %}<span class="pb-cont" title="Занято и до начала периода — откройте, чтобы увидеть даты">&lsaquo;</span>{% endif %}{{ cell.available }}{% if cell.cont_after %}<span class="pb-cont" title="Занято и после конца периода — откройте, чтобы увидеть даты">&rsaquo;</span>{% endif %}</td>
           {% endif %}
           {% endfor %}
         </tr>
@@ -106,8 +139,85 @@
     </tbody>
   </table>
 </div>
-<div id="pb-detail" class="mt-3"></div>
+
+{# Проекты, занявшие модель в выбранный день (клик или Enter по занятой ячейке). #}
+<div class="modal fade" id="pb-modal" tabindex="-1" aria-labelledby="pb-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="pb-modal-title">Занятость</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+      </div>
+      <div class="modal-body" id="pb-detail" aria-live="polite">
+        <div class="text-center text-secondary py-4">
+          <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Загрузка…
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 {% else %}
 <p class="text-secondary">Моделей не найдено.</p>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const box = document.getElementById('pb-scroll');
+  if (!box) return;
+
+  // Область таблицы занимает остаток экрана: страница целиком не прокручивается,
+  // прокручивается только таблица (без «прокрутки внутри прокрутки»). На низком
+  // экране (телефон в горизонтальной ориентации) не меньше MIN_HEIGHT.
+  const MIN_HEIGHT = 320;
+  const fit = () => {
+    const main = box.closest('main');
+    const padBottom = main ? parseFloat(getComputedStyle(main).paddingBottom) || 0 : 0;
+    const top = box.getBoundingClientRect().top + window.scrollY;
+    const height = Math.floor(window.innerHeight - top - padBottom);
+    box.style.maxHeight = Math.max(height, MIN_HEIGHT) + 'px';
+  };
+  fit();
+  window.addEventListener('load', fit);
+  window.addEventListener('resize', fit);
+  const filters = document.getElementById('pb-filters');
+  filters.addEventListener('shown.bs.collapse', fit);
+  filters.addEventListener('hidden.bs.collapse', fit);
+  document.addEventListener('closed.bs.alert', fit);
+
+  // Окно занятости: открываем сразу с индикатором загрузки, чтобы нажатие было
+  // видно и при медленной связи; при ошибке показываем текст, а не пустое окно.
+  const modalEl = document.getElementById('pb-modal');
+  const detail = document.getElementById('pb-detail');
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  const loadingHtml = detail.innerHTML;
+  let lastCell = null;
+  document.body.addEventListener('htmx:beforeRequest', (e) => {
+    if (e.detail.target !== detail) return;
+    lastCell = e.detail.elt;
+    detail.innerHTML = loadingHtml;
+    modal.show();
+  });
+  const fail = (e) => {
+    if (e.detail.target !== detail) return;
+    detail.innerHTML = '<div class="text-danger">Не удалось загрузить занятость. '
+      + 'Проверьте связь и попробуйте ещё раз.</div>';
+  };
+  document.body.addEventListener('htmx:responseError', fail);
+  document.body.addEventListener('htmx:sendError', fail);
+  modalEl.addEventListener('hidden.bs.modal', () => {
+    if (lastCell) lastCell.focus({ preventScroll: true });
+  });
+
+  // Занятая ячейка открывается и с клавиатуры.
+  box.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const cell = e.target.closest('td.pb-cell');
+    if (!cell) return;
+    e.preventDefault();
+    cell.click();
+  });
+})();
+</script>
 {% endblock %}

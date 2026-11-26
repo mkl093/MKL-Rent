@@ -1,22 +1,22 @@
+{# Содержимое окна занятости в календаре склада (inventory/planboard.html). #}
 {% if model and day %}
-<div class="card card-body">
-  <div class="d-flex justify-content-between align-items-center mb-2">
-    <div class="fw-semibold">Занятость: {{ model.name }} · {{ day.strftime('%d.%m.%Y') }}</div>
-    <button type="button" class="btn-close" aria-label="Закрыть"
-            onclick="document.getElementById('pb-detail').innerHTML=''"></button>
-  </div>
-  {% if entries %}
-    {% for e in entries %}
-    <div class="d-flex flex-wrap align-items-center gap-2 py-1 {% if not loop.first %}border-top{% endif %}">
-      <span class="badge text-bg-{{ e.status.badge }}">{{ e.status.label }}</span>
-      <a href="/projects/{{ e.project_id }}" class="text-decoration-none">{{ e.number }} · {{ e.name }}</a>
-      <span class="text-secondary small">{{ e.start_date.strftime('%d.%m.%Y') if e.start_date else '?' }} – {{ e.end_date.strftime('%d.%m.%Y') if e.end_date else '?' }}</span>
-      {% if e.window_differs and e.occupancy_start and e.occupancy_end %}<span class="text-secondary small" title="С учётом отгрузки и возврата">· склад: {{ e.occupancy_start.strftime('%d.%m.%Y') }} – {{ e.occupancy_end.strftime('%d.%m.%Y') }}</span>{% endif %}
-      <span class="ms-auto fw-semibold">&times; {{ e.quantity }}</span>
-    </div>
-    {% endfor %}
-  {% else %}
-  <div class="text-secondary small">На этот день занятости нет.</div>
-  {% endif %}
+<div class="mb-2">
+  <div class="fw-semibold">{{ model.name }}</div>
+  <div class="text-secondary small">{{ day.strftime('%d.%m.%Y') }}</div>
 </div>
+{% if entries %}
+  {% for e in entries %}
+  <div class="d-flex flex-wrap align-items-center gap-2 py-2 {% if not loop.first %}border-top{% endif %}">
+    <span class="badge text-bg-{{ e.status.badge }}">{{ e.status.label }}</span>
+    <a href="/projects/{{ e.project_id }}" class="text-decoration-none">{{ e.number }} · {{ e.name }}</a>
+    <span class="text-secondary small">{{ e.start_date.strftime('%d.%m.%Y') if e.start_date else '?' }} – {{ e.end_date.strftime('%d.%m.%Y') if e.end_date else '?' }}</span>
+    {% if e.window_differs and e.occupancy_start and e.occupancy_end %}<span class="text-secondary small" title="С учётом отгрузки и возврата">· склад: {{ e.occupancy_start.strftime('%d.%m.%Y') }} – {{ e.occupancy_end.strftime('%d.%m.%Y') }}</span>{% endif %}
+    <span class="ms-auto fw-semibold">&times; {{ e.quantity }}</span>
+  </div>
+  {% endfor %}
+{% else %}
+<div class="text-secondary small">На этот день занятости нет.</div>
+{% endif %}
+{% else %}
+<div class="text-secondary small">Модель или дата не найдены. Обновите страницу календаря.</div>
 {% endif %}

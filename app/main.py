@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
@@ -147,16 +147,23 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404)
         return FileResponse(str(target), headers=_media_headers(file_path))
 
-    # Перехват «требуется вход» → редирект на /login.
+    # Перехват «требуется вход» → редирект на страницу входа.
+    def _to_login(request: Request, url: str) -> Response:
+        # htmx прошёл бы обычный редирект сам и вставил страницу входа во фрагмент
+        # (окно, меню, панель) — просим браузер перейти на неё целиком.
+        if request.headers.get("HX-Request"):
+            return Response(status_code=200, headers={"HX-Redirect": url})
+        return RedirectResponse(url=url, status_code=303)
+
     @app.exception_handler(LoginRequired)
-    async def _login_required_handler(request: Request, exc: LoginRequired) -> RedirectResponse:
-        return RedirectResponse(url="/login", status_code=303)
+    async def _login_required_handler(request: Request, exc: LoginRequired) -> Response:
+        return _to_login(request, "/login")
 
     @app.exception_handler(GuestLoginRequired)
     async def _guest_login_required_handler(
         request: Request, exc: GuestLoginRequired
-    ) -> RedirectResponse:
-        return RedirectResponse(url="/guest/login", status_code=303)
+    ) -> Response:
+        return _to_login(request, "/guest/login")
 
     @app.get("/healthz", include_in_schema=False)
     def healthz() -> dict[str, str]:
